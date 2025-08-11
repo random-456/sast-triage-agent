@@ -466,9 +466,7 @@ class SASTTriageAgent:
         self.tools = [
             read_file,  # Read entire files
             search_in_files,  # Search patterns across codebase
-            list_directory,  # Explore directory structure
-            analyze_code_location,  # Quick code context around specific lines
-            examine_code_patterns  # Analyze code for security patterns
+            list_directory  # Explore directory structure
         ]
         
         # Bind tools to the LLM
@@ -537,33 +535,27 @@ class SASTTriageAgent:
         
         # Create comprehensive initial context
         input_prompt = f"""
-        Analyze this SAST finding and determine if it's a true positive:
+        Here is a SAST finding from Checkmarx. Investigate the codebase and determine if it's truly exploitable.
         
-        COMPLETE FINDING INFORMATION:
+        FINDING DETAILS:
         {json.dumps(finding_details, indent=2)}
         
-        INVESTIGATION APPROACH:
-        You are a security expert. The finding details above include the complete dataflow showing how potentially tainted data flows through the application.
+        CODEBASE ACCESS:
+        You can explore the codebase however you want using these tools:
+        - read_file: Read any file completely
+        - search_in_files: Search for patterns across all files
+        - list_directory: Explore the project structure
         
-        Use your tools strategically to investigate:
-        - read_file: Read complete source files
-        - analyze_code_location: Get code context around specific lines  
-        - search_in_files: Search for patterns (e.g., sanitization functions, validators)
-        - examine_code_patterns: Analyze code for security-relevant patterns
-        - list_directory: Understand project structure
+        INVESTIGATION:
+        Investigate however you think is best. You might want to:
+        - Read the files mentioned in the dataflow
+        - Look for sanitization or validation functions
+        - Understand how the application works
+        - Search for similar patterns or security controls
+        - Explore related files or directories
         
-        Focus on:
-        1. Understanding the source: Where does the input come from? Is it user-controlled?
-        2. Understanding the sink: How is the data used? Is it dangerous?
-        3. The path between: Is there any sanitization, validation, or encoding?
-        4. Context: Are there security controls we're missing?
-        
-        Investigate as deeply as YOU decide is necessary. You might need to:
-        - Read entire files to understand the context
-        - Search for security functions that might not be in the direct dataflow
-        - Check how similar code paths handle data
-        
-        Make your decision based on evidence, not assumptions.
+        Take as much time as you need. Read whatever files you think are relevant.
+        The goal is to understand if this vulnerability is real and exploitable.
         
         After your investigation, provide your final assessment as a JSON object.
         The LAST thing in your response must be this JSON (you can explain your analysis before it):
@@ -714,7 +706,7 @@ class SASTTriageAgent:
             )
     
     def update_csv_status(self, finding_id: str, csv_path: str = DEFAULT_CSV_FILE):
-        """Update the triaged status in CSV file after analyzing a finding."""
+        """Update the triaged status in CSV file."""
         try:
             # Read CSV
             rows = []
@@ -735,6 +727,49 @@ class SASTTriageAgent:
             print(f"  Updated CSV: marked {finding_id} as triaged")
         except Exception as e:
             print(f"  Warning: Could not update CSV for {finding_id}: {str(e)}")
+    
+    def save_incremental_result(self, result: Dict):
+        """Save individual result immediately to findings_assessment.json."""
+        output_file = 'findings_assessment.json'
+        try:
+            # Load existing results if file exists
+            existing_results = []
+            if os.path.exists(output_file):
+                with open(output_file, 'r') as f:
+                    existing_results = json.load(f)
+            
+            # Add new result (or update if finding already exists)
+            finding_id = result['findingId']
+            updated = False
+            for i, existing in enumerate(existing_results):
+                if existing['findingId'] == finding_id:
+                    existing_results[i] = result
+                    updated = True
+                    break
+            
+            if not updated:
+                existing_results.append(result)
+            
+            # Save back to file
+            with open(output_file, 'w') as f:
+                json.dump(existing_results, f, indent=2)
+            
+            print(f"  Saved result to {output_file}")
+        except Exception as e:
+            print(f"  Warning: Could not save incremental result: {str(e)}")
+    
+    def get_pending_findings(self, csv_path: str) -> List[Dict]:
+        """Get findings that haven't been triaged yet (triaged = 'no')."""
+        try:
+            findings = parse_csv_findings(csv_path)
+            if findings and 'error' not in findings[0]:
+                # Only return findings not yet triaged
+                pending = [f for f in findings if f.get('triaged', '').lower() == 'no']
+                return pending
+            return []
+        except Exception as e:
+            print(f"Error getting pending findings: {str(e)}")
+            return []
     
     async def process_all_findings(
         self,
@@ -757,37 +792,56 @@ class SASTTriageAgent:
         print(f"JSON: {json_path}")
         print(f"Codebase: {CODEBASE_PATH}")
         
-        # Parse CSV to get findings list
-        findings = parse_csv_findings(csv_path)
+        # Get only pending findings (skip already triaged)
+        findings = self.get_pending_findings(csv_path)
         
-        if not findings or 'error' in findings[0]:
-            return {
-                "error": "Failed to parse CSV findings",
-                "details": findings
-            }
+        if not findings:
+            print("No pending findings to triage (all marked as 'yes' in CSV)")
+            # Load existing results if any
+            if os.path.exists('findings_assessment.json'):
+                with open('findings_assessment.json', 'r') as f:
+                    return json.load(f)
+            return []
         
-        print(f"Found {len(findings)} findings to triage")
+        print(f"Found {len(findings)} pending findings to triage")
         
-        # Analyze each finding
+        # Analyze each pending finding
         triage_results = []
         for i, finding in enumerate(findings):
             print(f"\nAnalyzing finding {i+1}/{len(findings)}: {finding['findingId']}")
             
-            decision = await self.analyze_single_finding(
-                finding['findingId'],
-                finding['severity'],
-                update_csv=False  # We'll update after successful analysis
-            )
-            
-            # Update CSV immediately after each successful finding
+            # Mark as triaged IMMEDIATELY when starting
             self.update_csv_status(finding['findingId'], csv_path)
             
-            triage_results.append(decision.dict())
-            
-            # Print summary
-            print(f"  Result: {decision.assessment_result}")
-            print(f"  Confidence: {decision.assessment_confidence:.2f}")
-            print(f"  Justification: {decision.assessment_justification[:100]}...")
+            try:
+                decision = await self.analyze_single_finding(
+                    finding['findingId'],
+                    finding['severity'],
+                    update_csv=False  # Already updated above
+                )
+                
+                result_dict = decision.dict()
+                triage_results.append(result_dict)
+                
+                # Save result immediately
+                self.save_incremental_result(result_dict)
+                
+                # Print summary
+                print(f"  Result: {decision.assessment_result}")
+                print(f"  Confidence: {decision.assessment_confidence:.2f}")
+                print(f"  Justification: {decision.assessment_justification[:100]}...")
+                
+            except Exception as e:
+                print(f"  Error analyzing {finding['findingId']}: {str(e)}")
+                # Save error result
+                error_result = {
+                    'findingId': finding['findingId'],
+                    'assessment_result': 'REFUSED',
+                    'assessment_confidence': 0.0,
+                    'assessment_justification': f'Analysis failed: {str(e)}'
+                }
+                triage_results.append(error_result)
+                self.save_incremental_result(error_result)
         
         # Save results in requested format (findings_assessment.json)
         with open('findings_assessment.json', 'w') as f:
