@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Simple runner script for the SAST Triage Agent
-Usage: python run_triage.py
+Usage: python run_triage.py [project_directory]
 """
 
 import asyncio
@@ -9,6 +9,15 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Handle optional project directory argument
+if len(sys.argv) > 1:
+    project_dir = sys.argv[1]
+    if not os.path.exists(project_dir):
+        print(f"Error: Directory '{project_dir}' does not exist")
+        sys.exit(1)
+    os.chdir(project_dir)
+    print(f"Changed to directory: {os.getcwd()}")
 
 # Load environment variables from .env file if it exists
 load_dotenv()
