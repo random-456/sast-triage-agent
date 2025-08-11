@@ -464,27 +464,29 @@ class SASTTriageAgent:
         )
         
         self.tools = [
-            parse_csv_findings,
-            get_finding_details,
             read_file,  # Read entire files
             search_in_files,  # Search patterns across codebase
             list_directory,  # Explore directory structure
-            analyze_code_location,  # Quick code context
-            trace_dataflow,
-            examine_code_patterns  # Generic pattern analysis tool
+            analyze_code_location,  # Quick code context around specific lines
+            examine_code_patterns  # Analyze code for security patterns
         ]
         
         # Bind tools to the LLM
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
         # System prompt for the security analyst
-        self.system_prompt = """You are an experienced senior cyber security analyst. Your task is to evaluate SAST findings reported by Checkmarx One and decide if they are true or false positives.
+        self.system_prompt = """You are an experienced senior security analyst evaluating SAST findings from Checkmarx.
         
-        CRITICAL RULES:
-        1. Analyze one finding at a time thoroughly by checking the details and analyzing the source code
-        2. Retrace the finding and analyze if it is valid (true positive) or not (false positive) by systematically understanding the source code
-        3. NEVER modify any files in the codebase - you are only analyzing
-        4. Your decisions must be correct - only make decisions if you are confident enough after analyzing everything related
+        Your approach should be investigative and thorough:
+        - Start by understanding what the vulnerability claim is
+        - Investigate the code to see if it's truly exploitable
+        - Look for evidence, not just follow procedures
+        - Consider real-world exploitability, not just theoretical risks
+        
+        Be skeptical but fair:
+        - Don't assume sanitization exists without seeing it
+        - Don't assume it's safe just because it looks okay
+        - But also don't mark everything as vulnerable without evidence
         
         For each finding assessment, you must provide:
         - assessment_result: "CONFIRMED" (true positive), "NOT_EXPLOITABLE" (false positive), or "REFUSED" (insufficient information)
@@ -523,18 +525,45 @@ class SASTTriageAgent:
         Returns:
             TriageDecision with analysis results
         """
-        input_prompt = f"""
-        Analyze Checkmarx finding {finding_id} with severity {severity}.
+        # Pre-load the complete finding details including dataflow
+        finding_details = get_finding_details(finding_id)
+        if 'error' in finding_details:
+            return TriageDecision(
+                findingId=finding_id,
+                assessment_result="REFUSED",
+                assessment_confidence=0.0,
+                assessment_justification=f"Could not load finding details: {finding_details['error']}"
+            )
         
-        MANDATORY ANALYSIS STEPS:
-        1. Use get_finding_details to get the complete finding information for finding_id: {finding_id}
-        2. Use trace_dataflow to analyze the complete dataflow path
-        3. For EACH node in the dataflow (especially source, intermediate nodes, and sink):
-           - Use analyze_code_location to examine the actual code
-           - Use examine_code_patterns to look for security controls or vulnerability patterns
-        4. Trace data origins and movement across trust boundaries
-        5. Assess existing security controls and their effectiveness
-        6. Consider exploitation scenarios including privileged attackers
+        # Create comprehensive initial context
+        input_prompt = f"""
+        Analyze this SAST finding and determine if it's a true positive:
+        
+        COMPLETE FINDING INFORMATION:
+        {json.dumps(finding_details, indent=2)}
+        
+        INVESTIGATION APPROACH:
+        You are a security expert. The finding details above include the complete dataflow showing how potentially tainted data flows through the application.
+        
+        Use your tools strategically to investigate:
+        - read_file: Read complete source files
+        - analyze_code_location: Get code context around specific lines  
+        - search_in_files: Search for patterns (e.g., sanitization functions, validators)
+        - examine_code_patterns: Analyze code for security-relevant patterns
+        - list_directory: Understand project structure
+        
+        Focus on:
+        1. Understanding the source: Where does the input come from? Is it user-controlled?
+        2. Understanding the sink: How is the data used? Is it dangerous?
+        3. The path between: Is there any sanitization, validation, or encoding?
+        4. Context: Are there security controls we're missing?
+        
+        Investigate as deeply as YOU decide is necessary. You might need to:
+        - Read entire files to understand the context
+        - Search for security functions that might not be in the direct dataflow
+        - Check how similar code paths handle data
+        
+        Make your decision based on evidence, not assumptions
         
         CRITICAL: You MUST end your response with EXACTLY this JSON format (no additional text after):
 
@@ -561,8 +590,8 @@ class SASTTriageAgent:
                 ("human", input_prompt)
             ]
             
-            # Run the agent with tools - allow multiple iterations
-            max_iterations = 15
+            # Run the agent with tools - allow MORE iterations for deeper investigation
+            max_iterations = 25
             for iteration in range(max_iterations):
                 print(f"  Iteration {iteration + 1}/{max_iterations}")
                 
