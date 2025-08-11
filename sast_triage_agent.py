@@ -563,24 +563,23 @@ class SASTTriageAgent:
         - Search for security functions that might not be in the direct dataflow
         - Check how similar code paths handle data
         
-        Make your decision based on evidence, not assumptions
+        Make your decision based on evidence, not assumptions.
         
-        CRITICAL: You MUST end your response with EXACTLY this JSON format (no additional text after):
-
+        After your investigation, provide your final assessment as a JSON object.
+        The LAST thing in your response must be this JSON (you can explain your analysis before it):
+        
         {{
             "findingId": "{finding_id}",
             "assessment_result": "CONFIRMED",
             "assessment_confidence": 0.85,
-            "assessment_justification": "Your detailed analysis here"
+            "assessment_justification": "Based on my analysis, this is a true positive XSS vulnerability because user input flows to innerHTML without sanitization..."
         }}
-
-        RULES FOR JSON RESPONSE:
-        - assessment_result: Must be exactly "CONFIRMED", "NOT_EXPLOITABLE", or "REFUSED"
-        - assessment_confidence: Number between 0.0 and 1.0
-        - assessment_justification: Detailed explanation of your analysis and decision
-        - NO text after the JSON block
-        - NO markdown formatting around JSON
-        - NO explanation before or after JSON
+        
+        Requirements:
+        - assessment_result: "CONFIRMED" or "NOT_EXPLOITABLE" or "REFUSED"
+        - assessment_confidence: 0.0 to 1.0
+        - assessment_justification: Your analysis summary
+        - Put the JSON at the END of your response
         """
         
         try:
@@ -627,7 +626,17 @@ class SASTTriageAgent:
                         )
                         messages.append(tool_message)
                 else:
-                    # No more tool calls, we have the final answer
+                    # No more tool calls, check if we have valid JSON
+                    output = response.content
+                    
+                    # Quick check if response contains valid JSON
+                    if '{' in output and 'findingId' in output:
+                        break
+                    
+                    # If not, ask for JSON formatting
+                    messages.append(("human", f"Please provide your final assessment as the JSON format requested, with findingId='{finding_id}'."))
+                    retry_response = await self.llm_with_tools.ainvoke(messages)
+                    messages.append(retry_response)
                     break
             
             # Get the final response content
@@ -636,22 +645,28 @@ class SASTTriageAgent:
             # Try to extract JSON from the output
             import re
             
-            # Try multiple JSON extraction patterns
+            # Try to find JSON at the end of the response
+            # Look for the last JSON-like structure in the output
             json_patterns = [
-                r'\{[^{}]*"findingId"[^{}]*\}',  # Single-line JSON
-                r'\{\s*"findingId".*?\}',        # Multi-line JSON
-                r'\{.*?"assessment_result".*?\}' # Look for key field
+                r'\{[^{}]*"findingId"[^{}]*"assessment_result"[^{}]*"assessment_confidence"[^{}]*"assessment_justification"[^{}]*\}',
+                r'\{\s*"findingId".*?"assessment_justification".*?\}',
+                r'\{[^}]*"findingId"[^}]*\}(?!.*\{[^}]*"findingId")'  # Last JSON with findingId
             ]
             
             for pattern in json_patterns:
-                json_match = re.search(pattern, output, re.DOTALL)
-                if json_match:
+                matches = re.findall(pattern, output, re.DOTALL)
+                if matches:
+                    # Take the last match (should be at the end)
                     try:
-                        decision_dict = json.loads(json_match.group())
-                        if 'findingId' in decision_dict:  # Validate it has required field
+                        decision_dict = json.loads(matches[-1])
+                        if 'findingId' in decision_dict:
                             return TriageDecision(**decision_dict)
                     except json.JSONDecodeError:
                         continue
+            
+            # If no JSON found, try to extract from the text more intelligently
+            # Look for the actual analysis content
+            print(f"  Warning: Could not extract JSON from response. Full output:\n{output[:500]}...")
             
             # If no valid JSON, try to extract key information from the text
             result = "REFUSED"
