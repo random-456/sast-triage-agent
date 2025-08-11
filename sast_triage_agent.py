@@ -272,166 +272,6 @@ def list_directory(directory_path: str) -> Dict:
         return {"error": f"Failed to list directory: {str(e)}"}
 
 
-@tool
-def analyze_code_location(file_path: str, line_number: int) -> Dict:
-    """
-    Analyze code at a specific location with surrounding context.
-    
-    Args:
-        file_path: Path to the source file relative to codebase
-        line_number: Line number to analyze
-    
-    Returns:
-        Code context and analysis information
-    """
-    try:
-        full_path = os.path.join(CODEBASE_PATH, file_path.lstrip('/'))
-        
-        if not os.path.exists(full_path):
-            return {"error": f"File not found: {full_path}"}
-        
-        with open(full_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        context_lines = 15  # Fixed context
-        start = max(0, line_number - context_lines - 1)
-        end = min(len(lines), line_number + context_lines)
-        
-        context = {
-            'file': file_path,
-            'target_line': line_number,
-            'total_lines': len(lines),
-            'context_start': start + 1,
-            'context_end': end,
-            'code': []
-        }
-        
-        for i in range(start, end):
-            context['code'].append({
-                'line_number': i + 1,
-                'content': lines[i].rstrip(),
-                'is_target': i + 1 == line_number
-            })
-        
-        return context
-    except Exception as e:
-        return {"error": f"Failed to analyze code: {str(e)}"}
-
-
-@tool
-def trace_dataflow(dataflow_nodes: str) -> Dict:
-    """
-    Trace the complete dataflow path from source to sink.
-    
-    Args:
-        dataflow_nodes: JSON string of dataflow nodes
-    
-    Returns:
-        Analysis of the dataflow path including taint propagation
-    """
-    try:
-        nodes = json.loads(dataflow_nodes) if isinstance(dataflow_nodes, str) else dataflow_nodes
-        
-        if not nodes:
-            return {"error": "No dataflow nodes provided"}
-        
-        analysis = {
-            'total_nodes': len(nodes),
-            'source': nodes[0] if nodes else None,
-            'sink': nodes[-1] if nodes else None,
-            'path_summary': [],
-            'user_input_detected': False,
-            'sanitization_detected': False
-        }
-        
-        for i, node in enumerate(nodes):
-            node_summary = {
-                'position': i + 1,
-                'file': node.get('fileName', ''),
-                'method': node.get('method', ''),
-                'line': node.get('line', ''),
-                'type': node.get('domType', ''),
-                'name': node.get('name', '')
-            }
-            
-            # Check for user input sources
-            if any(keyword in str(node).lower() for keyword in ['request', 'param', 'query', 'input', 'user']):
-                analysis['user_input_detected'] = True
-                node_summary['is_source'] = True
-            
-            # Check for sanitization
-            if any(keyword in str(node).lower() for keyword in ['sanitize', 'escape', 'encode', 'validate', 'clean']):
-                analysis['sanitization_detected'] = True
-                node_summary['is_sanitizer'] = True
-            
-            analysis['path_summary'].append(node_summary)
-        
-        return analysis
-    except Exception as e:
-        return {"error": f"Failed to trace dataflow: {str(e)}"}
-
-
-@tool
-def examine_code_patterns(code_content: str, focus_area: str) -> Dict:
-    """
-    Examine code for specific patterns or security-relevant features.
-    
-    Args:
-        code_content: Code content to analyze
-        focus_area: What to focus on (e.g. "security_controls", "input_handling", "database_queries")
-    
-    Returns:
-        Analysis of patterns found in the code
-    """
-    try:
-        lines = code_content.split('\n')
-        patterns_found = []
-        
-        # Generic pattern detection based on focus area
-        focus_lower = focus_area.lower()
-        
-        for i, line in enumerate(lines):
-            line_lower = line.lower()
-            
-            # Look for patterns based on focus area
-            if 'security' in focus_lower or 'control' in focus_lower:
-                security_keywords = ['sanitize', 'escape', 'encode', 'validate', 'clean', 'filter', 'auth', 'permission', 'csrf', 'secure']
-                for keyword in security_keywords:
-                    if keyword in line_lower:
-                        patterns_found.append({
-                            'line': i + 1,
-                            'pattern': keyword,
-                            'context': line.strip()
-                        })
-            
-            elif 'input' in focus_lower:
-                input_keywords = ['request', 'param', 'query', 'body', 'form', 'user', 'input']
-                for keyword in input_keywords:
-                    if keyword in line_lower:
-                        patterns_found.append({
-                            'line': i + 1,
-                            'pattern': keyword,
-                            'context': line.strip()
-                        })
-            
-            elif 'database' in focus_lower or 'sql' in focus_lower:
-                db_keywords = ['query', 'execute', 'select', 'insert', 'update', 'delete', 'sql', 'prepare']
-                for keyword in db_keywords:
-                    if keyword in line_lower:
-                        patterns_found.append({
-                            'line': i + 1,
-                            'pattern': keyword,
-                            'context': line.strip()
-                        })
-        
-        return {
-            'focus_area': focus_area,
-            'patterns_found': patterns_found,
-            'pattern_count': len(patterns_found),
-            'analysis_summary': f"Found {len(patterns_found)} relevant patterns related to {focus_area}"
-        }
-    except Exception as e:
-        return {"error": f"Pattern analysis failed: {str(e)}"}
 
 
 
@@ -442,7 +282,7 @@ class SASTTriageAgent:
     def __init__(
         self, 
         base_url: str = "http://localhost:4000",  # LiteLLM proxy URL
-        model_name: str = "gemini-2.5-flash", 
+        model_name: str = "gemini-2.5-pro", 
         api_key: str = "dummy-key",
         temperature: float = 0.1
     ):
@@ -881,7 +721,7 @@ async def main():
     
     # Initialize the agent
     agent = SASTTriageAgent(
-        model_name="gemini-2.5-flash",
+        model_name="gemini-2.5-pro",
         temperature=0.1
     )
     
