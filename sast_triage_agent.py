@@ -372,41 +372,66 @@ def trace_dataflow(dataflow_nodes: str) -> Dict:
 
 
 @tool
-def check_for_sanitization(code_snippet: str) -> Dict:
+def examine_code_patterns(code_content: str, focus_area: str) -> Dict:
     """
-    Check if code contains common sanitization or validation functions.
+    Examine code for specific patterns or security-relevant features.
     
     Args:
-        code_snippet: Code to analyze
+        code_content: Code content to analyze
+        focus_area: What to focus on (e.g. "security_controls", "input_handling", "database_queries")
     
     Returns:
-        Information about potential security controls found
+        Analysis of patterns found in the code
     """
-    sanitization_keywords = [
-        'sanitize', 'escape', 'encode', 'validate', 'clean',
-        'filter', 'strip', 'purify', 'whitelist', 'blacklist',
-        'parameterized', 'prepared', 'bound', 'safe'
-    ]
-    
-    code_lower = code_snippet.lower()
-    found_controls = []
-    
-    for keyword in sanitization_keywords:
-        if keyword in code_lower:
-            # Find the actual line containing the keyword
-            for line in code_snippet.split('\n'):
-                if keyword in line.lower():
-                    found_controls.append({
-                        'keyword': keyword,
-                        'context': line.strip()[:100]  # First 100 chars of the line
-                    })
-                    break
-    
-    return {
-        'has_sanitization': len(found_controls) > 0,
-        'controls_found': found_controls,
-        'control_count': len(found_controls)
-    }
+    try:
+        lines = code_content.split('\n')
+        patterns_found = []
+        
+        # Generic pattern detection based on focus area
+        focus_lower = focus_area.lower()
+        
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            
+            # Look for patterns based on focus area
+            if 'security' in focus_lower or 'control' in focus_lower:
+                security_keywords = ['sanitize', 'escape', 'encode', 'validate', 'clean', 'filter', 'auth', 'permission', 'csrf', 'secure']
+                for keyword in security_keywords:
+                    if keyword in line_lower:
+                        patterns_found.append({
+                            'line': i + 1,
+                            'pattern': keyword,
+                            'context': line.strip()
+                        })
+            
+            elif 'input' in focus_lower:
+                input_keywords = ['request', 'param', 'query', 'body', 'form', 'user', 'input']
+                for keyword in input_keywords:
+                    if keyword in line_lower:
+                        patterns_found.append({
+                            'line': i + 1,
+                            'pattern': keyword,
+                            'context': line.strip()
+                        })
+            
+            elif 'database' in focus_lower or 'sql' in focus_lower:
+                db_keywords = ['query', 'execute', 'select', 'insert', 'update', 'delete', 'sql', 'prepare']
+                for keyword in db_keywords:
+                    if keyword in line_lower:
+                        patterns_found.append({
+                            'line': i + 1,
+                            'pattern': keyword,
+                            'context': line.strip()
+                        })
+        
+        return {
+            'focus_area': focus_area,
+            'patterns_found': patterns_found,
+            'pattern_count': len(patterns_found),
+            'analysis_summary': f"Found {len(patterns_found)} relevant patterns related to {focus_area}"
+        }
+    except Exception as e:
+        return {"error": f"Pattern analysis failed: {str(e)}"}
 
 
 
@@ -416,9 +441,9 @@ class SASTTriageAgent:
     
     def __init__(
         self, 
-        base_url: str = "http://localhost:4000",  # Your LiteLLM proxy URL
-        model_name: str = "gemini-2.0-flash-exp", 
-        api_key: str = "dummy-key",  # LiteLLM often accepts any key
+        base_url: str = "http://localhost:4000",  # LiteLLM proxy URL
+        model_name: str = "gemini-2.5-flash", 
+        api_key: str = "dummy-key",
         temperature: float = 0.1
     ):
         """
@@ -441,12 +466,12 @@ class SASTTriageAgent:
         self.tools = [
             parse_csv_findings,
             get_finding_details,
-            read_file,  # NEW: Read entire files
-            search_in_files,  # NEW: Search patterns across codebase
-            list_directory,  # NEW: Explore directory structure
-            analyze_code_location,  # Still useful for quick context
+            read_file,  # Read entire files
+            search_in_files,  # Search patterns across codebase
+            list_directory,  # Explore directory structure
+            analyze_code_location,  # Quick code context
             trace_dataflow,
-            check_for_sanitization
+            examine_code_patterns  # Generic pattern analysis tool
         ]
         
         # Bind tools to the LLM
@@ -506,25 +531,27 @@ class SASTTriageAgent:
         2. Use trace_dataflow to analyze the complete dataflow path
         3. For EACH node in the dataflow (especially source, intermediate nodes, and sink):
            - Use analyze_code_location to examine the actual code
-           - Use check_for_sanitization to identify any security controls
+           - Use examine_code_patterns to look for security controls or vulnerability patterns
         4. Trace data origins and movement across trust boundaries
         5. Assess existing security controls and their effectiveness
         6. Consider exploitation scenarios including privileged attackers
         
-        Make your assessment and provide your decision in EXACTLY this JSON format:
+        CRITICAL: You MUST end your response with EXACTLY this JSON format (no additional text after):
+
         {{
             "findingId": "{finding_id}",
-            "assessment_result": "CONFIRMED or NOT_EXPLOITABLE or REFUSED",
-            "assessment_confidence": 0.0-1.0,
-            "assessment_justification": "Detailed justification including: (1) What the vulnerability is, (2) How it could be exploited, (3) Why you made this decision, (4) Any mitigating factors found"
+            "assessment_result": "CONFIRMED",
+            "assessment_confidence": 0.85,
+            "assessment_justification": "Your detailed analysis here"
         }}
-        
-        Remember:
-        - CONFIRMED: True positive vulnerability (even if exploitation difficulty is high)
-        - NOT_EXPLOITABLE: False positive with strong evidence of mitigation
-        - REFUSED: Insufficient information to make confident decision
-        - Your confidence must reflect the thoroughness of your analysis
-        - Justification must be detailed and reference specific code locations analyzed
+
+        RULES FOR JSON RESPONSE:
+        - assessment_result: Must be exactly "CONFIRMED", "NOT_EXPLOITABLE", or "REFUSED"
+        - assessment_confidence: Number between 0.0 and 1.0
+        - assessment_justification: Detailed explanation of your analysis and decision
+        - NO text after the JSON block
+        - NO markdown formatting around JSON
+        - NO explanation before or after JSON
         """
         
         try:
@@ -580,14 +607,22 @@ class SASTTriageAgent:
             # Try to extract JSON from the output
             import re
             
-            # First try to find JSON block
-            json_match = re.search(r'\{[^{}]*"findingId"[^{}]*\}', output, re.DOTALL)
-            if json_match:
-                try:
-                    decision_dict = json.loads(json_match.group())
-                    return TriageDecision(**decision_dict)
-                except json.JSONDecodeError:
-                    pass
+            # Try multiple JSON extraction patterns
+            json_patterns = [
+                r'\{[^{}]*"findingId"[^{}]*\}',  # Single-line JSON
+                r'\{\s*"findingId".*?\}',        # Multi-line JSON
+                r'\{.*?"assessment_result".*?\}' # Look for key field
+            ]
+            
+            for pattern in json_patterns:
+                json_match = re.search(pattern, output, re.DOTALL)
+                if json_match:
+                    try:
+                        decision_dict = json.loads(json_match.group())
+                        if 'findingId' in decision_dict:  # Validate it has required field
+                            return TriageDecision(**decision_dict)
+                    except json.JSONDecodeError:
+                        continue
             
             # If no valid JSON, try to extract key information from the text
             result = "REFUSED"
@@ -740,120 +775,6 @@ class SASTTriageAgent:
         return triage_results
 
 
-# Alternative workflow implementation (if needed in future)
-def create_workflow():
-    """
-    Create a LangGraph workflow for parallel finding analysis.
-    """
-    
-    def parse_findings_node(state: TriageState) -> TriageState:
-        """Parse CSV and JSON findings"""
-        findings = parse_csv_findings(state['csv_path'])
-        state['findings_list'] = findings
-        
-        # Load all finding details
-        with open(state['json_path'], 'r') as f:
-            state['findings_details'] = json.load(f)
-        
-        return state
-    
-    def analyze_finding_node(state: TriageState) -> TriageState:
-        """Analyze current finding"""
-        if state['current_index'] >= len(state['findings_list']):
-            state['analysis_complete'] = True
-            return state
-        
-        current = state['findings_list'][state['current_index']]
-        
-        # Get detailed analysis
-        details = get_finding_details(current['findingId'], state['json_path'])
-        
-        # Analyze dataflow
-        if 'dataflow' in details:
-            dataflow_analysis = trace_dataflow(json.dumps(details['dataflow']))
-            
-            # Analyze key code locations
-            code_analyses = []
-            for node in details['dataflow'][:3]:  # Analyze first 3 nodes
-                code_context = analyze_code_location(
-                    node['fileName'],
-                    int(node['line'])
-                )
-                code_analyses.append(code_context)
-        
-        # Store results
-        state['current_finding'] = {
-            'finding': current,
-            'details': details,
-            'analysis': {
-                'dataflow': dataflow_analysis if 'dataflow' in details else {},
-                'code_contexts': code_analyses if 'dataflow' in details else []
-            }
-        }
-        
-        return state
-    
-    def make_decision_node(state: TriageState) -> TriageState:
-        """Make triage decision for current finding"""
-        if not state['current_finding']:
-            return state
-        
-        # Decision logic based on analysis
-        finding = state['current_finding']
-        confidence = 0.7  # Base confidence
-        
-        # Adjust confidence based on analysis
-        if finding['analysis']['dataflow'].get('sanitization_detected'):
-            confidence -= 0.3
-            status = "false_positive"
-        elif finding['analysis']['dataflow'].get('user_input_detected'):
-            confidence += 0.2
-            status = "true_positive"
-        else:
-            status = "needs_review"
-        
-        decision = {
-            'finding_id': finding['finding']['findingId'],
-            'triage_status': status,
-            'confidence_score': min(max(confidence, 0.0), 1.0),
-            'justification': "Automated analysis based on dataflow and code context"
-        }
-        
-        state['triage_results'].append(decision)
-        state['current_index'] += 1
-        
-        return state
-    
-    def should_continue(state: TriageState) -> str:
-        """Determine if analysis should continue"""
-        if state['analysis_complete']:
-            return END
-        return "analyze"
-    
-    # Build the graph
-    workflow = StateGraph(TriageState)
-    
-    # Add nodes
-    workflow.add_node("parse", parse_findings_node)
-    workflow.add_node("analyze", analyze_finding_node)
-    workflow.add_node("decide", make_decision_node)
-    
-    # Add edges
-    workflow.add_edge("parse", "analyze")
-    workflow.add_edge("analyze", "decide")
-    workflow.add_conditional_edges(
-        "decide",
-        should_continue,
-        {
-            "analyze": "analyze",
-            END: END
-        }
-    )
-    
-    # Set entry point
-    workflow.set_entry_point("parse")
-    
-    return workflow.compile()
 
 
 # Main execution
@@ -862,15 +783,14 @@ async def main():
     
     # Initialize the agent
     agent = SASTTriageAgent(
-        model_name="gemini-2.0-flash-exp",
+        model_name="gemini-2.5-flash",
         temperature=0.1
     )
     
     # Process findings
     results = await agent.process_all_findings(
         csv_path=DEFAULT_CSV_FILE,
-        json_path=DEFAULT_JSON_FILE,
-        output_path="triage_results.json"
+        json_path=DEFAULT_JSON_FILE
     )
     
     return results
