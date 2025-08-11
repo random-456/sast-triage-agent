@@ -139,17 +139,15 @@ def get_finding_details(finding_id: str, json_path: str = DEFAULT_JSON_FILE) -> 
 
 
 @tool
-def read_file(file_path: str, start_line: Optional[int] = None, end_line: Optional[int] = None) -> Dict:
+def read_file(file_path: str) -> Dict:
     """
-    Read an entire file or specific line range from the codebase.
+    Read an entire file from the codebase.
     
     Args:
         file_path: Path to the file relative to codebase
-        start_line: Optional starting line number (1-indexed)
-        end_line: Optional ending line number (1-indexed)
     
     Returns:
-        File contents with line numbers
+        Complete file contents with line numbers
     """
     try:
         full_path = os.path.join(CODEBASE_PATH, file_path.lstrip('/'))
@@ -160,21 +158,23 @@ def read_file(file_path: str, start_line: Optional[int] = None, end_line: Option
         with open(full_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         
-        # Determine range
-        start = (start_line - 1) if start_line else 0
-        end = end_line if end_line else len(lines)
-        start = max(0, start)
-        end = min(len(lines), end)
+        # Limit large files to prevent overwhelming the LLM
+        max_lines = 500
+        if len(lines) > max_lines:
+            truncated = True
+            lines = lines[:max_lines]
+        else:
+            truncated = False
         
         result = {
             'file': file_path,
             'total_lines': len(lines),
-            'showing_lines': f"{start+1}-{end}",
+            'truncated': truncated,
             'content': []
         }
         
-        for i in range(start, end):
-            result['content'].append(f"{i+1:5}: {lines[i].rstrip()}")
+        for i, line in enumerate(lines):
+            result['content'].append(f"{i+1:5}: {line.rstrip()}")
         
         return result
     except Exception as e:
@@ -182,14 +182,13 @@ def read_file(file_path: str, start_line: Optional[int] = None, end_line: Option
 
 
 @tool
-def search_in_files(pattern: str, file_pattern: str = "*.py", max_results: int = 50) -> Dict:
+def search_in_files(pattern: str, file_extension: str) -> Dict:
     """
-    Search for a pattern in files within the codebase (like grep).
+    Search for a pattern in files within the codebase.
     
     Args:
-        pattern: Regular expression or string to search for
-        file_pattern: File pattern to search in (e.g., "*.py", "*.js")
-        max_results: Maximum number of results to return
+        pattern: String or regex to search for
+        file_extension: File extension to search (e.g. "py", "js", "ts")
     
     Returns:
         Search results with file paths and matching lines
@@ -199,12 +198,14 @@ def search_in_files(pattern: str, file_pattern: str = "*.py", max_results: int =
     
     try:
         results = []
+        file_pattern = f"*.{file_extension}"
         search_path = os.path.join(CODEBASE_PATH, "**", file_pattern)
         files = glob.glob(search_path, recursive=True)
         
         pattern_re = re.compile(pattern, re.IGNORECASE)
+        max_results = 30  # Fixed limit to avoid overwhelming
         
-        for file_path in files[:100]:  # Limit files to search
+        for file_path in files[:50]:  # Limit files to search
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
@@ -225,6 +226,7 @@ def search_in_files(pattern: str, file_pattern: str = "*.py", max_results: int =
         
         return {
             'pattern': pattern,
+            'file_extension': file_extension,
             'matches_found': len(results),
             'results': results
         }
@@ -233,18 +235,21 @@ def search_in_files(pattern: str, file_pattern: str = "*.py", max_results: int =
 
 
 @tool
-def list_directory(directory_path: str = ".") -> Dict:
+def list_directory(directory_path: str) -> Dict:
     """
     List files and directories in a given path within the codebase.
     
     Args:
-        directory_path: Path relative to codebase (default is root)
+        directory_path: Path relative to codebase (use "." for root)
     
     Returns:
         List of files and directories
     """
     try:
-        full_path = os.path.join(CODEBASE_PATH, directory_path.lstrip('/'))
+        if directory_path == ".":
+            full_path = CODEBASE_PATH
+        else:
+            full_path = os.path.join(CODEBASE_PATH, directory_path.lstrip('/'))
         
         if not os.path.exists(full_path):
             return {"error": f"Directory not found: {full_path}"}
@@ -268,14 +273,13 @@ def list_directory(directory_path: str = ".") -> Dict:
 
 
 @tool
-def analyze_code_location(file_path: str, line_number: int, context_lines: int = 15) -> Dict:
+def analyze_code_location(file_path: str, line_number: int) -> Dict:
     """
     Analyze code at a specific location with surrounding context.
     
     Args:
         file_path: Path to the source file relative to codebase
         line_number: Line number to analyze
-        context_lines: Number of lines before and after to include
     
     Returns:
         Code context and analysis information
@@ -289,6 +293,7 @@ def analyze_code_location(file_path: str, line_number: int, context_lines: int =
         with open(full_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         
+        context_lines = 15  # Fixed context
         start = max(0, line_number - context_lines - 1)
         end = min(len(lines), line_number + context_lines)
         
