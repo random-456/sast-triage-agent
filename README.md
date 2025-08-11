@@ -1,33 +1,15 @@
-# SAST Triage Agent - LangChain + Gemini
+# SAST Triage Agent
 
-An intelligent agent for automated triage of Checkmarx SAST findings using LangChain and Google Gemini.
-
-## Features
-
-- **Automated Triage**: Analyzes each SAST finding to determine if it's a true positive or false positive
-- **Deep Code Analysis**: Traces complete dataflow from source to sink
-- **Confidence Scoring**: Provides confidence levels (0-1) for each decision
-- **Detailed Justification**: Explains reasoning behind each triage decision
-- **CSV Progress Tracking**: Updates triage status in real-time
-- **Comprehensive Analysis**: Considers:
-  - Component context and interactions
-  - Data flow across trust boundaries
-  - Existing security controls
-  - Exploitation potential (including privileged attackers)
+Automated triage of Checkmarx SAST findings using LangChain and Google Gemini.
 
 ## Setup
 
-### 1. Set up Virtual Environment and Install Dependencies
+### 1. Install Dependencies
 
 ```bash
 # Create virtual environment
 python -m venv venv
-
-# Activate virtual environment
-# On Linux/Mac:
-source venv/bin/activate
-# On Windows:
-# venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -35,39 +17,37 @@ pip install -r requirements.txt
 
 ### 2. Configure LLM Endpoint
 
-The agent uses an OpenAI-compatible endpoint (perfect for LiteLLM proxy with Vertex AI):
-
-```bash
-# Copy the example environment file
-cp .env.example .env
-
-# Edit .env with your settings
-nano .env
-```
-
-Or set environment variables directly:
+Set environment variables:
 ```bash
 export LLM_BASE_URL='http://localhost:4000'
-export LLM_MODEL='gemini-2.0-flash-exp'
+export LLM_MODEL='gemini-2.5-pro'
 export LLM_API_KEY='dummy-key'
 ```
 
-For LiteLLM with Vertex AI, start your proxy:
+Or use `.env` file:
 ```bash
-litellm --model vertex_ai/gemini-2.0-flash-exp --port 4000
+cp .env.example .env
+# Edit .env with your settings
 ```
 
-### 3. Prepare Directory Structure
+### 3. Directory Structure
 
+Your project directory should contain:
 ```
-project/
+my_project/
 ├── findings/
-│   ├── triage_list.csv         # List of findings to triage
-│   └── findings_details.json   # Detailed finding information
-├── /codebase/                  # Source code to analyze
-├── sast_triage_agent.py        # Main agent implementation
-├── run_triage.py               # Runner script
-└── findings_assessment.json    # Output (generated)
+│   ├── triage_list.csv
+│   └── findings_details.json  
+└── codebase/
+    └── (your source code)
+```
+
+After running the analysis, output is created:
+```
+my_project/
+├── findings/
+├── codebase/
+└── findings_assessment.json  ← created here
 ```
 
 ### 4. Input File Formats
@@ -96,7 +76,17 @@ findingId,severity,triaged
                 "line": "152",
                 "method": "filterTable",
                 "name": "q",
-                ...
+                "nodeID": 1,
+                "domType": "source"
+            },
+            {
+                "column": "18",
+                "fileName": "/frontend/src/app/search-result.component.ts", 
+                "line": "160",
+                "method": "filterTable",
+                "name": "innerHTML",
+                "nodeID": 2,
+                "domType": "sink"
             }
         ]
     }
@@ -105,40 +95,18 @@ findingId,severity,triaged
 
 ## Usage
 
-### Simple Run
-
 ```bash
+# Use current directory
 python run_triage.py
-```
 
-### Direct Python Usage
+# Specify project directory
+python run_triage.py ./my_project
 
-```python
-import asyncio
-from sast_triage_agent import SASTTriageAgent
-
-async def analyze():
-    agent = SASTTriageAgent(
-        base_url="http://localhost:4000",  # Your LiteLLM proxy
-        model_name="gemini-2.0-flash-exp",  # Model as configured in proxy
-        api_key="dummy-key",
-        temperature=0.1
-    )
-    
-    results = await agent.process_all_findings(
-        csv_path="findings/triage_list.csv",
-        json_path="findings/findings_details.json"
-    )
-    
-    return results
-
-# Run the analysis
-results = asyncio.run(analyze())
+# Use absolute path
+python run_triage.py /path/to/context
 ```
 
 ## Output Format
-
-The agent generates `findings_assessment.json` with the following structure:
 
 ```json
 [
@@ -153,100 +121,22 @@ The agent generates `findings_assessment.json` with the following structure:
 
 ### Assessment Results
 
-- **CONFIRMED**: True positive vulnerability (even if exploitation is difficult)
-- **NOT_EXPLOITABLE**: False positive with strong evidence of mitigation
-- **REFUSED**: Insufficient information for confident decision
+- **CONFIRMED**: True positive vulnerability
+- **NOT_EXPLOITABLE**: False positive 
+- **REFUSED**: Insufficient information
 
 ### Confidence Scores
 
-- **0.8-1.0**: High confidence in decision
-- **0.5-0.79**: Medium confidence
-- **0.0-0.49**: Low confidence (consider manual review)
+- **0.8-1.0**: High confidence
+- **0.5-0.79**: Medium confidence  
+- **0.0-0.49**: Low confidence
 
 ## How It Works
 
-1. **Parse Findings**: Reads CSV list and JSON details
-2. **Analyze Each Finding**:
-   - Retrieves detailed finding information
-   - Traces complete dataflow path
-   - Examines code at critical points
-   - Checks for existing security controls
-   - Evaluates exploitation potential
-3. **Make Decision**: Based on comprehensive analysis
-4. **Update Progress**: Marks findings as triaged in CSV
-5. **Generate Report**: Creates structured JSON output
-
-## Key Features
-
-### Deep Dataflow Analysis
-The agent traces the complete path from user input (source) to dangerous operation (sink), analyzing each step for:
-- User input detection
-- Data transformations
-- Sanitization functions
-- Trust boundary crossings
-
-### Context-Aware Analysis
-Considers:
-- Component's role in the system
-- Interaction patterns
-- Business logic context
-- Existing security measures
-
-### Intelligent Decision Making
-- Recognizes common false positive patterns
-- Identifies real vulnerabilities even with high exploitation difficulty
-- Considers attack scenarios including privileged attackers
-- Provides detailed justification for each decision
-
-## Customization
-
-### Model Selection
-Change the Gemini model in `SASTTriageAgent`:
-```python
-agent = SASTTriageAgent(
-    model_name="gemini-2.0-flash-exp",  # or "gemini-1.5-pro"
-    temperature=0.1  # Lower = more consistent
-)
-```
-
-### Analysis Depth
-Adjust `max_iterations` for thoroughness:
-```python
-self.agent_executor = AgentExecutor(
-    agent=self.agent,
-    tools=self.tools,
-    max_iterations=15,  # Increase for deeper analysis
-    verbose=True
-)
-```
-
-## Troubleshooting
-
-### Code Base Mismatch
-If all findings are REFUSED with "Code base and findings report do not match":
-- Verify `/codebase` contains the correct source code
-- Check that file paths in findings match actual file structure
-- Ensure code version matches when findings were generated
-
-### API Rate Limits
-If hitting Gemini API limits:
-- Add delays between findings
-- Use batch processing
-- Consider upgrading API quota
-
-### Low Confidence Scores
-For consistently low confidence:
-- Ensure complete codebase is available
-- Check that dataflow information is complete
-- Consider increasing analysis iterations
-
-## Security Notes
-
-- Agent operates in read-only mode
-- Never modifies source code
-- Focuses on defensive security analysis
-- Designed for internal use by security teams
-
-## License
-
-Proprietary - For internal use only
+1. Parse CSV findings list and JSON details
+2. For each finding:
+   - Trace dataflow from source to sink
+   - Examine code at critical points
+   - Check for security controls
+   - Evaluate exploitation potential
+3. Generate structured assessment with confidence score
