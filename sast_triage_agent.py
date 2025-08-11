@@ -14,18 +14,14 @@ from enum import Enum
 
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.output_parsers import JsonOutputParser
-from langchain.agents import create_structured_chat_agent, AgentExecutor
 from pydantic import BaseModel, Field
-from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 from typing_extensions import TypedDict
 
 
 # Configuration
-CODEBASE_PATH = "/codebase"
+CODEBASE_PATH = "./codebase"
 FINDINGS_PATH = "findings"
 DEFAULT_CSV_FILE = f"{FINDINGS_PATH}/triage_list.csv"
 DEFAULT_JSON_FILE = f"{FINDINGS_PATH}/findings_details.json"
@@ -317,63 +313,46 @@ class SASTTriageAgent:
             check_for_sanitization
         ]
         
-        self.memory = MemorySaver()
-        self.output_parser = JsonOutputParser()
+        # System prompt for the security analyst
+        system_prompt = """You are an experienced senior cyber security analyst. Your task is to evaluate SAST findings reported by Checkmarx One and decide if they are true or false positives.
         
-        # Create the main triage prompt
-        self.triage_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an experienced senior cyber security analyst. Your task is to evaluate SAST findings reported by Checkmarx One and decide if they are true or false positives.
-            
-            CRITICAL RULES:
-            1. Analyze one finding at a time thoroughly by checking the details and analyzing the source code
-            2. Retrace the finding and analyze if it is valid (true positive) or not (false positive) by systematically understanding the source code
-            3. NEVER modify any files in the codebase - you are only analyzing
-            4. Your decisions must be correct - only make decisions if you are confident enough after analyzing everything related
-            
-            For each finding assessment, you must provide:
-            - assessment_result: "CONFIRMED" (true positive), "NOT_EXPLOITABLE" (false positive), or "REFUSED" (insufficient information)
-            - assessment_confidence: Score between 0 and 1 (where 1 is maximum confidence)
-            - assessment_justification: Detailed justification for your decision
-            
-            Your analysis must be thorough and consider:
-            a) Component Context: The code's role, environment, and interactions within the system
-            b) Data Flow & Trust: Trace data origins and movement, identifying trust boundaries and input sources (trusted vs. untrusted)
-            c) Security Controls: Assess existing mitigations (validation, authentication, authorization) and their effectiveness
-            d) Exploitation Potential: Consider how an attacker might leverage the finding, including indirect or chained attack vectors
-            
-            IMPORTANT CONSIDERATIONS:
-            - If detected finding is likely not true-positive but there's another closely linked vulnerability in the same area, report as CONFIRMED with explanation
-            - Even if exploitation potential is relatively low (but not zero), report as CONFIRMED with details
-            - Consider privileged attacker scenarios in your analyses
-            - Analyze each finding separately without referring to other findings
-            - Focus on HIGH QUALITY assessment - think hard and perform as many analysis steps as needed
-            
-            Use ALL available tools to:
-            1. Get finding details from JSON
-            2. Trace complete dataflow from source to sink
-            3. Analyze code at each critical point in dataflow
-            4. Check for vulnerability patterns and existing mitigations
-            5. Make informed decision based on comprehensive analysis
-            """),
-            MessagesPlaceholder(variable_name="chat_history", optional=True),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad")
-        ])
+        CRITICAL RULES:
+        1. Analyze one finding at a time thoroughly by checking the details and analyzing the source code
+        2. Retrace the finding and analyze if it is valid (true positive) or not (false positive) by systematically understanding the source code
+        3. NEVER modify any files in the codebase - you are only analyzing
+        4. Your decisions must be correct - only make decisions if you are confident enough after analyzing everything related
         
-        # Create the agent
-        self.agent = create_structured_chat_agent(
-            llm=self.llm,
-            tools=self.tools,
-            prompt=self.triage_prompt
-        )
+        For each finding assessment, you must provide:
+        - assessment_result: "CONFIRMED" (true positive), "NOT_EXPLOITABLE" (false positive), or "REFUSED" (insufficient information)
+        - assessment_confidence: Score between 0 and 1 (where 1 is maximum confidence)
+        - assessment_justification: Detailed justification for your decision
         
-        self.agent_executor = AgentExecutor(
-            agent=self.agent,
-            tools=self.tools,
-            verbose=True,
-            max_iterations=15,  # Allow thorough analysis
-            handle_parsing_errors=True,
-            return_intermediate_steps=True
+        Your analysis must be thorough and consider:
+        a) Component Context: The code's role, environment, and interactions within the system
+        b) Data Flow & Trust: Trace data origins and movement, identifying trust boundaries and input sources (trusted vs. untrusted)
+        c) Security Controls: Assess existing mitigations (validation, authentication, authorization) and their effectiveness
+        d) Exploitation Potential: Consider how an attacker might leverage the finding, including indirect or chained attack vectors
+        
+        IMPORTANT CONSIDERATIONS:
+        - If detected finding is likely not true-positive but there's another closely linked vulnerability in the same area, report as CONFIRMED with explanation
+        - Even if exploitation potential is relatively low (but not zero), report as CONFIRMED with details
+        - Consider privileged attacker scenarios in your analyses
+        - Analyze each finding separately without referring to other findings
+        - Focus on HIGH QUALITY assessment - think hard and perform as many analysis steps as needed
+        
+        Use ALL available tools to:
+        1. Get finding details from JSON
+        2. Trace complete dataflow from source to sink
+        3. Analyze code at each critical point in dataflow
+        4. Check for vulnerability patterns and existing mitigations
+        5. Make informed decision based on comprehensive analysis
+        """
+        
+        # Create the agent using LangGraph (modern approach)
+        self.agent = create_react_agent(
+            self.llm,
+            self.tools,
+            state_modifier=system_prompt
         )
     
     async def analyze_single_finding(self, finding_id: str, severity: str, update_csv: bool = True) -> TriageDecision:
@@ -417,13 +396,22 @@ class SASTTriageAgent:
         """
         
         try:
-            result = await self.agent_executor.ainvoke({
-                "input": input_prompt,
-                "chat_history": []
+            # Use LangGraph agent invocation
+            result = await self.agent.ainvoke({
+                "messages": [("human", input_prompt)]
             })
             
-            # Parse the agent's response
-            output = result.get("output", "{}")
+            # Parse the agent's response from LangGraph format
+            messages = result.get("messages", [])
+            if messages:
+                # Get the last AI message
+                last_message = messages[-1]
+                if hasattr(last_message, 'content'):
+                    output = last_message.content
+                else:
+                    output = str(last_message)
+            else:
+                output = "{}"
             
             # Try to extract JSON from the output
             import re

@@ -24,7 +24,7 @@ def check_prerequisites():
     checks = {
         'CSV file': 'findings/triage_list.csv',
         'JSON file': 'findings/findings_details.json',
-        'Codebase directory': '/codebase'
+        'Codebase directory': 'codebase'
     }
     
     all_good = True
