@@ -14,9 +14,8 @@ from enum import Enum
 
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from pydantic import BaseModel, Field
-from langgraph.prebuilt import create_react_agent
-from langgraph.checkpoint.memory import MemorySaver
 from typing_extensions import TypedDict
 
 
@@ -313,8 +312,11 @@ class SASTTriageAgent:
             check_for_sanitization
         ]
         
+        # Bind tools to the LLM
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        
         # System prompt for the security analyst
-        system_prompt = """You are an experienced senior cyber security analyst. Your task is to evaluate SAST findings reported by Checkmarx One and decide if they are true or false positives.
+        self.system_prompt = """You are an experienced senior cyber security analyst. Your task is to evaluate SAST findings reported by Checkmarx One and decide if they are true or false positives.
         
         CRITICAL RULES:
         1. Analyze one finding at a time thoroughly by checking the details and analyzing the source code
@@ -347,13 +349,6 @@ class SASTTriageAgent:
         4. Check for vulnerability patterns and existing mitigations
         5. Make informed decision based on comprehensive analysis
         """
-        
-        # Create the agent using LangGraph (modern approach)
-        self.agent = create_react_agent(
-            self.llm,
-            self.tools,
-            state_modifier=system_prompt
-        )
     
     async def analyze_single_finding(self, finding_id: str, severity: str, update_csv: bool = True) -> TriageDecision:
         """
@@ -396,22 +391,54 @@ class SASTTriageAgent:
         """
         
         try:
-            # Use LangGraph agent invocation
-            result = await self.agent.ainvoke({
-                "messages": [("human", input_prompt)]
-            })
+            # Build conversation with system prompt and user request
+            messages = [
+                ("system", self.system_prompt),
+                ("human", input_prompt)
+            ]
             
-            # Parse the agent's response from LangGraph format
-            messages = result.get("messages", [])
-            if messages:
-                # Get the last AI message
-                last_message = messages[-1]
-                if hasattr(last_message, 'content'):
-                    output = last_message.content
+            # Run the agent with tools - allow multiple iterations
+            max_iterations = 15
+            for iteration in range(max_iterations):
+                print(f"  Iteration {iteration + 1}/{max_iterations}")
+                
+                # Get LLM response
+                response = await self.llm_with_tools.ainvoke(messages)
+                messages.append(response)
+                
+                # If LLM wants to use tools
+                if response.tool_calls:
+                    for tool_call in response.tool_calls:
+                        tool_name = tool_call["name"]
+                        tool_args = tool_call["args"]
+                        
+                        print(f"    Using tool: {tool_name}")
+                        
+                        # Find and execute the tool
+                        tool_result = None
+                        for t in self.tools:
+                            if t.name == tool_name:
+                                try:
+                                    tool_result = t.invoke(tool_args)
+                                except Exception as e:
+                                    tool_result = {"error": str(e)}
+                                break
+                        
+                        if tool_result is None:
+                            tool_result = {"error": f"Tool {tool_name} not found"}
+                        
+                        # Add tool result to conversation
+                        tool_message = ToolMessage(
+                            content=str(tool_result),
+                            tool_call_id=tool_call["id"]
+                        )
+                        messages.append(tool_message)
                 else:
-                    output = str(last_message)
-            else:
-                output = "{}"
+                    # No more tool calls, we have the final answer
+                    break
+            
+            # Get the final response content
+            output = messages[-1].content if messages else "{}"
             
             # Try to extract JSON from the output
             import re
@@ -542,8 +569,8 @@ class SASTTriageAgent:
         return triage_results
 
 
-# LangGraph Implementation for Complex Workflows
-def create_langgraph_workflow():
+# Alternative workflow implementation (if needed in future)
+def create_workflow():
     """
     Create a LangGraph workflow for parallel finding analysis.
     """
