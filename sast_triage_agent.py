@@ -7,16 +7,12 @@ import os
 import csv
 import json
 import asyncio
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime
-from enum import Enum
+from typing import Dict, List, Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 from pydantic import BaseModel, Field
-from typing_extensions import TypedDict
 
 
 # Configuration
@@ -26,63 +22,12 @@ DEFAULT_CSV_FILE = f"{FINDINGS_PATH}/triage_list.csv"
 DEFAULT_JSON_FILE = f"{FINDINGS_PATH}/findings_details.json"
 
 
-class Severity(str, Enum):
-    HIGH = "HIGH"
-    MEDIUM = "MEDIUM"
-    LOW = "LOW"
-
-
-class TriageStatus(str, Enum):
-    TRUE_POSITIVE = "true_positive"
-    FALSE_POSITIVE = "false_positive"
-    NEEDS_REVIEW = "needs_review"
-
-
-class DataflowNode(BaseModel):
-    """Represents a single node in the dataflow chain"""
-    column: str
-    fileName: str
-    fullName: str
-    length: int
-    line: str
-    methodLine: int
-    method: str
-    name: str
-    nodeID: int
-    domType: str
-
-
-class Finding(BaseModel):
-    """Represents a Checkmarx finding"""
-    findingId: str
-    category: str
-    cweID: int
-    languageName: str
-    queryName: str
-    severity: Severity
-    dataflow: List[Dict]
-
-
 class TriageDecision(BaseModel):
     """Structured output for triage decisions matching Checkmarx format"""
     findingId: str = Field(description="Unique identifier for the finding")
     assessment_result: str = Field(description="CONFIRMED, NOT_EXPLOITABLE, or REFUSED")
     assessment_confidence: float = Field(description="Confidence score between 0 and 1")
     assessment_justification: str = Field(description="Detailed justification for the decision")
-
-
-class TriageState(TypedDict):
-    """State management for the triage workflow"""
-    csv_path: str
-    json_path: str
-    codebase_path: str
-    findings_list: List[Dict]
-    findings_details: List[Dict]
-    current_finding: Optional[Dict]
-    current_index: int
-    triage_results: List[Dict]
-    analysis_complete: bool
-    error_log: List[str]
 
 
 # Tool Definitions
