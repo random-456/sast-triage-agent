@@ -1,0 +1,140 @@
+[
+    {
+        "findingId": "8ac6484c65c49772",
+        "category": "JavaScript_Angular",
+        "cweID": 79,
+        "languageName": "javascript",
+        "queryName": "Angular_Client_DOM_XSS",
+        "severity": "HIGH",
+        "dataflow": [
+            {
+                "column": "62",
+                "fileName": "/frontend/src/app/search-result.component.ts",
+                "fullName": "CxJSNS_565484:SearchResultComponent.route.snapshot.queryParam.q",
+                "length": 1,
+                "line": "152",
+                "methodLine": 151,
+                "method": "filterTable",
+                "name": "q",
+                "nodeID": 185156,
+                "domType": "MemberAccess"
+            },
+            {
+                "column": "28",
+                "fileName": "/frontend/src/app/search-result.component.ts",
+                "fullName": "CxJSNS_565484:SearchResultComponent.searchTerm",
+                "length": 10,
+                "line": "152",
+                "methodLine": 151,
+                "method": "filterTable",
+                "name": "searchTerm",
+                "nodeID": 185157,
+                "domType": "Assignment"
+            },
+            {
+                "column": "45",
+                "fileName": "/frontend/src/app/search-result.component.ts",
+                "fullName": "CxJSNS_565484:SearchResultComponent.resultDiv.innerHTML",
+                "length": 9,
+                "line": "168",
+                "methodLine": 151,
+                "method": "filterTable",
+                "name": "innerHTML",
+                "nodeID": 185164,
+                "domType": "DangerousHTMLAssignment"
+            }
+        ]
+    },
+    {
+        "findingId": "9ui9316uww0i9e9j",
+        "category": "SQL_Injection",
+        "cweID": 89,
+        "languageName": "javascript",
+        "queryName": "SQL_Injection",
+        "severity": "HIGH",
+        "dataflow": [
+            {
+                "column": "35",
+                "fileName": "/backend/api/users.js",
+                "fullName": "req.params.userId",
+                "length": 6,
+                "line": "45",
+                "methodLine": 44,
+                "method": "getUserById",
+                "name": "userId",
+                "nodeID": 294851,
+                "domType": "ParameterAccess"
+            },
+            {
+                "column": "52",
+                "fileName": "/backend/api/users.js",
+                "fullName": "query",
+                "length": 5,
+                "line": "46",
+                "methodLine": 44,
+                "method": "getUserById",
+                "name": "query",
+                "nodeID": 294852,
+                "domType": "StringConcatenation"
+            },
+            {
+                "column": "18",
+                "fileName": "/backend/api/users.js",
+                "fullName": "db.execute",
+                "length": 10,
+                "line": "47",
+                "methodLine": 44,
+                "method": "getUserById",
+                "name": "execute",
+                "nodeID": 294853,
+                "domType": "DatabaseQuery"
+            }
+        ]
+    },
+    {
+        "findingId": "7bc5594d76e58883",
+        "category": "Path_Traversal",
+        "cweID": 22,
+        "languageName": "javascript",
+        "queryName": "Path_Traversal",
+        "severity": "MEDIUM",
+        "dataflow": [
+            {
+                "column": "28",
+                "fileName": "/backend/fileService.js",
+                "fullName": "req.query.filename",
+                "length": 8,
+                "line": "23",
+                "methodLine": 22,
+                "method": "downloadFile",
+                "name": "filename",
+                "nodeID": 384729,
+                "domType": "QueryParameter"
+            },
+            {
+                "column": "41",
+                "fileName": "/backend/fileService.js",
+                "fullName": "path.join",
+                "length": 9,
+                "line": "24",
+                "methodLine": 22,
+                "method": "downloadFile",
+                "name": "join",
+                "nodeID": 384730,
+                "domType": "PathConcatenation"
+            },
+            {
+                "column": "15",
+                "fileName": "/backend/fileService.js",
+                "fullName": "fs.readFile",
+                "length": 11,
+                "line": "25",
+                "methodLine": 22,
+                "method": "downloadFile",
+                "name": "readFile",
+                "nodeID": 384731,
+                "domType": "FileSystemAccess"
+            }
+        ]
+    }
+]
