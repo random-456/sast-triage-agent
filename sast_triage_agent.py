@@ -139,6 +139,135 @@ def get_finding_details(finding_id: str, json_path: str = DEFAULT_JSON_FILE) -> 
 
 
 @tool
+def read_file(file_path: str, start_line: Optional[int] = None, end_line: Optional[int] = None) -> Dict:
+    """
+    Read an entire file or specific line range from the codebase.
+    
+    Args:
+        file_path: Path to the file relative to codebase
+        start_line: Optional starting line number (1-indexed)
+        end_line: Optional ending line number (1-indexed)
+    
+    Returns:
+        File contents with line numbers
+    """
+    try:
+        full_path = os.path.join(CODEBASE_PATH, file_path.lstrip('/'))
+        
+        if not os.path.exists(full_path):
+            return {"error": f"File not found: {full_path}"}
+        
+        with open(full_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # Determine range
+        start = (start_line - 1) if start_line else 0
+        end = end_line if end_line else len(lines)
+        start = max(0, start)
+        end = min(len(lines), end)
+        
+        result = {
+            'file': file_path,
+            'total_lines': len(lines),
+            'showing_lines': f"{start+1}-{end}",
+            'content': []
+        }
+        
+        for i in range(start, end):
+            result['content'].append(f"{i+1:5}: {lines[i].rstrip()}")
+        
+        return result
+    except Exception as e:
+        return {"error": f"Failed to read file: {str(e)}"}
+
+
+@tool
+def search_in_files(pattern: str, file_pattern: str = "*.py", max_results: int = 50) -> Dict:
+    """
+    Search for a pattern in files within the codebase (like grep).
+    
+    Args:
+        pattern: Regular expression or string to search for
+        file_pattern: File pattern to search in (e.g., "*.py", "*.js")
+        max_results: Maximum number of results to return
+    
+    Returns:
+        Search results with file paths and matching lines
+    """
+    import re
+    import glob
+    
+    try:
+        results = []
+        search_path = os.path.join(CODEBASE_PATH, "**", file_pattern)
+        files = glob.glob(search_path, recursive=True)
+        
+        pattern_re = re.compile(pattern, re.IGNORECASE)
+        
+        for file_path in files[:100]:  # Limit files to search
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                    for i, line in enumerate(lines):
+                        if pattern_re.search(line):
+                            rel_path = os.path.relpath(file_path, CODEBASE_PATH)
+                            results.append({
+                                'file': rel_path,
+                                'line': i + 1,
+                                'content': line.strip()
+                            })
+                            if len(results) >= max_results:
+                                break
+                if len(results) >= max_results:
+                    break
+            except:
+                continue
+        
+        return {
+            'pattern': pattern,
+            'matches_found': len(results),
+            'results': results
+        }
+    except Exception as e:
+        return {"error": f"Search failed: {str(e)}"}
+
+
+@tool
+def list_directory(directory_path: str = ".") -> Dict:
+    """
+    List files and directories in a given path within the codebase.
+    
+    Args:
+        directory_path: Path relative to codebase (default is root)
+    
+    Returns:
+        List of files and directories
+    """
+    try:
+        full_path = os.path.join(CODEBASE_PATH, directory_path.lstrip('/'))
+        
+        if not os.path.exists(full_path):
+            return {"error": f"Directory not found: {full_path}"}
+        
+        items = []
+        for item in os.listdir(full_path):
+            item_path = os.path.join(full_path, item)
+            items.append({
+                'name': item,
+                'type': 'directory' if os.path.isdir(item_path) else 'file',
+                'size': os.path.getsize(item_path) if os.path.isfile(item_path) else None
+            })
+        
+        return {
+            'directory': directory_path,
+            'total_items': len(items),
+            'items': sorted(items, key=lambda x: (x['type'], x['name']))
+        }
+    except Exception as e:
+        return {"error": f"Failed to list directory: {str(e)}"}
+
+
+@tool
 def analyze_code_location(file_path: str, line_number: int, context_lines: int = 15) -> Dict:
     """
     Analyze code at a specific location with surrounding context.
@@ -307,7 +436,10 @@ class SASTTriageAgent:
         self.tools = [
             parse_csv_findings,
             get_finding_details,
-            analyze_code_location,
+            read_file,  # NEW: Read entire files
+            search_in_files,  # NEW: Search patterns across codebase
+            list_directory,  # NEW: Explore directory structure
+            analyze_code_location,  # Still useful for quick context
             trace_dataflow,
             check_for_sanitization
         ]
@@ -442,18 +574,52 @@ class SASTTriageAgent:
             
             # Try to extract JSON from the output
             import re
-            json_match = re.search(r'\{.*\}', output, re.DOTALL)
+            
+            # First try to find JSON block
+            json_match = re.search(r'\{[^{}]*"findingId"[^{}]*\}', output, re.DOTALL)
             if json_match:
-                decision_dict = json.loads(json_match.group())
-                return TriageDecision(**decision_dict)
-            else:
-                # Fallback decision if parsing fails
-                return TriageDecision(
-                    findingId=finding_id,
-                    assessment_result="REFUSED",
-                    assessment_confidence=0.3,
-                    assessment_justification="Analysis incomplete - manual review required. The agent could not extract a structured decision from the analysis."
-                )
+                try:
+                    decision_dict = json.loads(json_match.group())
+                    return TriageDecision(**decision_dict)
+                except json.JSONDecodeError:
+                    pass
+            
+            # If no valid JSON, try to extract key information from the text
+            result = "REFUSED"
+            confidence = 0.3
+            
+            # Look for assessment patterns in the text
+            if "CONFIRMED" in output.upper():
+                result = "CONFIRMED"
+                confidence = 0.7
+            elif "NOT_EXPLOITABLE" in output.upper() or "FALSE POSITIVE" in output.upper():
+                result = "NOT_EXPLOITABLE"
+                confidence = 0.7
+            
+            # Extract any justification text
+            justification_patterns = [
+                r"justification[:\s]+([^\n]+)",
+                r"reason[:\s]+([^\n]+)",
+                r"because[:\s]+([^\n]+)"
+            ]
+            
+            justification = "Analysis completed but structured output was not properly formatted."
+            for pattern in justification_patterns:
+                match = re.search(pattern, output, re.IGNORECASE)
+                if match:
+                    justification = match.group(1).strip()
+                    break
+            
+            # Add context about what was analyzed
+            if "tool:" in output.lower():
+                justification += f" Tools were used during analysis. Full output: {output[:500]}..."
+            
+            return TriageDecision(
+                findingId=finding_id,
+                assessment_result=result,
+                assessment_confidence=confidence,
+                assessment_justification=justification
+            )
         except Exception as e:
             print(f"Error analyzing finding {finding_id}: {str(e)}")
             return TriageDecision(
