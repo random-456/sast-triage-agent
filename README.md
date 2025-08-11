@@ -17,9 +17,19 @@ An intelligent agent for automated triage of Checkmarx SAST findings using LangC
 
 ## Setup
 
-### 1. Install Dependencies
+### 1. Set up Virtual Environment and Install Dependencies
 
 ```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Linux/Mac:
+source venv/bin/activate
+# On Windows:
+# venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
