@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 
 # Configuration
-CODEBASE_PATH = "./codebase"
+CODEBASE_PATH = "codebase"
 FINDINGS_PATH = "findings"
 DEFAULT_CSV_FILE = f"{FINDINGS_PATH}/triage_list.csv"
 DEFAULT_JSON_FILE = f"{FINDINGS_PATH}/findings_details.json"
