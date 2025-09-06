@@ -41,11 +41,28 @@ findingId,severity,triaged
 ```json
 [{
     "findingId": "8ac6484c65c49772",
-    "queryName": "Angular_Client_DOM_XSS", 
+    "queryName": "Angular_Client_DOM_XSS",
+    "cweID": 79,
     "severity": "HIGH",
     "dataflow": [
-        {"fileName": "/app/file.ts", "line": "152", "domType": "source"},
-        {"fileName": "/app/file.ts", "line": "160", "domType": "sink"}
+        {
+            "fileName": "/frontend/src/app/search-result.component.ts",
+            "line": "152",
+            "column": "62", 
+            "method": "filterTable",
+            "name": "q",
+            "nodeID": 1,
+            "domType": "source"
+        },
+        {
+            "fileName": "/frontend/src/app/search-result.component.ts",
+            "line": "160",
+            "column": "18",
+            "method": "filterTable", 
+            "name": "innerHTML",
+            "nodeID": 2,
+            "domType": "sink"
+        }
     ]
 }]
 ```
