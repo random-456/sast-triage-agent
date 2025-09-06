@@ -1,224 +1,22 @@
 """
-SAST Triage Agent using LangChain and Gemini
-Analyzes Checkmarx findings and provides automated triage decisions
+Main SAST Triage Agent using LangChain
 """
 
 import os
 import csv
 import json
-import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List, Any
 
 from langchain_openai import ChatOpenAI
-from langchain_core.tools import tool
 from langchain_core.messages import ToolMessage
-from pydantic import BaseModel, Field
 
-
-# Configuration
-CODEBASE_PATH = "codebase"
-FINDINGS_PATH = "findings"
-DEFAULT_CSV_FILE = f"{FINDINGS_PATH}/triage_list.csv"
-DEFAULT_JSON_FILE = f"{FINDINGS_PATH}/findings_details.json"
-
-
-class TriageDecision(BaseModel):
-    """Structured output for triage decisions matching Checkmarx format"""
-    findingId: str = Field(description="Unique identifier for the finding")
-    assessment_result: str = Field(description="CONFIRMED, NOT_EXPLOITABLE, or REFUSED")
-    assessment_confidence: float = Field(description="Confidence score between 0 and 1")
-    assessment_justification: str = Field(description="Detailed justification for the decision")
-
-
-# Tool Definitions
-@tool
-def parse_csv_findings(file_path: str = DEFAULT_CSV_FILE) -> List[Dict]:
-    """
-    Parse the CSV file containing SAST findings list.
-    
-    Args:
-        file_path: Path to the CSV file with findingId, severity, triaged columns
-    
-    Returns:
-        List of finding records from CSV
-    """
-    try:
-        findings = []
-        with open(file_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if row['triaged'].lower() == 'no':
-                    findings.append({
-                        'findingId': row['findingId'],
-                        'severity': row['severity'],
-                        'triaged': row['triaged']
-                    })
-        return findings
-    except Exception as e:
-        return [{"error": f"Failed to parse CSV: {str(e)}"}]
-
-
-@tool
-def get_finding_details(finding_id: str, json_path: str = DEFAULT_JSON_FILE) -> Dict:
-    """
-    Get detailed information for a specific finding from JSON file.
-    
-    Args:
-        finding_id: The finding ID to look up
-        json_path: Path to the JSON file with detailed findings
-    
-    Returns:
-        Detailed finding information including dataflow
-    """
-    try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            all_findings = json.load(f)
-        
-        for finding in all_findings:
-            if finding['findingId'] == finding_id:
-                return finding
-        
-        return {"error": f"Finding {finding_id} not found in details"}
-    except Exception as e:
-        return {"error": f"Failed to get finding details: {str(e)}"}
-
-
-@tool
-def read_file(file_path: str) -> Dict:
-    """
-    Read an entire file from the codebase.
-    
-    Args:
-        file_path: Path to the file relative to codebase
-    
-    Returns:
-        Complete file contents with line numbers
-    """
-    try:
-        full_path = os.path.join(CODEBASE_PATH, file_path.lstrip('/'))
-        
-        if not os.path.exists(full_path):
-            return {"error": f"File not found: {full_path}"}
-        
-        with open(full_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        # Limit large files to prevent overwhelming the LLM
-        max_lines = 500
-        if len(lines) > max_lines:
-            truncated = True
-            lines = lines[:max_lines]
-        else:
-            truncated = False
-        
-        result = {
-            'file': file_path,
-            'total_lines': len(lines),
-            'truncated': truncated,
-            'content': []
-        }
-        
-        for i, line in enumerate(lines):
-            result['content'].append(f"{i+1:5}: {line.rstrip()}")
-        
-        return result
-    except Exception as e:
-        return {"error": f"Failed to read file: {str(e)}"}
-
-
-@tool
-def search_in_files(pattern: str, file_extension: str) -> Dict:
-    """
-    Search for a pattern in files within the codebase.
-    
-    Args:
-        pattern: String or regex to search for
-        file_extension: File extension to search (e.g. "py", "js", "ts")
-    
-    Returns:
-        Search results with file paths and matching lines
-    """
-    import re
-    import glob
-    
-    try:
-        results = []
-        file_pattern = f"*.{file_extension}"
-        search_path = os.path.join(CODEBASE_PATH, "**", file_pattern)
-        files = glob.glob(search_path, recursive=True)
-        
-        pattern_re = re.compile(pattern, re.IGNORECASE)
-        max_results = 30  # Fixed limit to avoid overwhelming
-        
-        for file_path in files[:50]:  # Limit files to search
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                    for i, line in enumerate(lines):
-                        if pattern_re.search(line):
-                            rel_path = os.path.relpath(file_path, CODEBASE_PATH)
-                            results.append({
-                                'file': rel_path,
-                                'line': i + 1,
-                                'content': line.strip()
-                            })
-                            if len(results) >= max_results:
-                                break
-                if len(results) >= max_results:
-                    break
-            except:
-                continue
-        
-        return {
-            'pattern': pattern,
-            'file_extension': file_extension,
-            'matches_found': len(results),
-            'results': results
-        }
-    except Exception as e:
-        return {"error": f"Search failed: {str(e)}"}
-
-
-@tool
-def list_directory(directory_path: str) -> Dict:
-    """
-    List files and directories in a given path within the codebase.
-    
-    Args:
-        directory_path: Path relative to codebase (use "." for root)
-    
-    Returns:
-        List of files and directories
-    """
-    try:
-        if directory_path == ".":
-            full_path = CODEBASE_PATH
-        else:
-            full_path = os.path.join(CODEBASE_PATH, directory_path.lstrip('/'))
-        
-        if not os.path.exists(full_path):
-            return {"error": f"Directory not found: {full_path}"}
-        
-        items = []
-        for item in os.listdir(full_path):
-            item_path = os.path.join(full_path, item)
-            items.append({
-                'name': item,
-                'type': 'directory' if os.path.isdir(item_path) else 'file',
-                'size': os.path.getsize(item_path) if os.path.isfile(item_path) else None
-            })
-        
-        return {
-            'directory': directory_path,
-            'total_items': len(items),
-            'items': sorted(items, key=lambda x: (x['type'], x['name']))
-        }
-    except Exception as e:
-        return {"error": f"Failed to list directory: {str(e)}"}
-
-
-
-
+from .config import CODEBASE_PATH, DEFAULT_CSV_FILE, DEFAULT_JSON_FILE, MAX_ANALYSIS_ITERATIONS
+from .models import TriageDecision
+from .tools import (
+    read_file, search_in_files, list_directory, submit_triage_decision,
+    parse_csv_findings, get_finding_details
+)
+from .logging_utils import LoggingManager
 
 
 class SASTTriageAgent:
@@ -251,11 +49,19 @@ class SASTTriageAgent:
         self.tools = [
             read_file,  # Read entire files
             search_in_files,  # Search patterns across codebase
-            list_directory  # Explore directory structure
+            list_directory,  # Explore directory structure
+            submit_triage_decision  # Submit final triage decision
         ]
         
         # Bind tools to the LLM
         self.llm_with_tools = self.llm.bind_tools(self.tools)
+        
+        # Store model configuration for logging
+        self.model_name = model_name
+        self.temperature = temperature
+        
+        # Setup logging
+        self.logger = LoggingManager(model_name, temperature)
         
         # System prompt for the security analyst
         self.system_prompt = """You are an experienced senior security analyst evaluating SAST findings from Checkmarx.
@@ -295,28 +101,40 @@ class SASTTriageAgent:
         3. Analyze code at each critical point in dataflow
         4. Check for vulnerability patterns and existing mitigations
         5. Make informed decision based on comprehensive analysis
+        
+        IMPORTANT: When you have completed your analysis and are ready to provide your final assessment,
+        use the 'submit_triage_decision' tool with:
+        - is_exploitable: true/false based on your analysis
+        - confidence: your confidence level (0.0 to 1.0)
+        - justification: detailed explanation of your decision
         """
     
-    async def analyze_single_finding(self, finding_id: str, severity: str, update_csv: bool = True) -> TriageDecision:
+    async def analyze_single_finding(self, finding_id: str, severity: str = None, update_csv: bool = True) -> TriageDecision:
         """
         Analyze a single finding and return triage decision.
         
         Args:
             finding_id: The finding ID to analyze
-            severity: Original severity from Checkmarx
+            severity: Original severity from Checkmarx (unused, kept for compatibility)
+            update_csv: Whether to update CSV status (unused, kept for compatibility)
         
         Returns:
             TriageDecision with analysis results
         """
+        # Start logging for this finding
+        finding_log = self.logger.log_finding_start(finding_id)
+        
         # Pre-load the complete finding details including dataflow
         finding_details = get_finding_details(finding_id)
         if 'error' in finding_details:
-            return TriageDecision(
+            decision = TriageDecision(
                 findingId=finding_id,
                 assessment_result="REFUSED",
                 assessment_confidence=0.0,
                 assessment_justification=f"Could not load finding details: {finding_details['error']}"
             )
+            self.logger.log_finding_complete(finding_log, decision)
+            return decision
         
         # Create comprehensive initial context
         input_prompt = f"""
@@ -342,21 +160,13 @@ class SASTTriageAgent:
         Take as much time as you need. Read whatever files you think are relevant.
         The goal is to understand if this vulnerability is real and exploitable.
         
-        After your investigation, provide your final assessment as a JSON object.
-        The LAST thing in your response must be this JSON (you can explain your analysis before it):
+        IMPORTANT: When you have completed your analysis and are ready to submit your decision,
+        use the 'submit_triage_decision' tool with:
+        - is_exploitable: true if the vulnerability is real and exploitable, false otherwise
+        - confidence: your confidence level (0.0 to 1.0)
+        - justification: detailed explanation of your decision
         
-        {{
-            "findingId": "{finding_id}",
-            "assessment_result": "CONFIRMED",
-            "assessment_confidence": 0.85,
-            "assessment_justification": "Based on my analysis, this is a true positive XSS vulnerability because user input flows to innerHTML without sanitization..."
-        }}
-        
-        Requirements:
-        - assessment_result: "CONFIRMED" or "NOT_EXPLOITABLE" or "REFUSED"
-        - assessment_confidence: 0.0 to 1.0
-        - assessment_justification: Your analysis summary
-        - Put the JSON at the END of your response
+        Finding ID for reference: {finding_id}
         """
         
         try:
@@ -366,14 +176,25 @@ class SASTTriageAgent:
                 ("human", input_prompt)
             ]
             
+            # Log initial messages
+            self.logger.log_message(finding_log, "system", self.system_prompt)
+            self.logger.log_message(finding_log, "human", input_prompt)
+            
             # Run the agent with tools - allow MORE iterations for deeper investigation
-            max_iterations = 25
+            max_iterations = MAX_ANALYSIS_ITERATIONS
+            
             for iteration in range(max_iterations):
                 print(f"  Iteration {iteration + 1}/{max_iterations}")
                 
                 # Get LLM response
                 response = await self.llm_with_tools.ainvoke(messages)
                 messages.append(response)
+                
+                # Log assistant response
+                tool_calls_info = []
+                if response.tool_calls:
+                    tool_calls_info = [{"name": tc["name"], "args": tc["args"]} for tc in response.tool_calls]
+                self.logger.log_message(finding_log, "assistant", response.content, tool_calls_info)
                 
                 # If LLM wants to use tools
                 if response.tool_calls:
@@ -383,18 +204,42 @@ class SASTTriageAgent:
                         
                         print(f"    Using tool: {tool_name}")
                         
-                        # Find and execute the tool
-                        tool_result = None
-                        for t in self.tools:
-                            if t.name == tool_name:
-                                try:
-                                    tool_result = t.invoke(tool_args)
-                                except Exception as e:
-                                    tool_result = {"error": str(e)}
-                                break
+                        # Check if this is the submit_triage_decision tool
+                        if tool_name == "submit_triage_decision":
+                            # Extract decision from tool arguments
+                            try:
+                                decision = TriageDecision(
+                                    findingId=finding_id,
+                                    assessment_result="CONFIRMED" if tool_args.get("is_exploitable") else "NOT_EXPLOITABLE",
+                                    assessment_confidence=tool_args.get("confidence", 0.5),
+                                    assessment_justification=tool_args.get("justification", "")
+                                )
+                                
+                                # Log the decision
+                                self.logger.log_finding_complete(finding_log, decision)
+                                
+                                print(f"  Decision submitted: {decision.assessment_result} (confidence: {decision.assessment_confidence:.2f})")
+                                return decision
+                                
+                            except Exception as e:
+                                print(f"  Error processing decision: {e}")
+                                tool_result = {"error": f"Failed to process decision: {str(e)}"}
+                        else:
+                            # Execute other tools normally
+                            tool_result = None
+                            for t in self.tools:
+                                if t.name == tool_name:
+                                    try:
+                                        tool_result = t.invoke(tool_args)
+                                    except Exception as e:
+                                        tool_result = {"error": str(e)}
+                                    break
+                            
+                            if tool_result is None:
+                                tool_result = {"error": f"Tool {tool_name} not found"}
                         
-                        if tool_result is None:
-                            tool_result = {"error": f"Tool {tool_name} not found"}
+                        # Log tool result
+                        self.logger.log_tool_result(finding_log, tool_name, tool_args, tool_result)
                         
                         # Add tool result to conversation
                         tool_message = ToolMessage(
@@ -403,92 +248,36 @@ class SASTTriageAgent:
                         )
                         messages.append(tool_message)
                 else:
-                    # No more tool calls, check if we have valid JSON
-                    output = response.content
-                    
-                    # Quick check if response contains valid JSON
-                    if '{' in output and 'findingId' in output:
-                        break
-                    
-                    # If not, ask for JSON formatting
-                    messages.append(("human", f"Please provide your final assessment as the JSON format requested, with findingId='{finding_id}'."))
-                    retry_response = await self.llm_with_tools.ainvoke(messages)
-                    messages.append(retry_response)
-                    break
+                    # No tool calls - check if we need to prompt for decision
+                    if iteration == max_iterations - 1:
+                        # Last iteration, prompt for decision
+                        prompt = "Please use the submit_triage_decision tool to provide your final assessment."
+                        messages.append(("human", prompt))
+                        self.logger.log_message(finding_log, "human", prompt)
             
-            # Get the final response content
-            output = messages[-1].content if messages else "{}"
+            # If we reach here, no decision was submitted via tool
+            print(f"  Warning: No decision submitted after {max_iterations} iterations")
             
-            # Try to extract JSON from the output
-            import re
-            
-            # Try to find JSON at the end of the response
-            # Look for the last JSON-like structure in the output
-            json_patterns = [
-                r'\{[^{}]*"findingId"[^{}]*"assessment_result"[^{}]*"assessment_confidence"[^{}]*"assessment_justification"[^{}]*\}',
-                r'\{\s*"findingId".*?"assessment_justification".*?\}',
-                r'\{[^}]*"findingId"[^}]*\}(?!.*\{[^}]*"findingId")'  # Last JSON with findingId
-            ]
-            
-            for pattern in json_patterns:
-                matches = re.findall(pattern, output, re.DOTALL)
-                if matches:
-                    # Take the last match (should be at the end)
-                    try:
-                        decision_dict = json.loads(matches[-1])
-                        if 'findingId' in decision_dict:
-                            return TriageDecision(**decision_dict)
-                    except json.JSONDecodeError:
-                        continue
-            
-            # If no JSON found, try to extract from the text more intelligently
-            # Look for the actual analysis content
-            print(f"  Warning: Could not extract JSON from response. Full output:\n{output[:500]}...")
-            
-            # If no valid JSON, try to extract key information from the text
-            result = "REFUSED"
-            confidence = 0.3
-            
-            # Look for assessment patterns in the text
-            if "CONFIRMED" in output.upper():
-                result = "CONFIRMED"
-                confidence = 0.7
-            elif "NOT_EXPLOITABLE" in output.upper() or "FALSE POSITIVE" in output.upper():
-                result = "NOT_EXPLOITABLE"
-                confidence = 0.7
-            
-            # Extract any justification text
-            justification_patterns = [
-                r"justification[:\s]+([^\n]+)",
-                r"reason[:\s]+([^\n]+)",
-                r"because[:\s]+([^\n]+)"
-            ]
-            
-            justification = "Analysis completed but structured output was not properly formatted."
-            for pattern in justification_patterns:
-                match = re.search(pattern, output, re.IGNORECASE)
-                if match:
-                    justification = match.group(1).strip()
-                    break
-            
-            # Add context about what was analyzed
-            if "tool:" in output.lower():
-                justification += f" Tools were used during analysis. Full output: {output[:500]}..."
-            
-            return TriageDecision(
+            # Return a timeout/refused decision
+            decision = TriageDecision(
                 findingId=finding_id,
-                assessment_result=result,
-                assessment_confidence=confidence,
-                assessment_justification=justification
+                assessment_result="REFUSED",
+                assessment_confidence=0.0,
+                assessment_justification=f"Analysis did not complete within {max_iterations} iterations. Manual review required."
             )
+            
+            self.logger.log_finding_complete(finding_log, decision)
+            return decision
         except Exception as e:
             print(f"Error analyzing finding {finding_id}: {str(e)}")
-            return TriageDecision(
+            decision = TriageDecision(
                 findingId=finding_id,
                 assessment_result="REFUSED",
                 assessment_confidence=0.0,
                 assessment_justification=f"Analysis failed due to error: {str(e)}. Manual review required."
             )
+            self.logger.log_finding_complete(finding_log, decision)
+            return decision
     
     def update_csv_status(self, finding_id: str, csv_path: str = DEFAULT_CSV_FILE):
         """Update the triaged status in CSV file."""
@@ -656,29 +445,3 @@ class SASTTriageAgent:
             return error_result
         
         return triage_results
-
-
-
-
-# Main execution
-async def main():
-    """Main entry point for the SAST triage agent"""
-    
-    # Initialize the agent
-    agent = SASTTriageAgent(
-        model_name="gemini-2.5-pro",
-        temperature=0.1
-    )
-    
-    # Process findings
-    results = await agent.process_all_findings(
-        csv_path=DEFAULT_CSV_FILE,
-        json_path=DEFAULT_JSON_FILE
-    )
-    
-    return results
-
-
-if __name__ == "__main__":
-    # Run the agent
-    asyncio.run(main())
