@@ -25,7 +25,7 @@ load_dotenv()
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from sast_triage_agent import SASTTriageAgent
+from sast_triage import SASTTriageAgent
 
 
 def check_prerequisites():

@@ -1,3 +1,8 @@
+CLAUDE.md
+.claude
+codebase
+findings
+
 # Environment and configuration
 .env
 *.local
@@ -60,6 +65,9 @@ triage_results.json
 # Test data (keep samples)
 findings/triage_list.csv
 findings/findings_details.json
+
+# Local notes
+local-notes/
 
 # Jupyter
 .ipynb_checkpoints
