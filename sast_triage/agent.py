@@ -24,7 +24,7 @@ class SASTTriageAgent:
     
     def __init__(
         self, 
-        base_url: str = "http://localhost:4000",  # LiteLLM proxy URL
+        base_url: str = "http://localhost:4000",
         model_name: str = "gemini-2.5-pro", 
         api_key: str = "dummy-key",
         temperature: float = 0.1

@@ -86,7 +86,7 @@ def read_file(file_path: str) -> Dict:
         with open(full_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         
-        # No limit - modern LLMs have huge context windows
+        # No limit - Gemini etc. have a huge context
         result = {
             'file': file_path,
             'total_lines': len(lines),
@@ -120,7 +120,7 @@ def search_in_files(pattern: str, file_extension: str) -> Dict:
         files = glob.glob(search_path, recursive=True)
         
         pattern_re = re.compile(pattern, re.IGNORECASE)
-        max_results = MAX_SEARCH_RESULTS  # Safety cap: ~500k tokens worth of results
+        max_results = MAX_SEARCH_RESULTS  # Safety cap
         
         for file_path in files:  # Search ALL files, no limit
             try:

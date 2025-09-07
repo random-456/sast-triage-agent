@@ -1,6 +1,6 @@
 # SAST Triage Agent
 
-Automated triage of Checkmarx SAST findings using LangChain and LLM.
+Automated triage of Checkmarx One SAST findings using LangChain and LLM. The agent analyzes dataflow paths, reads source code files, searches for patterns and makes exploitability decisions based on code context.
 
 ## Setup
 
