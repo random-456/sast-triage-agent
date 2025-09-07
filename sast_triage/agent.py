@@ -384,21 +384,21 @@ class SASTTriageAgent:
         for i, finding in enumerate(findings):
             print(f"\nAnalyzing finding {i+1}/{len(findings)}: {finding['findingId']}")
             
-            # Mark as triaged IMMEDIATELY when starting
-            self.update_csv_status(finding['findingId'], csv_path)
-            
             try:
                 decision = await self.analyze_single_finding(
                     finding['findingId'],
                     finding['severity'],
-                    update_csv=False  # Already updated above
+                    update_csv=False
                 )
                 
                 result_dict = decision.dict()
                 triage_results.append(result_dict)
                 
-                # Save result immediately
+                # Save result
                 self.save_incremental_result(result_dict)
+                
+                # Mark as triaged after analysis
+                self.update_csv_status(finding['findingId'], csv_path)
                 
                 # Print summary
                 print(f"  Result: {decision.assessment_result}")
@@ -416,8 +416,11 @@ class SASTTriageAgent:
                 }
                 triage_results.append(error_result)
                 self.save_incremental_result(error_result)
+                
+                # Mark as triaged even for errors (so they don't retry indefinitely)
+                self.update_csv_status(finding['findingId'], csv_path)
         
-        # Save results in requested format (findings_assessment.json)
+        # Save results (findings_assessment.json)
         with open('findings_assessment.json', 'w') as f:
             json.dump(triage_results, f, indent=2)
         
