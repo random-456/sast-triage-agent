@@ -1,0 +1,3 @@
+findingId,severity,triaged
+test-sql-001,HIGH,no
+test-xss-002,MEDIUM,no

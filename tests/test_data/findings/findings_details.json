@@ -1,0 +1,58 @@
+[
+    {
+        "findingId": "test-sql-001",
+        "category": "JavaScript_NodeJS",
+        "cweID": 89,
+        "languageName": "javascript",
+        "queryName": "SQL_Injection",
+        "severity": "HIGH",
+        "dataflow": [
+            {
+                "fileName": "/vulnerable.js",
+                "line": "10",
+                "column": "19",
+                "method": "get",
+                "name": "userId",
+                "nodeID": 1,
+                "domType": "source"
+            },
+            {
+                "fileName": "/vulnerable.js",
+                "line": "12",
+                "column": "17",
+                "method": "get",
+                "name": "query",
+                "nodeID": 2,
+                "domType": "sink"
+            }
+        ]
+    },
+    {
+        "findingId": "test-xss-002",
+        "category": "JavaScript_NodeJS",
+        "cweID": 79,
+        "languageName": "javascript",
+        "queryName": "XSS_Reflected",
+        "severity": "MEDIUM",
+        "dataflow": [
+            {
+                "fileName": "/nonexistent.js",
+                "line": "15",
+                "column": "10",
+                "method": "get",
+                "name": "userInput",
+                "nodeID": 1,
+                "domType": "source"
+            },
+            {
+                "fileName": "/nonexistent.js",
+                "line": "20",
+                "column": "5",
+                "method": "get",
+                "name": "innerHTML",
+                "nodeID": 2,
+                "domType": "sink"
+            }
+        ]
+    }
+]
