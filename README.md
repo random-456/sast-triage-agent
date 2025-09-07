@@ -77,3 +77,12 @@ findingId,severity,triaged
     "assessment_justification": "..."
 }]
 ```
+
+## Testing
+
+Run the test suite:
+```bash
+python -m pytest tests/
+```
+
+The test suite includes security tests, tool functionality tests and end-to-end integration tests.
