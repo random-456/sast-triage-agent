@@ -395,7 +395,7 @@ class SASTTriageAgent:
                     update_csv=False
                 )
                 
-                result_dict = decision.dict()
+                result_dict = decision.model_dump()
                 triage_results.append(result_dict)
                 
                 # Save result

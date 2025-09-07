@@ -69,7 +69,15 @@ class LoggingManager:
         return finding_log
     
     def log_message(self, finding_log: Dict, message_type: str, content: Any, tool_calls: List = None):
-        """Log a message in the conversation."""
+        """
+        Log a message in the conversation.
+        
+        Args:
+            finding_log: The finding log dictionary to append to
+            message_type: Type of message (e.g., 'system', 'human', 'assistant')
+            content: The message content
+            tool_calls: Optional list of tool calls made in this message
+        """
         log_entry = {
             "type": message_type,
             "timestamp": datetime.datetime.now().isoformat(),
@@ -85,7 +93,15 @@ class LoggingManager:
         self.save_log()
     
     def log_tool_result(self, finding_log: Dict, tool_name: str, tool_args: Dict, result: Any):
-        """Log a tool execution result."""
+        """
+        Log a tool execution result.
+        
+        Args:
+            finding_log: The finding log dictionary to append to
+            tool_name: Name of the tool that was executed
+            tool_args: Arguments passed to the tool
+            result: The result returned by the tool (will be truncated if too long)
+        """
         log_entry = {
             "type": "tool_result",
             "timestamp": datetime.datetime.now().isoformat(),
@@ -100,7 +116,13 @@ class LoggingManager:
         self.save_log()
     
     def log_finding_complete(self, finding_log: Dict, decision: TriageDecision):
-        """Complete logging for a finding."""
+        """
+        Complete logging for a finding analysis.
+        
+        Args:
+            finding_log: The finding log dictionary to finalize
+            decision: The final triage decision for this finding
+        """
         finding_log["end_time"] = datetime.datetime.now().isoformat()
         
         # Calculate duration
@@ -109,7 +131,7 @@ class LoggingManager:
         finding_log["duration_seconds"] = (end - start).total_seconds()
         
         # Add final decision
-        finding_log["final_decision"] = decision.dict() if decision else None
+        finding_log["final_decision"] = decision.model_dump() if decision else None
         
         # Save final state
         self.save_log()
