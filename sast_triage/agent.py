@@ -102,6 +102,10 @@ class SASTTriageAgent:
         4. Check for vulnerability patterns and existing mitigations
         5. Make informed decision based on comprehensive analysis
         
+        CRITICAL: Before reading any file with the read_file tool, CHECK THE CONVERSATION HISTORY FIRST.
+        Do NOT re-read files you have already accessed - the complete file content is already available 
+        in the conversation above. Re-reading the same file is wasteful and unnecessary.
+        
         IMPORTANT: When you have completed your analysis and are ready to provide your final assessment,
         use the 'submit_triage_decision' tool with:
         - is_exploitable: true/false based on your analysis
