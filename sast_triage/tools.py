@@ -14,6 +14,39 @@ from langchain_core.tools import tool
 from .config import CODEBASE_PATH, DEFAULT_CSV_FILE, DEFAULT_JSON_FILE, MAX_SEARCH_RESULTS
 
 
+def validate_safe_path(base_path: str, requested_path: str) -> str:
+    """
+    Validate that requested path stays within base_path boundary.
+    Prevents directory traversal attacks.
+    
+    Args:
+        base_path: The base directory that should not be escaped
+        requested_path: The requested path to validate
+    
+    Returns:
+        The validated absolute path
+    
+    Raises:
+        ValueError: If path traversal is detected
+    """
+    # Get absolute paths
+    base = os.path.abspath(base_path)
+    # Remove leading slash and join with base
+    clean_path = requested_path.lstrip('/').lstrip('\\')
+    full_path = os.path.abspath(os.path.join(base, clean_path))
+    
+    # Check if the resolved path is within the base path
+    # Using os.path.commonpath to ensure the path doesn't escape
+    try:
+        if not os.path.commonpath([base, full_path]) == base:
+            raise ValueError(f"Path traversal attempt detected: {requested_path}")
+    except ValueError:
+        # commonpath raises ValueError if paths are on different drives on Windows
+        raise ValueError(f"Path traversal attempt detected: {requested_path}")
+    
+    return full_path
+
+
 @tool
 def parse_csv_findings(file_path: str = DEFAULT_CSV_FILE) -> List[Dict]:
     """
@@ -78,10 +111,14 @@ def read_file(file_path: str) -> Dict:
         Complete file contents with line numbers
     """
     try:
-        full_path = os.path.join(CODEBASE_PATH, file_path.lstrip('/'))
+        # Validate path to prevent directory traversal
+        try:
+            full_path = validate_safe_path(CODEBASE_PATH, file_path)
+        except ValueError as e:
+            return {"error": f"Invalid path: {str(e)}"}
         
         if not os.path.exists(full_path):
-            return {"error": f"File not found: {full_path}"}
+            return {"error": f"File not found: {file_path}"}
         
         with open(full_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -195,13 +232,17 @@ def list_directory(directory_path: str) -> Dict:
         List of files and directories
     """
     try:
+        # Validate path to prevent directory traversal
         if directory_path == ".":
             full_path = CODEBASE_PATH
         else:
-            full_path = os.path.join(CODEBASE_PATH, directory_path.lstrip('/'))
+            try:
+                full_path = validate_safe_path(CODEBASE_PATH, directory_path)
+            except ValueError as e:
+                return {"error": f"Invalid path: {str(e)}"}
         
         if not os.path.exists(full_path):
-            return {"error": f"Directory not found: {full_path}"}
+            return {"error": f"Directory not found: {directory_path}"}
         
         items = []
         for item in os.listdir(full_path):
