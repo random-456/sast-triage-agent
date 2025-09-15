@@ -1,74 +1,63 @@
 # SAST Triage Agent
 
-Automated triage of Checkmarx One SAST findings using LangChain and LLM. The agent analyzes dataflow paths, reads source code files, searches for patterns and makes exploitability decisions based on code context.
+Automated triage of Checkmarx One SAST findings using LangChain and LLM. Fetches findings directly from Checkmarx API, clones repositories, and analyzes dataflow paths to make exploitability decisions.
 
 ## Setup
 
 ```bash
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your LLM endpoint settings
+# Edit .env with your Checkmarx and LLM settings
 ```
 
-## Directory Structure
+## Configuration
 
-```
-project/
-├── findings/
-│   ├── triage_list.csv
-│   └── findings_details.json  
-└── codebase/
-    └── (source code)
+Edit `.env` file:
+```env
+# Checkmarx One Configuration
+BASE_URL=https://
+REFRESH_TOKEN=refresh-token
+
+# LiteLLM Proxy Configuration
+LLM_BASE_URL=http://localhost:4000
+LLM_MODEL=gemini-2.0-flash-exp
+LLM_API_KEY=sk-1234
 ```
 
 ## Usage
 
 ```bash
-python run_triage.py [project_directory]
+python run_triage.py PROJECT_ID [OPTIONS]
+
+# Examples:
+python run_triage.py 12345                           # Analyze project with default settings
+python run_triage.py 12345 --severities HIGH         # Only HIGH severity findings
+python run_triage.py 12345 --output-dir ./analysis  # Custom output directory
+python run_triage.py 12345 --skip-clone              # Skip repository cloning
+python run_triage.py 12345 --clean                   # Remove cloned repo after analysis
 ```
 
-Creates `findings_assessment.json` with triage decisions.
+Options:
+- `--severities`: Comma-separated severities (default: HIGH,MEDIUM)
+- `--output-dir`: Output directory (default: current directory)
+- `--skip-clone`: Skip repository cloning
+- `--clean`: Remove cloned repository after analysis
 
-## Input Format
+## Output Structure
 
-**triage_list.csv**:
-```csv
-findingId,severity,triaged
-8ac6484c65c49772,HIGH,no
+```
+<output-dir>/
+├── findings/
+│   ├── triage_list.csv         # Finding IDs with severity and triage status
+│   └── findings_details.json   # Detailed finding data with dataflow
+├── codebase/                   # Cloned repository (if available)
+├── findings_assessment.json    # Final triage decisions
+└── triage_agent.log            # Execution log
 ```
 
-**findings_details.json**:
-```json
-[{
-    "findingId": "8ac6484c65c49772",
-    "queryName": "Angular_Client_DOM_XSS",
-    "cweID": 79,
-    "severity": "HIGH",
-    "dataflow": [
-        {
-            "fileName": "/frontend/src/app/search-result.component.ts",
-            "line": "152",
-            "column": "62", 
-            "method": "filterTable",
-            "name": "q",
-            "nodeID": 1,
-            "domType": "source"
-        },
-        {
-            "fileName": "/frontend/src/app/search-result.component.ts",
-            "line": "160",
-            "column": "18",
-            "method": "filterTable", 
-            "name": "innerHTML",
-            "nodeID": 2,
-            "domType": "sink"
-        }
-    ]
-}]
-```
+## Results Format
 
-## Output
-
+**findings_assessment.json**:
 ```json
 [{
     "findingId": "8ac6484c65c49772",

@@ -1,90 +1,107 @@
 #!/usr/bin/env python3
 """
-Simple runner script for the SAST Triage Agent
-Usage: python run_triage.py [project_directory]
+SAST Triage Agent CLI - Fetches findings from Checkmarx One and runs analysis
+Usage: python run_triage.py PROJECT_ID [OPTIONS]
 """
 
 import asyncio
+import csv
+import json
 import os
 import sys
 from pathlib import Path
+from typing import List, Optional
+
+import click
 from dotenv import load_dotenv
 
-# Handle optional project directory argument
-if len(sys.argv) > 1:
-    project_dir = sys.argv[1]
-    if not os.path.exists(project_dir):
-        print(f"Error: Directory '{project_dir}' does not exist")
-        sys.exit(1)
-    os.chdir(project_dir)
-    print(f"Changed to directory: {os.getcwd()}")
-
-# Load environment variables from .env file if it exists
+# Load environment variables
 load_dotenv()
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from sast_triage import SASTTriageAgent
+from sast_triage.api import CheckmarxClient
+from sast_triage.git import clone_repository, cleanup_repository
+from sast_triage.config import DEFAULT_SEVERITIES
 
 
-def check_prerequisites():
-    """Check if required files and directories exist."""
-    checks = {
-        'CSV file': 'findings/triage_list.csv',
-        'JSON file': 'findings/findings_details.json',
-        'Codebase directory': 'codebase'
-    }
+def setup_output_directory(output_dir: str) -> tuple[Path, Path, Path]:
+    """
+    Create output directory structure.
     
-    all_good = True
-    for name, path in checks.items():
-        if os.path.exists(path):
-            print(f"✓ {name}: {path}")
-        else:
-            print(f"✗ {name}: {path} NOT FOUND")
-            all_good = False
+    Returns:
+        Tuple of (findings_dir, codebase_dir, output_path)
+    """
+    output_path = Path(output_dir).resolve()
+    findings_dir = output_path / "findings"
+    codebase_dir = output_path / "codebase"
     
-    return all_good
+    # Create directories
+    findings_dir.mkdir(parents=True, exist_ok=True)
+    codebase_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"Output directory: {output_path}")
+    print(f"  ├── findings/")
+    print(f"  └── codebase/")
+    
+    return findings_dir, codebase_dir, output_path
 
 
-async def main():
-    """Main entry point."""
-    print("=" * 60)
-    print("SAST Triage Agent - Checkmarx Finding Analyzer")
-    print("=" * 60)
-    print()
+def save_findings_data(
+    findings_dir: Path,
+    triage_records: List[dict],
+    detailed_records: List[dict]
+) -> None:
+    """Save findings data to CSV and JSON files."""
+    csv_file = findings_dir / "triage_list.csv"
+    json_file = findings_dir / "findings_details.json"
     
-    # Check prerequisites
-    print("Checking prerequisites...")
-    if not check_prerequisites():
-        print("\nError: Missing required files or directories.")
-        print("Please ensure:")
-        print("  1. findings/triage_list.csv exists")
-        print("  2. findings/findings_details.json exists")
-        print("  3. /codebase directory contains the source code")
-        return 1
+    # Write CSV file
+    print(f"\nSaving {len(triage_records)} records to {csv_file.name}...")
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["findingId", "severity", "triaged"])
+        writer.writeheader()
+        writer.writerows(triage_records)
     
-    print("\nPrerequisites OK!")
-    print()
+    # Write JSON file
+    print(f"Saving detailed records to {json_file.name}...")
+    with open(json_file, "w", encoding="utf-8") as f:
+        json.dump(detailed_records, f, indent=4)
     
-    # Get configuration from environment or use defaults
-    base_url = os.getenv('LLM_BASE_URL', 'http://localhost:4000')
-    model_name = os.getenv('LLM_MODEL', 'gemini-2.0-flash-exp')
-    api_key = os.getenv('LLM_API_KEY', 'dummy-key')
+    print("✓ Findings data saved successfully")
+
+
+async def run_triage_analysis(output_dir: Path) -> int:
+    """
+    Run the triage analysis on the fetched data.
     
-    print(f"Using LLM endpoint: {base_url}")
-    print(f"Using model: {model_name}")
-    print()
-    
-    print("Starting analysis...")
-    print("-" * 60)
+    Returns:
+        Exit code (0 for success, 1 for failure)
+    """
+    # Change to output directory for analysis
+    original_dir = os.getcwd()
+    os.chdir(output_dir)
     
     try:
+        # Get LLM configuration
+        llm_base_url = os.getenv("LLM_BASE_URL", "http://localhost:4000")
+        llm_model = os.getenv("LLM_MODEL", "gemini-2.0-flash-exp")
+        llm_api_key = os.getenv("LLM_API_KEY", "dummy-key")
+        
+        print(f"\nUsing LLM endpoint: {llm_base_url}")
+        print(f"Using model: {llm_model}")
+        print()
+        
+        print("Starting triage analysis...")
+        print("-" * 60)
+        
         # Initialize and run the agent
         agent = SASTTriageAgent(
-            base_url=base_url,
-            model_name=model_name,
-            api_key=api_key,
+            base_url=llm_base_url,
+            model_name=llm_model,
+            api_key=llm_api_key,
             temperature=0.1
         )
         
@@ -102,8 +119,124 @@ async def main():
         import traceback
         traceback.print_exc()
         return 1
+        
+    finally:
+        os.chdir(original_dir)
+
+
+@click.command()
+@click.argument("project_id")
+@click.option(
+    "--severities",
+    default=",".join(DEFAULT_SEVERITIES),
+    help=f"Comma-separated list of severities (default: {','.join(DEFAULT_SEVERITIES)})"
+)
+@click.option(
+    "--output-dir",
+    default=".",
+    help="Output directory for results (default: current directory)"
+)
+@click.option(
+    "--skip-clone",
+    is_flag=True,
+    help="Skip repository cloning"
+)
+@click.option(
+    "--clean",
+    is_flag=True,
+    help="Remove cloned repository after analysis"
+)
+def main(
+    project_id: str,
+    severities: str,
+    output_dir: str,
+    skip_clone: bool,
+    clean: bool
+) -> None:
+    """
+    Fetch SAST findings from Checkmarx One and run triage analysis.
+    
+    PROJECT_ID: The Checkmarx project ID to analyze
+    """
+    print("=" * 60)
+    print("SAST Triage Agent - Checkmarx One Integration")
+    print("=" * 60)
+    print()
+    
+    # Check environment variables
+    base_url = os.getenv("BASE_URL")
+    refresh_token = os.getenv("REFRESH_TOKEN")
+    
+    if not all([base_url, refresh_token]):
+        print("✗ Error: Missing required environment variables")
+        print("Please ensure the following are set in your .env file:")
+        print("  - BASE_URL: Checkmarx One instance URL")
+        print("  - REFRESH_TOKEN: Your refresh token")
+        sys.exit(1)
+    
+    # Parse severities
+    severity_list = [s.strip().upper() for s in severities.split(",")]
+    print(f"Project ID: {project_id}")
+    print(f"Severities: {', '.join(severity_list)}")
+    print(f"Output directory: {output_dir}")
+    print()
+    
+    try:
+        # Setup output directory
+        findings_dir, codebase_dir, output_path = setup_output_directory(output_dir)
+        
+        # Initialize Checkmarx client
+        print("Connecting to Checkmarx One...")
+        client = CheckmarxClient(base_url, refresh_token)
+        
+        # Get project details and repository URL
+        repo_url = None
+        if not skip_clone:
+            repo_url = client.get_project_details(project_id)
+        
+        # Get findings
+        scan_id, findings = client.get_findings_for_project(project_id, severity_list)
+        
+        if not findings:
+            print("\n✗ No findings found for the specified project and severities.")
+            sys.exit(1)
+        
+        # Process findings
+        triage_records, detailed_records = client.process_findings_to_records(findings)
+        
+        # Save findings data
+        save_findings_data(findings_dir, triage_records, detailed_records)
+        
+        # Clone repository if URL available and not skipped
+        if repo_url and not skip_clone:
+            clone_success = clone_repository(repo_url, str(codebase_dir))
+            if not clone_success:
+                print("⚠ Warning: Repository cloning failed, continuing with analysis...")
+        elif skip_clone:
+            print("\nSkipping repository clone as requested.")
+        else:
+            print("\n⚠ No repository URL found, continuing without codebase.")
+        
+        # Run triage analysis
+        print("\n" + "=" * 60)
+        print("Starting Triage Analysis")
+        print("=" * 60)
+        
+        exit_code = asyncio.run(run_triage_analysis(output_path))
+        
+        # Clean up repository if requested
+        if clean and codebase_dir.exists():
+            print("\nCleaning up cloned repository...")
+            cleanup_repository(str(codebase_dir))
+        
+        sys.exit(exit_code)
+        
+    except Exception as e:
+        print(f"\n✗ Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    exit_code = asyncio.run(main())
-    sys.exit(exit_code)
+    main()
