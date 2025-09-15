@@ -28,7 +28,9 @@ class SASTTriageAgent:
         model_name: str = "gemini-2.5-pro", 
         api_key: str = "dummy-key",
         temperature: float = 0.1,
-        project_id: Optional[str] = None
+        project_id: Optional[str] = None,
+        scan_id: Optional[str] = None,
+        checkmarx_base_url: Optional[str] = None
     ):
         """
         Initialize the SAST Triage Agent.
@@ -39,8 +41,12 @@ class SASTTriageAgent:
             api_key: API key (can be dummy for local proxies)
             temperature: Model temperature for consistency
             project_id: Project identifier for reporting
+            scan_id: Scan identifier for reporting
+            checkmarx_base_url: Checkmarx base URL for report links
         """
         self.project_id = project_id
+        self.scan_id = scan_id
+        self.checkmarx_base_url = checkmarx_base_url
         self.llm = ChatOpenAI(
             base_url=base_url,
             model=model_name,
@@ -390,7 +396,9 @@ class SASTTriageAgent:
         from sast_triage.report_generator import ReportGenerator
         report_gen = ReportGenerator(
             output_dir=".",
-            project_id=self.project_id or "Unknown"
+            project_id=self.project_id or "Unknown",
+            scan_id=self.scan_id,
+            base_url=self.checkmarx_base_url
         )
         
         # Load all finding details for report
@@ -481,7 +489,7 @@ class SASTTriageAgent:
         with open('findings_assessment.json', 'w') as f:
             json.dump(triage_results, f, indent=2)
         
-        print(f"\n✓ HTML report generated: triage_report.html")
+        print(f"\n✓ HTML report generated: {report_gen.report_path.name}")
         
         # Generate summary for display
         summary = {
