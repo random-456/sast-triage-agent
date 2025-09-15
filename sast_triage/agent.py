@@ -5,7 +5,7 @@ Main SAST Triage Agent using LangChain
 import os
 import csv
 import json
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import ToolMessage
@@ -27,7 +27,8 @@ class SASTTriageAgent:
         base_url: str = "http://localhost:4000",
         model_name: str = "gemini-2.5-pro", 
         api_key: str = "dummy-key",
-        temperature: float = 0.1
+        temperature: float = 0.1,
+        project_id: Optional[str] = None
     ):
         """
         Initialize the SAST Triage Agent.
@@ -37,7 +38,9 @@ class SASTTriageAgent:
             model_name: Model name as configured in your proxy
             api_key: API key (can be dummy for local proxies)
             temperature: Model temperature for consistency
+            project_id: Project identifier for reporting
         """
+        self.project_id = project_id
         self.llm = ChatOpenAI(
             base_url=base_url,
             model=model_name,
@@ -383,8 +386,40 @@ class SASTTriageAgent:
         
         print(f"Found {len(findings)} pending findings to triage")
         
+        # Initialize report generator
+        from sast_triage.report_generator import ReportGenerator
+        report_gen = ReportGenerator(
+            output_dir=".",
+            project_id=self.project_id or "Unknown"
+        )
+        
+        # Load all finding details for report
+        with open(json_path, 'r') as f:
+            all_details = {d['findingId']: d for d in json.load(f)}
+        
+        # Get total count including already triaged
+        total_count = len(all_details)
+        
+        # Initialize report with total count
+        report_gen.initialize_report(total_findings=total_count)
+        
+        # Add already triaged findings to report if they exist
+        if os.path.exists('findings_assessment.json'):
+            with open('findings_assessment.json', 'r') as f:
+                existing_results = json.load(f)
+                for idx, result in enumerate(existing_results):
+                    finding_id = result.get('findingId')
+                    if finding_id in all_details:
+                        report_gen.add_finding(
+                            finding_details=all_details[finding_id],
+                            assessment=result,
+                            current=idx + 1,
+                            total=total_count
+                        )
+        
         # Analyze each pending finding
         triage_results = []
+        existing_count = total_count - len(findings)
         for i, finding in enumerate(findings):
             print(f"\nAnalyzing finding {i+1}/{len(findings)}: {finding['findingId']}")
             
@@ -409,6 +444,15 @@ class SASTTriageAgent:
                 print(f"  Confidence: {decision.assessment_confidence:.2f}")
                 print(f"  Justification: {decision.assessment_justification[:100]}...")
                 
+                # Add to HTML report
+                finding_details = all_details.get(finding['findingId'], {})
+                report_gen.add_finding(
+                    finding_details=finding_details,
+                    assessment=result_dict,
+                    current=existing_count + i + 1,
+                    total=total_count
+                )
+                
             except Exception as e:
                 print(f"  Error analyzing {finding['findingId']}: {str(e)}")
                 # Save error result
@@ -423,10 +467,21 @@ class SASTTriageAgent:
                 
                 # Mark as triaged even for errors (so they don't retry indefinitely)
                 self.update_csv_status(finding['findingId'], csv_path)
+                
+                # Add error to HTML report
+                finding_details = all_details.get(finding['findingId'], {})
+                report_gen.add_finding(
+                    finding_details=finding_details,
+                    assessment=error_result,
+                    current=existing_count + i + 1,
+                    total=total_count
+                )
         
         # Save results (findings_assessment.json)
         with open('findings_assessment.json', 'w') as f:
             json.dump(triage_results, f, indent=2)
+        
+        print(f"\n✓ HTML report generated: triage_report.html")
         
         # Generate summary for display
         summary = {

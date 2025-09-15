@@ -5,9 +5,10 @@ Automated triage of Checkmarx One SAST findings using LangChain and LLM. Fetches
 ## Setup
 
 ```bash
+# (Recommended: Create a virtual environment)
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your Checkmarx and LLM settings
+# Edit .env with individual settings
 ```
 
 ## Configuration
@@ -52,6 +53,7 @@ Options:
 │   └── findings_details.json   # Detailed finding data with dataflow
 ├── codebase/                   # Cloned repository (if available)
 ├── findings_assessment.json    # Final triage decisions
+├── triage_report.html          # Interactive HTML report with findings
 └── triage_agent.log            # Execution log
 ```
 
@@ -60,12 +62,22 @@ Options:
 **findings_assessment.json**:
 ```json
 [{
-    "findingId": "8ac6484c65c49772",
+    "findingId": "8ac6484c12c49772",
     "assessment_result": "CONFIRMED|NOT_EXPLOITABLE|REFUSED",
     "assessment_confidence": 0.85,
     "assessment_justification": "..."
 }]
 ```
+
+**triage_report.html**:
+- Interactive HTML report with Tailwind CSS styling
+- Progressive generation (updates after each finding)
+- Sortable by severity, result, or confidence
+- Filterable by assessment result
+- Color-coded severity badges (CRITICAL, HIGH, MEDIUM, LOW, INFO)
+- Grayscale styling for NOT_EXPLOITABLE findings
+- Detailed dataflow visualization
+- Real-time progress tracking
 
 ## Testing
 
