@@ -21,7 +21,7 @@ REFRESH_TOKEN=refresh-token
 
 # LiteLLM Proxy Configuration
 LLM_BASE_URL=http://localhost:4000
-LLM_MODEL=gemini-2.0-flash-exp
+LLM_MODEL=gemini-2.5-pro
 LLM_API_KEY=sk-1234
 ```
 
@@ -34,15 +34,11 @@ python run_triage.py PROJECT_ID [OPTIONS]
 python run_triage.py 12345                           # Analyze project with default settings
 python run_triage.py 12345 --severities HIGH         # Only HIGH severity findings
 python run_triage.py 12345 --output-dir ./analysis  # Custom output directory
-python run_triage.py 12345 --skip-clone              # Skip repository cloning
-python run_triage.py 12345 --clean                   # Remove cloned repo after analysis
 ```
 
 Options:
 - `--severities`: Comma-separated severities (default: HIGH,MEDIUM)
 - `--output-dir`: Output directory (default: current directory)
-- `--skip-clone`: Skip repository cloning
-- `--clean`: Remove cloned repository after analysis
 
 ## Output Structure
 

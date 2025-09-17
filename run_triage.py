@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from sast_triage import SASTTriageAgent
 from sast_triage.api import CheckmarxClient
-from sast_triage.git import clone_repository, cleanup_repository
+from sast_triage.git import clone_repository
 from sast_triage.config import DEFAULT_SEVERITIES
 
 
@@ -147,22 +147,10 @@ async def run_triage_analysis(output_dir: Path, project_id: str = None,
     default=".",
     help="Output directory for results (default: current directory)"
 )
-@click.option(
-    "--skip-clone",
-    is_flag=True,
-    help="Skip repository cloning"
-)
-@click.option(
-    "--clean",
-    is_flag=True,
-    help="Remove cloned repository after analysis"
-)
 def main(
     project_id: str,
     severities: str,
-    output_dir: str,
-    skip_clone: bool,
-    clean: bool
+    output_dir: str
 ) -> None:
     """
     Fetch SAST findings from Checkmarx One and run triage analysis.
@@ -201,9 +189,7 @@ def main(
         client = CheckmarxClient(base_url, refresh_token)
         
         # Get project details and repository URL
-        repo_url = None
-        if not skip_clone:
-            repo_url = client.get_project_details(project_id)
+        repo_url = client.get_project_details(project_id)
         
         # Get findings
         scan_id, findings = client.get_findings_for_project(project_id, severity_list)
@@ -218,13 +204,11 @@ def main(
         # Save findings data
         save_findings_data(findings_dir, triage_records, detailed_records)
         
-        # Clone repository if URL available and not skipped
-        if repo_url and not skip_clone:
+        # Clone repository if URL available
+        if repo_url:
             clone_success = clone_repository(repo_url, str(codebase_dir))
             if not clone_success:
                 print("⚠ Warning: Repository cloning failed, continuing with analysis...")
-        elif skip_clone:
-            print("\nSkipping repository clone as requested.")
         else:
             print("\n⚠ No repository URL found, continuing without codebase.")
         
@@ -234,11 +218,6 @@ def main(
         print("=" * 60)
         
         exit_code = asyncio.run(run_triage_analysis(output_path, project_id, scan_id, base_url))
-        
-        # Clean up repository if requested
-        if clean and codebase_dir.exists():
-            print("\nCleaning up cloned repository...")
-            cleanup_repository(str(codebase_dir))
         
         sys.exit(exit_code)
         
