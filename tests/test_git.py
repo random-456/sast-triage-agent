@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch, Mock, MagicMock
 import subprocess
 
-from sast_triage.git import clone_repository, cleanup_repository
+from sast_triage.git import clone_repository
 
 
 class TestGitRepository(unittest.TestCase):
@@ -94,32 +94,6 @@ class TestGitRepository(unittest.TestCase):
         
         self.assertTrue(result)  # Should return True (directory exists)
     
-    def test_cleanup_repository_success(self):
-        """Test successful repository cleanup."""
-        # Create a test directory
-        os.makedirs(self.target_dir)
-        Path(os.path.join(self.target_dir, "test.txt")).touch()
-        
-        result = cleanup_repository(self.target_dir)
-        
-        self.assertTrue(result)
-        self.assertFalse(os.path.exists(self.target_dir))
-    
-    def test_cleanup_repository_not_exists(self):
-        """Test cleanup when directory doesn't exist."""
-        result = cleanup_repository(self.target_dir)
-        
-        self.assertTrue(result)  # Should return True (nothing to clean)
-    
-    @patch("shutil.rmtree")
-    def test_cleanup_repository_error(self, mock_rmtree):
-        """Test cleanup with error."""
-        os.makedirs(self.target_dir)
-        mock_rmtree.side_effect = PermissionError("Permission denied")
-        
-        result = cleanup_repository(self.target_dir)
-        
-        self.assertFalse(result)
 
 
 if __name__ == "__main__":
