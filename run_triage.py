@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from sast_triage import SASTTriageAgent
 from sast_triage.api import CheckmarxClient
 from sast_triage.git import clone_repository
-from sast_triage.config import DEFAULT_SEVERITIES
+from sast_triage.config import DEFAULT_SEVERITIES, DEFAULT_BRANCH
 
 
 def setup_output_directory(output_dir: str) -> tuple[Path, Path, Path]:
@@ -74,7 +74,8 @@ def save_findings_data(
 
 
 async def run_triage_analysis(output_dir: Path, project_id: str = None, 
-                             scan_id: str = None, checkmarx_base_url: str = None) -> int:
+                             scan_id: str = None, checkmarx_base_url: str = None,
+                             branch: str = None) -> int:
     """
     Run the triage analysis on the fetched data.
     
@@ -83,6 +84,7 @@ async def run_triage_analysis(output_dir: Path, project_id: str = None,
         project_id: Project identifier for reporting
         scan_id: Scan identifier for reporting
         checkmarx_base_url: Checkmarx base URL for report links
+        branch: Git branch being analyzed
     
     Returns:
         Exit code (0 for success, 1 for failure)
@@ -112,7 +114,8 @@ async def run_triage_analysis(output_dir: Path, project_id: str = None,
             temperature=0.1,
             project_id=project_id,
             scan_id=scan_id,
-            checkmarx_base_url=checkmarx_base_url
+            checkmarx_base_url=checkmarx_base_url,
+            branch=branch
         )
         
         results = await agent.process_all_findings()
@@ -147,10 +150,16 @@ async def run_triage_analysis(output_dir: Path, project_id: str = None,
     default=".",
     help="Output directory for results (default: current directory)"
 )
+@click.option(
+    "--branch",
+    default=None,
+    help=f"Git branch to analyze (default: {DEFAULT_BRANCH})"
+)
 def main(
     project_id: str,
     severities: str,
-    output_dir: str
+    output_dir: str,
+    branch: str
 ) -> None:
     """
     Fetch SAST findings from Checkmarx One and run triage analysis.
@@ -173,10 +182,12 @@ def main(
         print("  - REFRESH_TOKEN: Your refresh token")
         sys.exit(1)
     
-    # Parse severities
+    # Parse severities and branch
     severity_list = [s.strip().upper() for s in severities.split(",")]
+    target_branch = branch or DEFAULT_BRANCH
     print(f"Project ID: {project_id}")
     print(f"Severities: {', '.join(severity_list)}")
+    print(f"Target branch: {target_branch}")
     print(f"Output directory: {output_dir}")
     print()
     
@@ -192,7 +203,7 @@ def main(
         repo_url = client.get_project_details(project_id)
         
         # Get findings
-        scan_id, findings = client.get_findings_for_project(project_id, severity_list)
+        scan_id, findings = client.get_findings_for_project(project_id, severity_list, target_branch)
         
         if not findings:
             print("\n✗ No findings found for the specified project and severities.")
@@ -217,7 +228,7 @@ def main(
         print("Starting Triage Analysis")
         print("=" * 60)
         
-        exit_code = asyncio.run(run_triage_analysis(output_path, project_id, scan_id, base_url))
+        exit_code = asyncio.run(run_triage_analysis(output_path, project_id, scan_id, base_url, target_branch))
         
         sys.exit(exit_code)
         

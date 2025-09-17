@@ -11,7 +11,8 @@ class ReportGenerator:
     """Generate progressive HTML reports for SAST findings."""
     
     def __init__(self, output_dir: str = ".", project_id: Optional[str] = None, 
-                 scan_id: Optional[str] = None, base_url: Optional[str] = None):
+                 scan_id: Optional[str] = None, base_url: Optional[str] = None, 
+                 branch: Optional[str] = None):
         """
         Initialize the report generator.
         
@@ -20,11 +21,13 @@ class ReportGenerator:
             project_id: Project identifier for the report
             scan_id: Scan identifier for the report
             base_url: Checkmarx base URL for generating links
+            branch: Git branch being analyzed
         """
         self.output_dir = Path(output_dir)
         self.project_id = project_id or "Unknown"
         self.scan_id = scan_id
         self.base_url = base_url
+        self.branch = branch
         
         # Generate timestamp-based filename
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
@@ -85,6 +88,10 @@ class ReportGenerator:
                 <span class="font-semibold">Scan ID:</span> 
                 <a href="{self.base_url}/sast-results/{self.project_id}/{self.scan_id}" target="_blank" class="text-blue-600 hover:underline">{self.scan_id}</a>
             </div>''' if self.scan_id and self.base_url else ''}
+            {f'''<div class="text-sm mt-1">
+                <span class="font-semibold">Branch:</span> 
+                <span class="text-gray-700">{self.branch}</span>
+            </div>''' if self.branch else ''}
             
             <!-- Statistics -->
             <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4" id="stats">
