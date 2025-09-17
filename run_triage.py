@@ -73,13 +73,16 @@ def save_findings_data(
     print("✓ Findings data saved successfully")
 
 
-async def run_triage_analysis(output_dir: Path, project_id: str = None) -> int:
+async def run_triage_analysis(output_dir: Path, project_id: str = None, 
+                             scan_id: str = None, checkmarx_base_url: str = None) -> int:
     """
     Run the triage analysis on the fetched data.
     
     Args:
         output_dir: Directory containing the analysis data
         project_id: Project identifier for reporting
+        scan_id: Scan identifier for reporting
+        checkmarx_base_url: Checkmarx base URL for report links
     
     Returns:
         Exit code (0 for success, 1 for failure)
@@ -107,7 +110,9 @@ async def run_triage_analysis(output_dir: Path, project_id: str = None) -> int:
             model_name=llm_model,
             api_key=llm_api_key,
             temperature=0.1,
-            project_id=project_id
+            project_id=project_id,
+            scan_id=scan_id,
+            checkmarx_base_url=checkmarx_base_url
         )
         
         results = await agent.process_all_findings()
@@ -116,7 +121,7 @@ async def run_triage_analysis(output_dir: Path, project_id: str = None) -> int:
         print("\n✓ Analysis complete!")
         print(f"Results saved to: findings_assessment.json")
         print(f"Updated CSV: findings/triage_list.csv")
-        print(f"HTML Report: triage_report.html")
+        print(f"HTML Report: Generated with timestamp")
         
         return 0
         
@@ -228,7 +233,7 @@ def main(
         print("Starting Triage Analysis")
         print("=" * 60)
         
-        exit_code = asyncio.run(run_triage_analysis(output_path, project_id))
+        exit_code = asyncio.run(run_triage_analysis(output_path, project_id, scan_id, base_url))
         
         # Clean up repository if requested
         if clean and codebase_dir.exists():

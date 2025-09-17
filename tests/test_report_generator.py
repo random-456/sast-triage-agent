@@ -16,7 +16,9 @@ class TestReportGenerator(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.report_gen = ReportGenerator(
             output_dir=self.test_dir,
-            project_id="TEST-123"
+            project_id="TEST-123",
+            scan_id="SCAN-456",
+            base_url="https://checkmarx.example.com"
         )
     
     def tearDown(self):
@@ -29,8 +31,10 @@ class TestReportGenerator(unittest.TestCase):
         """Test report initialization."""
         self.report_gen.initialize_report(total_findings=5)
         
-        report_path = Path(self.test_dir) / "triage_report.html"
-        self.assertTrue(report_path.exists())
+        # Report path should have timestamp format
+        report_files = list(Path(self.test_dir).glob("*_triage_report_*.html"))
+        self.assertEqual(len(report_files), 1)
+        report_path = report_files[0]
         
         # Check content
         with open(report_path, 'r') as f:
@@ -38,8 +42,12 @@ class TestReportGenerator(unittest.TestCase):
         
         self.assertIn("TEST-123", content)
         self.assertIn("SAST Triage Report", content)
-        self.assertIn("Total Findings", content)
+        self.assertIn("Total Findings Analyzed", content)
         self.assertIn("5", content)
+        # Check for links
+        self.assertIn("https://checkmarx.example.com/projects/TEST-123", content)
+        self.assertIn("SCAN-456", content)
+        self.assertIn("https://checkmarx.example.com/sast-results/TEST-123/SCAN-456", content)
     
     def test_add_finding(self):
         """Test adding a finding to report."""
@@ -79,7 +87,10 @@ class TestReportGenerator(unittest.TestCase):
             total=1
         )
         
-        report_path = Path(self.test_dir) / "triage_report.html"
+        # Get the generated report file
+        report_files = list(Path(self.test_dir).glob("*_triage_report_*.html"))
+        self.assertEqual(len(report_files), 1)
+        report_path = report_files[0]
         with open(report_path, 'r') as f:
             content = f.read()
         
@@ -170,7 +181,10 @@ class TestReportGenerator(unittest.TestCase):
             total=1
         )
         
-        report_path = Path(self.test_dir) / "triage_report.html"
+        # Get the generated report file
+        report_files = list(Path(self.test_dir).glob("*_triage_report_*.html"))
+        self.assertEqual(len(report_files), 1)
+        report_path = report_files[0]
         with open(report_path, 'r') as f:
             content = f.read()
         

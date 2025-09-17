@@ -10,17 +10,26 @@ from typing import Dict, Optional, List
 class ReportGenerator:
     """Generate progressive HTML reports for SAST findings."""
     
-    def __init__(self, output_dir: str = ".", project_id: Optional[str] = None):
+    def __init__(self, output_dir: str = ".", project_id: Optional[str] = None, 
+                 scan_id: Optional[str] = None, base_url: Optional[str] = None):
         """
         Initialize the report generator.
         
         Args:
             output_dir: Directory to save the report
             project_id: Project identifier for the report
+            scan_id: Scan identifier for the report
+            base_url: Checkmarx base URL for generating links
         """
         self.output_dir = Path(output_dir)
         self.project_id = project_id or "Unknown"
-        self.report_path = self.output_dir / "triage_report.html"
+        self.scan_id = scan_id
+        self.base_url = base_url
+        
+        # Generate timestamp-based filename
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        filename = f"{timestamp}_triage_report_{self.project_id}.html"
+        self.report_path = self.output_dir / filename
         self.findings_data = []
         self.stats = {
             "total": 0,
@@ -65,18 +74,23 @@ class ReportGenerator:
             <h1 class="text-3xl font-bold text-gray-800 mb-4">SAST Triage Report</h1>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div>
-                    <span class="font-semibold">Project ID:</span> {self.project_id}
+                    <span class="font-semibold">Project ID:</span> 
+                    {f'<a href="{self.base_url}/projects/{self.project_id}" target="_blank" class="text-blue-600 hover:underline">{self.project_id}</a>' if self.base_url else self.project_id}
                 </div>
                 <div>
                     <span class="font-semibold">Analysis Date:</span> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 </div>
             </div>
+            {f'''<div class="text-sm mt-2">
+                <span class="font-semibold">Scan ID:</span> 
+                <a href="{self.base_url}/sast-results/{self.project_id}/{self.scan_id}" target="_blank" class="text-blue-600 hover:underline">{self.scan_id}</a>
+            </div>''' if self.scan_id and self.base_url else ''}
             
             <!-- Statistics -->
             <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4" id="stats">
                 <div class="bg-gray-100 p-3 rounded">
                     <div class="text-2xl font-bold text-gray-700" id="stat-total">{total_findings}</div>
-                    <div class="text-xs text-gray-600">Total Findings</div>
+                    <div class="text-xs text-gray-600">Total Findings Analyzed</div>
                 </div>
                 <div class="bg-red-50 p-3 rounded">
                     <div class="text-2xl font-bold text-red-600" id="stat-confirmed">0</div>
