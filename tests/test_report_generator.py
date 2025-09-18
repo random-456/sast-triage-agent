@@ -20,7 +20,8 @@ class TestReportGenerator(unittest.TestCase):
             project_id="TEST-123",
             scan_id="SCAN-456",
             base_url="https://checkmarx.example.com",
-            branch="main"
+            branch="main",
+            model_name="gemini-2.5-pro"
         )
     
     def tearDown(self):
@@ -54,6 +55,9 @@ class TestReportGenerator(unittest.TestCase):
         # Check for branch display
         self.assertIn("Branch:", content)
         self.assertIn("main", content)
+        # Check for model display
+        self.assertIn("Model:", content)
+        self.assertIn("gemini-2.5-pro", content)
     
     def test_add_finding(self):
         """Test adding a finding to report."""

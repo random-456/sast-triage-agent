@@ -12,7 +12,8 @@ class ReportGenerator:
     
     def __init__(self, output_dir: str = ".", project_name: Optional[str] = None,
                  project_id: Optional[str] = None, scan_id: Optional[str] = None, 
-                 base_url: Optional[str] = None, branch: Optional[str] = None):
+                 base_url: Optional[str] = None, branch: Optional[str] = None,
+                 model_name: Optional[str] = None):
         """
         Initialize the report generator.
         
@@ -23,6 +24,7 @@ class ReportGenerator:
             scan_id: Scan identifier for the report
             base_url: Checkmarx base URL for generating links
             branch: Git branch being analyzed
+            model_name: LLM model used for analysis
         """
         self.output_dir = Path(output_dir)
         self.project_name = project_name or "Unknown"
@@ -30,6 +32,7 @@ class ReportGenerator:
         self.scan_id = scan_id
         self.base_url = base_url
         self.branch = branch
+        self.model_name = model_name or "Unknown"
         
         # Generate timestamp-based filename
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
@@ -90,6 +93,10 @@ class ReportGenerator:
                 </div>
                 <div>
                     <span class="font-semibold">Analysis Date:</span> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                </div>
+                <div>
+                    <span class="font-semibold">Model:</span> 
+                    <span class="text-gray-700">{self.model_name}</span>
                 </div>
             </div>
             {f'''<div class="text-sm mt-2">
