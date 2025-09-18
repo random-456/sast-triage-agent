@@ -28,6 +28,7 @@ class SASTTriageAgent:
         model_name: str = "gemini-2.5-pro", 
         api_key: str = "dummy-key",
         temperature: float = 0.1,
+        project_name: Optional[str] = None,
         project_id: Optional[str] = None,
         scan_id: Optional[str] = None,
         checkmarx_base_url: Optional[str] = None,
@@ -41,11 +42,13 @@ class SASTTriageAgent:
             model_name: Model name as configured in your proxy
             api_key: API key (can be dummy for local proxies)
             temperature: Model temperature for consistency
+            project_name: Project name for reporting
             project_id: Project identifier for reporting
             scan_id: Scan identifier for reporting
             checkmarx_base_url: Checkmarx base URL for report links
             branch: Git branch being analyzed
         """
+        self.project_name = project_name
         self.project_id = project_id
         self.scan_id = scan_id
         self.checkmarx_base_url = checkmarx_base_url
@@ -405,6 +408,7 @@ class SASTTriageAgent:
         from sast_triage.report_generator import ReportGenerator
         report_gen = ReportGenerator(
             output_dir=".",
+            project_name=self.project_name or "Unknown",
             project_id=self.project_id or "Unknown",
             scan_id=self.scan_id,
             base_url=self.checkmarx_base_url,

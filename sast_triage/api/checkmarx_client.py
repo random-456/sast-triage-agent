@@ -52,6 +52,57 @@ class CheckmarxClient:
         print("Successfully refreshed access token.")
         return self.access_token
     
+    def get_project_id_by_name(self, project_name: str) -> Optional[str]:
+        """
+        Retrieve project ID by project name.
+        
+        Args:
+            project_name: The name of the project
+            
+        Returns:
+            The project ID if found, otherwise None
+            
+        Raises:
+            requests.exceptions.HTTPError: If the request fails
+        """
+        if not self.access_token:
+            self.refresh_access_token()
+        
+        print(f"Looking up project ID for: {project_name}")
+        projects_url = f"{self.base_url}/api/projects"
+        headers = {
+            "accept": "application/json; version=1.0",
+            "Authorization": f"Bearer {self.access_token}"
+        }
+        params = {"name": project_name}
+        
+        try:
+            response = requests.get(projects_url, headers=headers, params=params, verify=False)
+            response.raise_for_status()
+            projects_data = response.json()
+            
+            projects = projects_data.get("projects", [])
+            if not projects:
+                print(f"No project found with name: {project_name}")
+                return None
+            
+            if len(projects) > 1:
+                print(f"Warning: Multiple projects found with name '{project_name}', using the first one")
+                for i, project in enumerate(projects):
+                    print(f"  {i+1}. ID: {project.get('id')}, Name: {project.get('name')}")
+            
+            project_id = projects[0].get("id")
+            if project_id:
+                print(f"Found project ID: {project_id}")
+                return project_id
+            else:
+                print("Project ID not found in response")
+                return None
+                
+        except requests.exceptions.HTTPError as e:
+            print(f"Could not look up project by name: {e}")
+            return None
+    
     def get_project_details(self, project_id: str) -> Optional[str]:
         """
         Retrieve project details to find repository URL.

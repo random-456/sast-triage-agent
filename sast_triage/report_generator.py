@@ -10,20 +10,22 @@ from typing import Dict, Optional, List
 class ReportGenerator:
     """Generate progressive HTML reports for SAST findings."""
     
-    def __init__(self, output_dir: str = ".", project_id: Optional[str] = None, 
-                 scan_id: Optional[str] = None, base_url: Optional[str] = None, 
-                 branch: Optional[str] = None):
+    def __init__(self, output_dir: str = ".", project_name: Optional[str] = None,
+                 project_id: Optional[str] = None, scan_id: Optional[str] = None, 
+                 base_url: Optional[str] = None, branch: Optional[str] = None):
         """
         Initialize the report generator.
         
         Args:
             output_dir: Directory to save the report
+            project_name: Project name for the report
             project_id: Project identifier for the report
             scan_id: Scan identifier for the report
             base_url: Checkmarx base URL for generating links
             branch: Git branch being analyzed
         """
         self.output_dir = Path(output_dir)
+        self.project_name = project_name or "Unknown"
         self.project_id = project_id or "Unknown"
         self.scan_id = scan_id
         self.base_url = base_url
@@ -31,7 +33,9 @@ class ReportGenerator:
         
         # Generate timestamp-based filename
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-        filename = f"{timestamp}_triage_report_{self.project_id}.html"
+        # Sanitize project name for filename
+        safe_project_name = "".join(c if c.isalnum() or c in '-_' else '_' for c in self.project_name)
+        filename = f"{timestamp}_triage_report_{safe_project_name}.html"
         self.report_path = self.output_dir / filename
         self.findings_data = []
         self.stats = {
@@ -55,7 +59,7 @@ class ReportGenerator:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAST Triage Report - {self.project_id}</title>
+    <title>SAST Triage Report - {self.project_name}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .not-exploitable {{
@@ -74,7 +78,11 @@ class ReportGenerator:
     <div class="container mx-auto px-4 py-8 max-w-7xl">
         <!-- Header -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h1 class="text-3xl font-bold text-gray-800 mb-4">SAST Triage Report</h1>
+            <div class="flex items-center gap-4 mb-4">
+                <h1 class="text-3xl font-bold text-gray-800">SAST Triage Report</h1>
+                <span class="text-2xl font-semibold text-blue-600">|</span>
+                <h2 class="text-2xl font-semibold text-blue-600">{self.project_name}</h2>
+            </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div>
                     <span class="font-semibold">Project ID:</span> 

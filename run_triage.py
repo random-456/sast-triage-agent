@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SAST Triage Agent CLI - Fetches findings from Checkmarx One and runs analysis
-Usage: python run_triage.py PROJECT_ID [OPTIONS]
+Usage: python run_triage.py PROJECT_NAME [OPTIONS]
 """
 
 import asyncio
@@ -73,7 +73,7 @@ def save_findings_data(
     print("✓ Findings data saved successfully")
 
 
-async def run_triage_analysis(output_dir: Path, project_id: str = None, 
+async def run_triage_analysis(output_dir: Path, project_name: str = None, project_id: str = None,
                              scan_id: str = None, checkmarx_base_url: str = None,
                              branch: str = None) -> int:
     """
@@ -81,6 +81,7 @@ async def run_triage_analysis(output_dir: Path, project_id: str = None,
     
     Args:
         output_dir: Directory containing the analysis data
+        project_name: Project name for reporting
         project_id: Project identifier for reporting
         scan_id: Scan identifier for reporting
         checkmarx_base_url: Checkmarx base URL for report links
@@ -112,6 +113,7 @@ async def run_triage_analysis(output_dir: Path, project_id: str = None,
             model_name=llm_model,
             api_key=llm_api_key,
             temperature=0.1,
+            project_name=project_name,
             project_id=project_id,
             scan_id=scan_id,
             checkmarx_base_url=checkmarx_base_url,
@@ -139,7 +141,7 @@ async def run_triage_analysis(output_dir: Path, project_id: str = None,
 
 
 @click.command()
-@click.argument("project_id")
+@click.argument("project_name")
 @click.option(
     "--severities",
     default=",".join(DEFAULT_SEVERITIES),
@@ -156,7 +158,7 @@ async def run_triage_analysis(output_dir: Path, project_id: str = None,
     help=f"Git branch to analyze (default: {DEFAULT_BRANCH})"
 )
 def main(
-    project_id: str,
+    project_name: str,
     severities: str,
     output_dir: str,
     branch: str
@@ -164,7 +166,7 @@ def main(
     """
     Fetch SAST findings from Checkmarx One and run triage analysis.
     
-    PROJECT_ID: The Checkmarx project ID to analyze
+    PROJECT_NAME: The Checkmarx project name to analyze
     """
     print("=" * 60)
     print("SAST Triage Agent - Checkmarx One Integration")
@@ -185,7 +187,7 @@ def main(
     # Parse severities and branch
     severity_list = [s.strip().upper() for s in severities.split(",")]
     target_branch = branch or DEFAULT_BRANCH
-    print(f"Project ID: {project_id}")
+    print(f"Project Name: {project_name}")
     print(f"Severities: {', '.join(severity_list)}")
     print(f"Target branch: {target_branch}")
     print(f"Output directory: {output_dir}")
@@ -198,6 +200,13 @@ def main(
         # Initialize Checkmarx client
         print("Connecting to Checkmarx One...")
         client = CheckmarxClient(base_url, refresh_token)
+        
+        # Resolve project name to ID
+        project_id = client.get_project_id_by_name(project_name)
+        if not project_id:
+            print(f"\n✗ Error: Could not find project with name '{project_name}'")
+            print("Please verify the project name is correct and you have access to it.")
+            sys.exit(1)
         
         # Get project details and repository URL
         repo_url = client.get_project_details(project_id)
@@ -228,7 +237,7 @@ def main(
         print("Starting Triage Analysis")
         print("=" * 60)
         
-        exit_code = asyncio.run(run_triage_analysis(output_path, project_id, scan_id, base_url, target_branch))
+        exit_code = asyncio.run(run_triage_analysis(output_path, project_name, project_id, scan_id, base_url, target_branch))
         
         sys.exit(exit_code)
         
