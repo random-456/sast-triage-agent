@@ -16,5 +16,6 @@ MAX_LOG_RESULT_LENGTH = 5000  # Maximum length for logging tool results
 # Checkmarx API Configuration
 CHECKMARX_CLIENT_ID = "ast-app"  # Default client ID for Checkmarx One
 CHECKMARX_API_LIMIT = 1000  # Max findings per API request
+CHECKMARX_CA_CERT = "certificates/airbus-ca.crt"  # Default CA certificate path
 DEFAULT_SEVERITIES = ["HIGH", "MEDIUM"]  # Default severities to fetch
 DEFAULT_BRANCH = "default.SecurityPipeline"  # Default branch for scans
