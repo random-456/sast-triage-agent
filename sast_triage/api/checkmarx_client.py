@@ -91,7 +91,8 @@ class CheckmarxClient:
     def get_findings_for_project(
         self, 
         project_id: str, 
-        severities: Optional[List[str]] = None
+        severities: Optional[List[str]] = None,
+        branch: Optional[str] = None
     ) -> Tuple[Optional[str], List[Dict]]:
         """
         Retrieve SAST findings from the latest scan of a project.
@@ -99,6 +100,7 @@ class CheckmarxClient:
         Args:
             project_id: The ID of the project
             severities: List of severities to filter (e.g., ["HIGH", "MEDIUM"])
+            branch: Optional branch name to get latest scan from
             
         Returns:
             A tuple of (scan_id, list of findings)
@@ -111,10 +113,19 @@ class CheckmarxClient:
             "Authorization": f"Bearer {self.access_token}"
         }
         
-        # Find the last scan for the project
-        print(f"\nGetting last scan for project: {project_id}")
+        # Import here to avoid circular imports
+        from sast_triage.config import DEFAULT_BRANCH
+        
+        # Use provided branch or default
+        target_branch = branch or DEFAULT_BRANCH
+        
+        # Find the last scan for the project (with branch)
+        print(f"\nGetting last scan for project: {project_id} (branch: {target_branch})")
         last_scans_url = f"{self.base_url}/api/projects/last-scan"
-        last_scans_params = {"project-ids": project_id}
+        last_scans_params = {
+            "project-ids": project_id,
+            "branch": target_branch
+        }
         
         response = requests.get(
             last_scans_url, 
@@ -128,13 +139,34 @@ class CheckmarxClient:
             response.raise_for_status()
         
         last_scans_data = response.json()
+        
+        # If no scan found for the specific branch, fallback to any latest scan
+        if not last_scans_data or project_id not in last_scans_data:
+            if branch:  # Only fallback if we were looking for a specific branch
+                print(f"No scan found for branch '{target_branch}', falling back to latest scan from any branch")
+                last_scans_params = {"project-ids": project_id}  # Remove branch param
+                
+                response = requests.get(
+                    last_scans_url, 
+                    headers=headers, 
+                    params=last_scans_params, 
+                    verify=False
+                )
+                
+                if not response.ok:
+                    print(f"Error getting fallback scan: {response.status_code} - {response.text}")
+                    response.raise_for_status()
+                
+                last_scans_data = response.json()
+        
         if not last_scans_data or project_id not in last_scans_data:
             print(f"No scan information found for project ID: {project_id}")
             return None, []
         
         scan_info = last_scans_data[project_id]
         scan_id = scan_info["id"]
-        print(f"Found latest scan with ID: {scan_id}")
+        scan_branch = scan_info.get("branch", "unknown")
+        print(f"Found scan ID: {scan_id} (branch: {scan_branch})")
         
         # Get all findings for the scan
         all_findings = []

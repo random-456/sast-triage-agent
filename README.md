@@ -34,11 +34,13 @@ python run_triage.py PROJECT_ID [OPTIONS]
 python run_triage.py 12345                           # Analyze project with default settings
 python run_triage.py 12345 --severities HIGH         # Only HIGH severity findings
 python run_triage.py 12345 --output-dir ./analysis  # Custom output directory
+python run_triage.py 12345 --branch main             # Analyze specific branch
 ```
 
 Options:
 - `--severities`: Comma-separated severities (default: HIGH,MEDIUM)
 - `--output-dir`: Output directory (default: current directory)
+- `--branch`: Git branch to analyze (default: default.SecurityPipeline)
 
 ## Output Structure
 

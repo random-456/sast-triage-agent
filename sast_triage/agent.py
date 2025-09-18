@@ -30,7 +30,8 @@ class SASTTriageAgent:
         temperature: float = 0.1,
         project_id: Optional[str] = None,
         scan_id: Optional[str] = None,
-        checkmarx_base_url: Optional[str] = None
+        checkmarx_base_url: Optional[str] = None,
+        branch: Optional[str] = None
     ):
         """
         Initialize the SAST Triage Agent.
@@ -43,10 +44,12 @@ class SASTTriageAgent:
             project_id: Project identifier for reporting
             scan_id: Scan identifier for reporting
             checkmarx_base_url: Checkmarx base URL for report links
+            branch: Git branch being analyzed
         """
         self.project_id = project_id
         self.scan_id = scan_id
         self.checkmarx_base_url = checkmarx_base_url
+        self.branch = branch
         self.llm = ChatOpenAI(
             base_url=base_url,
             model=model_name,
@@ -404,7 +407,8 @@ class SASTTriageAgent:
             output_dir=".",
             project_id=self.project_id or "Unknown",
             scan_id=self.scan_id,
-            base_url=self.checkmarx_base_url
+            base_url=self.checkmarx_base_url,
+            branch=self.branch
         )
         
         # Load all finding details for report

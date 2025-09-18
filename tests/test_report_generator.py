@@ -18,7 +18,8 @@ class TestReportGenerator(unittest.TestCase):
             output_dir=self.test_dir,
             project_id="TEST-123",
             scan_id="SCAN-456",
-            base_url="https://checkmarx.example.com"
+            base_url="https://checkmarx.example.com",
+            branch="main"
         )
     
     def tearDown(self):
@@ -48,6 +49,9 @@ class TestReportGenerator(unittest.TestCase):
         self.assertIn("https://checkmarx.example.com/projects/TEST-123", content)
         self.assertIn("SCAN-456", content)
         self.assertIn("https://checkmarx.example.com/sast-results/TEST-123/SCAN-456", content)
+        # Check for branch display
+        self.assertIn("Branch:", content)
+        self.assertIn("main", content)
     
     def test_add_finding(self):
         """Test adding a finding to report."""
