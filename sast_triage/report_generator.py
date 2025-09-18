@@ -12,7 +12,8 @@ class ReportGenerator:
     
     def __init__(self, output_dir: str = ".", project_name: Optional[str] = None,
                  project_id: Optional[str] = None, scan_id: Optional[str] = None, 
-                 base_url: Optional[str] = None, branch: Optional[str] = None):
+                 base_url: Optional[str] = None, branch: Optional[str] = None,
+                 model_name: Optional[str] = None):
         """
         Initialize the report generator.
         
@@ -23,6 +24,7 @@ class ReportGenerator:
             scan_id: Scan identifier for the report
             base_url: Checkmarx base URL for generating links
             branch: Git branch being analyzed
+            model_name: LLM model used for analysis
         """
         self.output_dir = Path(output_dir)
         self.project_name = project_name or "Unknown"
@@ -30,6 +32,7 @@ class ReportGenerator:
         self.scan_id = scan_id
         self.base_url = base_url
         self.branch = branch
+        self.model_name = model_name or "Unknown"
         
         # Generate timestamp-based filename
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
@@ -83,23 +86,33 @@ class ReportGenerator:
                 <span class="text-2xl font-semibold text-blue-600">|</span>
                 <h2 class="text-2xl font-semibold text-blue-600">{self.project_name}</h2>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <!-- Project/Scan Information Row -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-3">
                 <div>
                     <span class="font-semibold">Project ID:</span> 
                     {f'<a href="{self.base_url}/projects/{self.project_id}" target="_blank" class="text-blue-600 hover:underline">{self.project_id}</a>' if self.base_url else self.project_id}
                 </div>
+                {f'''<div>
+                    <span class="font-semibold">Scan ID:</span> 
+                    <a href="{self.base_url}/sast-results/{self.project_id}/{self.scan_id}" target="_blank" class="text-blue-600 hover:underline">{self.scan_id}</a>
+                </div>''' if self.scan_id and self.base_url else '<div></div>'}
+                {f'''<div>
+                    <span class="font-semibold">Branch:</span> 
+                    <span class="text-gray-700">{self.branch}</span>
+                </div>''' if self.branch else '<div></div>'}
+            </div>
+            
+            <!-- Analysis Information Row -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                 <div>
                     <span class="font-semibold">Analysis Date:</span> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 </div>
+                <div>
+                    <span class="font-semibold">Analysis Model:</span> 
+                    <span class="text-gray-700">{self.model_name}</span>
+                </div>
+                <div></div>
             </div>
-            {f'''<div class="text-sm mt-2">
-                <span class="font-semibold">Scan ID:</span> 
-                <a href="{self.base_url}/sast-results/{self.project_id}/{self.scan_id}" target="_blank" class="text-blue-600 hover:underline">{self.scan_id}</a>
-            </div>''' if self.scan_id and self.base_url else ''}
-            {f'''<div class="text-sm mt-1">
-                <span class="font-semibold">Branch:</span> 
-                <span class="text-gray-700">{self.branch}</span>
-            </div>''' if self.branch else ''}
             
             <!-- Statistics -->
             <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4" id="stats">

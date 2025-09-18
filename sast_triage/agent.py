@@ -412,7 +412,8 @@ class SASTTriageAgent:
             project_id=self.project_id or "Unknown",
             scan_id=self.scan_id,
             base_url=self.checkmarx_base_url,
-            branch=self.branch
+            branch=self.branch,
+            model_name=self.model_name
         )
         
         # Load all finding details for report
