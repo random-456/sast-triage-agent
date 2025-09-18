@@ -56,7 +56,7 @@ class TestReportGenerator(unittest.TestCase):
         self.assertIn("Branch:", content)
         self.assertIn("main", content)
         # Check for model display
-        self.assertIn("Model:", content)
+        self.assertIn("Analysis Model:", content)
         self.assertIn("gemini-2.5-pro", content)
     
     def test_add_finding(self):
