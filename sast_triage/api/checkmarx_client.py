@@ -1,19 +1,16 @@
 """Checkmarx One API client for fetching SAST findings."""
 
 import hashlib
-import urllib3
+import os
 from typing import Dict, List, Optional, Tuple
 
 import requests
-
-# Suppress InsecureRequestWarning for unverified HTTPS requests
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class CheckmarxClient:
     """Client for interacting with Checkmarx One API."""
     
-    def __init__(self, base_url: str, refresh_token: str, client_id: str = "ast-app"):
+    def __init__(self, base_url: str, refresh_token: str, client_id: str = "ast-app", ca_cert_path: Optional[str] = None):
         """
         Initialize the Checkmarx API client.
         
@@ -21,11 +18,27 @@ class CheckmarxClient:
             base_url: The base URL of the Checkmarx instance
             refresh_token: The refresh token for authentication
             client_id: The client ID for the application
+            ca_cert_path: Path to CA certificate file for SSL verification
         """
         self.base_url = base_url.rstrip("/")
         self.refresh_token = refresh_token
         self.client_id = client_id
+        # Import here to avoid circular imports
+        from sast_triage.config import CHECKMARX_CA_CERT
+        self.ca_cert_path = ca_cert_path or CHECKMARX_CA_CERT
         self.access_token = None
+    
+    @property
+    def verify_ssl(self) -> bool | str:
+        """
+        Determine SSL verification setting.
+        
+        Returns:
+            Path to CA cert file if it exists, otherwise True for default verification
+        """
+        if self.ca_cert_path and os.path.exists(self.ca_cert_path):
+            return self.ca_cert_path
+        return True
     
     def refresh_access_token(self) -> str:
         """
@@ -45,7 +58,7 @@ class CheckmarxClient:
             "refresh_token": self.refresh_token
         }
         
-        response = requests.post(token_url, data=data, verify=False)
+        response = requests.post(token_url, data=data, verify=self.verify_ssl)
         response.raise_for_status()
         
         self.access_token = response.json()["access_token"]
@@ -77,7 +90,7 @@ class CheckmarxClient:
         params = {"name": project_name}
         
         try:
-            response = requests.get(projects_url, headers=headers, params=params, verify=False)
+            response = requests.get(projects_url, headers=headers, params=params, verify=self.verify_ssl)
             response.raise_for_status()
             projects_data = response.json()
             
@@ -124,7 +137,7 @@ class CheckmarxClient:
         }
         
         try:
-            response = requests.get(project_url, headers=headers, verify=False)
+            response = requests.get(project_url, headers=headers, verify=self.verify_ssl)
             response.raise_for_status()
             project_data = response.json()
             
@@ -182,7 +195,7 @@ class CheckmarxClient:
             last_scans_url, 
             headers=headers, 
             params=last_scans_params, 
-            verify=False
+            verify=self.verify_ssl
         )
         
         if not response.ok:
@@ -201,7 +214,7 @@ class CheckmarxClient:
                     last_scans_url, 
                     headers=headers, 
                     params=last_scans_params, 
-                    verify=False
+                    verify=self.verify_ssl
                 )
                 
                 if not response.ok:
@@ -243,7 +256,7 @@ class CheckmarxClient:
                 findings_url,
                 headers=headers,
                 params=findings_params,
-                verify=False
+                verify=self.verify_ssl
             )
             
             if not response.ok:

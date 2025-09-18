@@ -1,6 +1,8 @@
 """Tests for Checkmarx One API client."""
 
 import json
+import os
+import tempfile
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
@@ -14,7 +16,28 @@ class TestCheckmarxClient(unittest.TestCase):
         """Set up test fixtures."""
         self.base_url = "https://test.checkmarx.net"
         self.refresh_token = "test-refresh-token"
-        self.client = CheckmarxClient(self.base_url, self.refresh_token)
+        self.client = CheckmarxClient(self.base_url, self.refresh_token, ca_cert_path=None)
+    
+    def test_verify_ssl_property(self):
+        """Test SSL verification property behavior."""
+        # Test with no certificate path
+        client_no_cert = CheckmarxClient(self.base_url, self.refresh_token, ca_cert_path=None)
+        self.assertTrue(client_no_cert.verify_ssl)
+        
+        # Test with non-existent certificate path
+        client_missing_cert = CheckmarxClient(self.base_url, self.refresh_token, ca_cert_path="/non/existent/cert.crt")
+        self.assertTrue(client_missing_cert.verify_ssl)
+        
+        # Test with existing certificate file
+        with tempfile.NamedTemporaryFile(suffix=".crt", delete=False) as temp_cert:
+            temp_cert.write(b"dummy certificate content")
+            temp_cert_path = temp_cert.name
+        
+        try:
+            client_with_cert = CheckmarxClient(self.base_url, self.refresh_token, ca_cert_path=temp_cert_path)
+            self.assertEqual(client_with_cert.verify_ssl, temp_cert_path)
+        finally:
+            os.unlink(temp_cert_path)
     
     @patch("sast_triage.api.checkmarx_client.requests.post")
     def test_refresh_access_token_success(self, mock_post):
