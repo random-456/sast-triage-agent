@@ -16,6 +16,7 @@ class TestReportGenerator(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.report_gen = ReportGenerator(
             output_dir=self.test_dir,
+            project_name="Test Project",
             project_id="TEST-123",
             scan_id="SCAN-456",
             base_url="https://checkmarx.example.com",
@@ -42,6 +43,7 @@ class TestReportGenerator(unittest.TestCase):
             content = f.read()
         
         self.assertIn("TEST-123", content)
+        self.assertIn("Test Project", content)  # Check project name display
         self.assertIn("SAST Triage Report", content)
         self.assertIn("Total Findings Analyzed", content)
         self.assertIn("5", content)

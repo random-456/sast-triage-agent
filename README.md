@@ -28,13 +28,13 @@ LLM_API_KEY=sk-1234
 ## Usage
 
 ```bash
-python run_triage.py PROJECT_ID [OPTIONS]
+python run_triage.py PROJECT_NAME [OPTIONS]
 
 # Examples:
-python run_triage.py 12345                           # Analyze project with default settings
-python run_triage.py 12345 --severities HIGH         # Only HIGH severity findings
-python run_triage.py 12345 --output-dir ./analysis  # Custom output directory
-python run_triage.py 12345 --branch main             # Analyze specific branch
+python run_triage.py "My Application"                         # Analyze project with default settings
+python run_triage.py "My Application" --severities HIGH       # Only HIGH severity findings
+python run_triage.py "My Application" --output-dir ./analysis # Custom output directory
+python run_triage.py "My Application" --branch main           # Analyze specific branch
 ```
 
 Options:
