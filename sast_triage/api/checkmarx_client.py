@@ -51,7 +51,8 @@ class CheckmarxClient:
             requests.exceptions.HTTPError: If token refresh fails
         """
         print("Refreshing access token...")
-        token_url = f"{self.base_url}/auth/realms/airbus/protocol/openid-connect/token"
+        from sast_triage.config import CHECKMARX_REALM
+        token_url = f"{self.base_url}/auth/realms/{CHECKMARX_REALM}/protocol/openid-connect/token"
         data = {
             "grant_type": "refresh_token",
             "client_id": self.client_id,
