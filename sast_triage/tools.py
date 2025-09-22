@@ -53,7 +53,7 @@ def parse_csv_findings(file_path: str = DEFAULT_CSV_FILE) -> List[Dict]:
     Parse the CSV file containing SAST findings list.
     
     Args:
-        file_path: Path to the CSV file with findingId, severity, triaged columns
+        file_path: Path to the CSV file with resultHash, severity, triaged columns
     
     Returns:
         List of finding records from CSV
@@ -65,7 +65,7 @@ def parse_csv_findings(file_path: str = DEFAULT_CSV_FILE) -> List[Dict]:
             for row in reader:
                 if row['triaged'].lower() == 'no':
                     findings.append({
-                        'findingId': row['findingId'],
+                        'resultHash': row['resultHash'],
                         'severity': row['severity'],
                         'triaged': row['triaged']
                     })
@@ -75,12 +75,12 @@ def parse_csv_findings(file_path: str = DEFAULT_CSV_FILE) -> List[Dict]:
 
 
 @tool
-def get_finding_details(finding_id: str, json_path: str = DEFAULT_JSON_FILE) -> Dict:
+def get_finding_details(result_hash: str, json_path: str = DEFAULT_JSON_FILE) -> Dict:
     """
     Get detailed information for a specific finding from JSON file.
     
     Args:
-        finding_id: The finding ID to look up
+        result_hash: The result hash to look up
         json_path: Path to the JSON file with detailed findings
     
     Returns:
@@ -91,10 +91,10 @@ def get_finding_details(finding_id: str, json_path: str = DEFAULT_JSON_FILE) -> 
             all_findings = json.load(f)
         
         for finding in all_findings:
-            if finding['findingId'] == finding_id:
+            if finding['resultHash'] == result_hash:
                 return finding
         
-        return {"error": f"Finding {finding_id} not found in details"}
+        return {"error": f"Finding {result_hash} not found in details"}
     except Exception as e:
         return {"error": f"Failed to get finding details: {str(e)}"}
 

@@ -104,7 +104,7 @@ class TestIntegration:
             with patch('sast_triage.agent.get_finding_details') as mock_get_details:
                 # Return the SQL injection finding details
                 mock_get_details.return_value = {
-                    "findingId": "test-sql-001",
+                    "resultHash": "hash-001",
                     "severity": "HIGH",
                     "queryName": "SQL_Injection",
                     "cweID": 89,
@@ -129,10 +129,10 @@ class TestIntegration:
                 }
                 
                 # Run analysis
-                decision = await mock_llm_agent.analyze_single_finding("test-sql-001")
+                decision = await mock_llm_agent.analyze_single_finding("hash-001")
                 
                 # Verify decision
-                assert decision.findingId == "test-sql-001"
+                assert decision.resultHash == "hash-001"
                 assert decision.assessment_result == "CONFIRMED"
                 assert decision.assessment_confidence == 0.95
                 assert "Direct SQL injection" in decision.assessment_justification
@@ -183,7 +183,7 @@ class TestIntegration:
             with patch('sast_triage.agent.get_finding_details') as mock_get_details:
                 # Return the XSS finding that references nonexistent file
                 mock_get_details.return_value = {
-                    "findingId": "test-xss-002",
+                    "resultHash": "hash-002",
                     "severity": "MEDIUM",
                     "queryName": "XSS_Reflected",
                     "dataflow": [
@@ -193,10 +193,10 @@ class TestIntegration:
                 }
                 
                 # Run analysis
-                decision = await mock_llm_agent.analyze_single_finding("test-xss-002")
+                decision = await mock_llm_agent.analyze_single_finding("hash-002")
                 
                 # Verify decision
-                assert decision.findingId == "test-xss-002"
+                assert decision.resultHash == "hash-002"
                 assert decision.assessment_result == "NOT_EXPLOITABLE"
                 assert decision.assessment_confidence == 0.0
                 assert "file does not exist" in decision.assessment_justification.lower()
@@ -218,24 +218,24 @@ class TestIntegration:
         json_file = os.path.join(test_findings, "findings_details.json")
         
         # Mock LLM to immediately submit decisions
-        def create_response(finding_id, is_exploitable):
+        def create_response(result_hash, is_exploitable):
             resp = Mock()
-            resp.content = f"Analyzing {finding_id}"
+            resp.content = f"Analyzing {result_hash}"
             resp.tool_calls = [{
-                "id": f"call-{finding_id}",
+                "id": f"call-{result_hash}",
                 "name": "submit_triage_decision",
                 "args": {
                     "is_exploitable": is_exploitable,
                     "confidence": 0.8,
-                    "justification": f"Test decision for {finding_id}"
+                    "justification": f"Test decision for {result_hash}"
                 }
             }]
             return resp
         
         # Create responses for both findings
         responses = [
-            create_response("test-sql-001", True),
-            create_response("test-xss-002", False)
+            create_response("hash-001", True),
+            create_response("hash-002", False)
         ]
         
         mock_llm_agent.llm_with_tools = Mock()
@@ -247,25 +247,25 @@ class TestIntegration:
                 with patch('sast_triage.agent.DEFAULT_JSON_FILE', json_file):
                     with patch('sast_triage.agent.parse_csv_findings') as mock_parse:
                         mock_parse.return_value = [
-                            {'findingId': 'test-sql-001', 'severity': 'HIGH', 'triaged': 'no'},
-                            {'findingId': 'test-xss-002', 'severity': 'MEDIUM', 'triaged': 'no'}
+                            {'resultHash': 'hash-001', 'severity': 'HIGH', 'triaged': 'no'},
+                            {'resultHash': 'hash-002', 'severity': 'MEDIUM', 'triaged': 'no'}
                         ]
                         
                         with patch('sast_triage.agent.get_finding_details') as mock_get:
-                            def get_details(finding_id, json_path=None):
-                                if finding_id == "test-sql-001":
-                                    return {"findingId": "test-sql-001", "severity": "HIGH"}
+                            def get_details(result_hash, json_path=None):
+                                if result_hash == "hash-001":
+                                    return {"resultHash": "hash-001", "severity": "HIGH"}
                                 else:
-                                    return {"findingId": "test-xss-002", "severity": "MEDIUM"}
+                                    return {"resultHash": "hash-002", "severity": "MEDIUM"}
                             mock_get.side_effect = get_details
                             
                             results = await mock_llm_agent.process_all_findings(str(temp_csv), json_file)
         
         # Verify results
         assert len(results) == 2
-        assert results[0]['findingId'] == 'test-sql-001'
+        assert results[0]['resultHash'] == 'hash-001'
         assert results[0]['assessment_result'] == 'CONFIRMED'
-        assert results[1]['findingId'] == 'test-xss-002'
+        assert results[1]['resultHash'] == 'hash-002'
         assert results[1]['assessment_result'] == 'NOT_EXPLOITABLE'
         
         # Check that results were saved to file

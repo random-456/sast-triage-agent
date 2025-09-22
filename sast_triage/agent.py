@@ -134,12 +134,12 @@ class SASTTriageAgent:
         - justification: detailed explanation of your decision
         """
     
-    async def analyze_single_finding(self, finding_id: str, severity: str = None, update_csv: bool = True) -> TriageDecision:
+    async def analyze_single_finding(self, result_hash: str, severity: str = None, update_csv: bool = True) -> TriageDecision:
         """
         Analyze a single finding and return triage decision.
         
         Args:
-            finding_id: The finding ID to analyze
+            result_hash: The finding ID to analyze
             severity: Original severity from Checkmarx (unused, kept for compatibility)
             update_csv: Whether to update CSV status (unused, kept for compatibility)
         
@@ -147,13 +147,13 @@ class SASTTriageAgent:
             TriageDecision with analysis results
         """
         # Start logging for this finding
-        finding_log = self.logger.log_finding_start(finding_id)
+        finding_log = self.logger.log_finding_start(result_hash)
         
         # Pre-load the complete finding details including dataflow
-        finding_details = get_finding_details(finding_id)
+        finding_details = get_finding_details(result_hash)
         if 'error' in finding_details:
             decision = TriageDecision(
-                findingId=finding_id,
+                resultHash=result_hash,
                 assessment_result="REFUSED",
                 assessment_confidence=0.0,
                 assessment_justification=f"Could not load finding details: {finding_details['error']}"
@@ -191,7 +191,7 @@ class SASTTriageAgent:
         - confidence: your confidence level (0.0 to 1.0)
         - justification: detailed explanation of your decision
         
-        Finding ID for reference: {finding_id}
+        Finding ID for reference: {result_hash}
         """
         
         try:
@@ -234,7 +234,7 @@ class SASTTriageAgent:
                             # Extract decision from tool arguments
                             try:
                                 decision = TriageDecision(
-                                    findingId=finding_id,
+                                    resultHash=result_hash,
                                     assessment_result="CONFIRMED" if tool_args.get("is_exploitable") else "NOT_EXPLOITABLE",
                                     assessment_confidence=tool_args.get("confidence", 0.5),
                                     assessment_justification=tool_args.get("justification", "")
@@ -283,7 +283,7 @@ class SASTTriageAgent:
             
             # Return a timeout/refused decision
             decision = TriageDecision(
-                findingId=finding_id,
+                resultHash=result_hash,
                 assessment_result="REFUSED",
                 assessment_confidence=0.0,
                 assessment_justification=f"Analysis did not complete within {max_iterations} iterations. Manual review required."
@@ -292,9 +292,9 @@ class SASTTriageAgent:
             self.logger.log_finding_complete(finding_log, decision)
             return decision
         except Exception as e:
-            print(f"Error analyzing finding {finding_id}: {str(e)}")
+            print(f"Error analyzing finding {result_hash}: {str(e)}")
             decision = TriageDecision(
-                findingId=finding_id,
+                resultHash=result_hash,
                 assessment_result="REFUSED",
                 assessment_confidence=0.0,
                 assessment_justification=f"Analysis failed due to error: {str(e)}. Manual review required."
@@ -302,7 +302,7 @@ class SASTTriageAgent:
             self.logger.log_finding_complete(finding_log, decision)
             return decision
     
-    def update_csv_status(self, finding_id: str, csv_path: str = DEFAULT_CSV_FILE):
+    def update_csv_status(self, result_hash: str, csv_path: str = DEFAULT_CSV_FILE):
         """Update the triaged status in CSV file."""
         try:
             # Read CSV
@@ -311,7 +311,7 @@ class SASTTriageAgent:
                 reader = csv.DictReader(f)
                 fieldnames = reader.fieldnames
                 for row in reader:
-                    if row['findingId'] == finding_id:
+                    if row['resultHash'] == result_hash:
                         row['triaged'] = 'yes'
                     rows.append(row)
             
@@ -321,9 +321,9 @@ class SASTTriageAgent:
                 writer.writeheader()
                 writer.writerows(rows)
             
-            print(f"  Updated CSV: marked {finding_id} as triaged")
+            print(f"  Updated CSV: marked {result_hash} as triaged")
         except Exception as e:
-            print(f"  Warning: Could not update CSV for {finding_id}: {str(e)}")
+            print(f"  Warning: Could not update CSV for {result_hash}: {str(e)}")
     
     def save_incremental_result(self, result: Dict):
         """Save individual result immediately to findings_assessment.json."""
@@ -336,10 +336,10 @@ class SASTTriageAgent:
                     existing_results = json.load(f)
             
             # Add new result (or update if finding already exists)
-            finding_id = result['findingId']
+            result_hash = result['resultHash']
             updated = False
             for i, existing in enumerate(existing_results):
-                if existing['findingId'] == finding_id:
+                if existing['resultHash'] == result_hash:
                     existing_results[i] = result
                     updated = True
                     break
@@ -416,7 +416,7 @@ class SASTTriageAgent:
         
         # Load all finding details for report
         with open(json_path, 'r') as f:
-            all_details = {d['findingId']: d for d in json.load(f)}
+            all_details = {d['resultHash']: d for d in json.load(f)}
         
         # Get total count including already triaged
         total_count = len(all_details)
@@ -429,10 +429,10 @@ class SASTTriageAgent:
             with open('findings_assessment.json', 'r') as f:
                 existing_results = json.load(f)
                 for idx, result in enumerate(existing_results):
-                    finding_id = result.get('findingId')
-                    if finding_id in all_details:
+                    result_hash = result.get('resultHash')
+                    if result_hash in all_details:
                         report_gen.add_finding(
-                            finding_details=all_details[finding_id],
+                            finding_details=all_details[result_hash],
                             assessment=result,
                             current=idx + 1,
                             total=total_count
@@ -442,11 +442,11 @@ class SASTTriageAgent:
         triage_results = []
         existing_count = total_count - len(findings)
         for i, finding in enumerate(findings):
-            print(f"\nAnalyzing finding {i+1}/{len(findings)}: {finding['findingId']}")
+            print(f"\nAnalyzing finding {i+1}/{len(findings)}: {finding['resultHash']}")
             
             try:
                 decision = await self.analyze_single_finding(
-                    finding['findingId'],
+                    finding['resultHash'],
                     finding['severity'],
                     update_csv=False
                 )
@@ -458,7 +458,7 @@ class SASTTriageAgent:
                 self.save_incremental_result(result_dict)
                 
                 # Mark as triaged after analysis
-                self.update_csv_status(finding['findingId'], csv_path)
+                self.update_csv_status(finding['resultHash'], csv_path)
                 
                 # Print summary
                 print(f"  Result: {decision.assessment_result}")
@@ -466,7 +466,7 @@ class SASTTriageAgent:
                 print(f"  Justification: {decision.assessment_justification[:100]}...")
                 
                 # Add to HTML report
-                finding_details = all_details.get(finding['findingId'], {})
+                finding_details = all_details.get(finding['resultHash'], {})
                 report_gen.add_finding(
                     finding_details=finding_details,
                     assessment=result_dict,
@@ -475,10 +475,10 @@ class SASTTriageAgent:
                 )
                 
             except Exception as e:
-                print(f"  Error analyzing {finding['findingId']}: {str(e)}")
+                print(f"  Error analyzing {finding['resultHash']}: {str(e)}")
                 # Save error result
                 error_result = {
-                    'findingId': finding['findingId'],
+                    'resultHash': finding['resultHash'],
                     'assessment_result': 'REFUSED',
                     'assessment_confidence': 0.0,
                     'assessment_justification': f'Analysis failed: {str(e)}'
@@ -487,10 +487,10 @@ class SASTTriageAgent:
                 self.save_incremental_result(error_result)
                 
                 # Mark as triaged even for errors (so they don't retry indefinitely)
-                self.update_csv_status(finding['findingId'], csv_path)
+                self.update_csv_status(finding['resultHash'], csv_path)
                 
                 # Add error to HTML report
-                finding_details = all_details.get(finding['findingId'], {})
+                finding_details = all_details.get(finding['resultHash'], {})
                 report_gen.add_finding(
                     finding_details=finding_details,
                     assessment=error_result,

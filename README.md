@@ -60,7 +60,7 @@ Options:
 **findings_assessment.json**:
 ```json
 [{
-    "findingId": "8ac6484c12c49772",
+    "resultHash": "8ac6484c12c49772",
     "assessment_result": "CONFIRMED|NOT_EXPLOITABLE|REFUSED",
     "assessment_confidence": 0.85,
     "assessment_justification": "..."

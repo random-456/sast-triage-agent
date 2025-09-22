@@ -55,10 +55,10 @@ class LoggingManager:
         except Exception as e:
             print(f"Warning: Could not save log: {e}")
     
-    def log_finding_start(self, finding_id: str) -> Dict:
+    def log_finding_start(self, result_hash: str) -> Dict:
         """Start logging a new finding analysis."""
         finding_log = {
-            "finding_id": finding_id,
+            "result_hash": result_hash,
             "start_time": datetime.datetime.now().isoformat(),
             "conversation": [],
             "final_decision": None,

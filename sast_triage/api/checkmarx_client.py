@@ -1,6 +1,5 @@
 """Checkmarx One API client for fetching SAST findings."""
 
-import hashlib
 import os
 from typing import Dict, List, Optional, Tuple
 
@@ -309,27 +308,18 @@ class CheckmarxClient:
         
         for finding in findings:
             nodes = finding.get("nodes", [])
-            source_node = nodes[0] if nodes else {}
-            sink_node = nodes[-1] if nodes else {}
             
-            similarity_id = finding.get("similarityID", "")
-            source_file = source_node.get("fileName", "")
-            source_line = source_node.get("line", "")
-            sink_file = sink_node.get("fileName", "")
-            sink_line = sink_node.get("line", "")
-            
-            # Generate unique finding ID
-            id_string = f"{similarity_id}|{source_file}|{source_line}|{sink_file}|{sink_line}"
-            finding_id_hash = hashlib.sha256(id_string.encode("utf-8")).hexdigest()[:16]
+            # Use resultHash from Checkmarx as the result hash
+            result_hash = finding.get("resultHash", "")
             
             triage_records.append({
-                "findingId": finding_id_hash,
+                "resultHash": result_hash,
                 "severity": finding.get("severity", ""),
                 "triaged": "no"
             })
             
             detailed_records.append({
-                "findingId": finding_id_hash,
+                "resultHash": result_hash,
                 "category": finding.get("group", ""),
                 "cweID": finding.get("cweID", ""),
                 "languageName": finding.get("languageName", ""),

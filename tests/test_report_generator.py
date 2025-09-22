@@ -64,7 +64,7 @@ class TestReportGenerator(unittest.TestCase):
         self.report_gen.initialize_report(total_findings=1)
         
         finding_details = {
-            "findingId": "test-001",
+            "resultHash": "hash-001",
             "severity": "HIGH",
             "queryName": "SQL_Injection",
             "cweID": 89,
@@ -109,7 +109,7 @@ class TestReportGenerator(unittest.TestCase):
         self.assertIn("HIGH", content)
         self.assertIn("CONFIRMED", content)
         self.assertIn("95.0% confidence", content)
-        self.assertIn("test-001", content)
+        self.assertIn("hash-001", content)
         
         # Check progress bar is hidden when complete
         self.assertIn('id="progress-container" class="hidden"', content)
@@ -172,7 +172,7 @@ class TestReportGenerator(unittest.TestCase):
         self.report_gen.initialize_report(total_findings=1)
         
         finding_details = {
-            "findingId": "test-002",
+            "resultHash": "hash-002",
             "severity": "MEDIUM",
             "queryName": "XSS",
             "dataflow": []
