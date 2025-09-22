@@ -104,10 +104,8 @@ class SASTTriageAgent:
         d) Exploitation Potential: Consider how an attacker might leverage the finding, including indirect or chained attack vectors
         
         IMPORTANT CONSIDERATIONS:
-        - If detected finding is likely not true-positive but there's another closely linked vulnerability in the same area, report as CONFIRMED with explanation
         - Even if exploitation potential is relatively low (but not zero), report as CONFIRMED with details
         - Consider privileged attacker scenarios in your analyses
-        - Analyze each finding separately without referring to other findings
         - Focus on HIGH QUALITY assessment - think hard and perform as many analysis steps as needed
         
         Use ALL available tools to:
