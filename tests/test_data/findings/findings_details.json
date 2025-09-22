@@ -1,6 +1,6 @@
 [
     {
-        "findingId": "test-sql-001",
+        "resultHash": "hash-001",
         "category": "JavaScript_NodeJS",
         "cweID": 89,
         "languageName": "javascript",
@@ -28,7 +28,7 @@
         ]
     },
     {
-        "findingId": "test-xss-002",
+        "resultHash": "hash-002",
         "category": "JavaScript_NodeJS",
         "cweID": 79,
         "languageName": "javascript",

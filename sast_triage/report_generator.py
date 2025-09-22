@@ -327,7 +327,7 @@ class ReportGenerator:
         query_name = finding.get("queryName", "Unknown Query")
         category = finding.get("category", "")
         cwe_id = finding.get("cweID", "")
-        finding_id = finding.get("findingId", "")
+        result_hash = finding.get("resultHash", "")
         
         result = assessment.get("assessment_result", "REFUSED")
         confidence = assessment.get("assessment_confidence", 0) * 100
@@ -387,9 +387,11 @@ class ReportGenerator:
                 </div>
             </div>
             
-            <!-- Footer with finding ID -->
+            <!-- Footer with result hash -->
             <div class="px-4 py-2 bg-gray-50 border-t border-gray-200 rounded-b-lg">
-                <span class="text-xs text-gray-500">Finding ID: {finding_id}</span>
+                <span class="text-xs text-gray-500">Result Hash: 
+                    {f'<a href="{self.base_url}/sast-results/{self.project_id}/{self.scan_id}?resultId={result_hash}" target="_blank" class="text-blue-600 hover:underline">{result_hash}</a>' if self.base_url and self.project_id and self.scan_id else result_hash}
+                </span>
             </div>
         </div>"""
     

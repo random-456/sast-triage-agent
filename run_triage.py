@@ -61,7 +61,7 @@ def save_findings_data(
     # Write CSV file
     print(f"\nSaving {len(triage_records)} records to {csv_file.name}...")
     with open(csv_file, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["findingId", "severity", "triaged"])
+        writer = csv.DictWriter(f, fieldnames=["resultHash", "severity", "triaged"])
         writer.writeheader()
         writer.writerows(triage_records)
     

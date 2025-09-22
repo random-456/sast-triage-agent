@@ -124,6 +124,7 @@ class TestCheckmarxClient(unittest.TestCase):
             "results": [
                 {
                     "similarityID": "sim-001",
+                    "resultHash": "hash-001",
                     "severity": "HIGH",
                     "queryName": "SQL_Injection",
                     "cweID": 89,
@@ -137,7 +138,8 @@ class TestCheckmarxClient(unittest.TestCase):
                     ]
                 },
                 {
-                    "similarityID": "sim-002", 
+                    "similarityID": "sim-002",
+                    "resultHash": "hash-002", 
                     "severity": "MEDIUM",
                     "queryName": "XSS",
                     "cweID": 79,
@@ -160,6 +162,7 @@ class TestCheckmarxClient(unittest.TestCase):
         findings = [
             {
                 "similarityID": "sim-001",
+                "resultHash": "hash-001",
                 "severity": "HIGH",
                 "queryName": "SQL_Injection",
                 "cweID": 89,
@@ -192,7 +195,7 @@ class TestCheckmarxClient(unittest.TestCase):
         # Check triage record
         self.assertEqual(triage_records[0]["severity"], "HIGH")
         self.assertEqual(triage_records[0]["triaged"], "no")
-        self.assertTrue(len(triage_records[0]["findingId"]) == 16)
+        self.assertEqual(triage_records[0]["resultHash"], "hash-001")
         
         # Check detailed record
         self.assertEqual(detailed_records[0]["queryName"], "SQL_Injection")

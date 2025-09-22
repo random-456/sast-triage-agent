@@ -135,7 +135,7 @@ class TestFindingOperations:
         findings = parse_csv_findings.invoke({"file_path": csv_path})
         
         assert len(findings) == 2
-        assert findings[0]["findingId"] == "test-sql-001"
+        assert findings[0]["resultHash"] == "hash-001"
         assert findings[0]["severity"] == "HIGH"
         assert findings[0]["triaged"] == "no"
     
@@ -144,16 +144,16 @@ class TestFindingOperations:
         json_path = os.path.join(test_findings_path, "findings_details.json")
         
         # Test existing finding - use invoke instead of direct call
-        details = get_finding_details.invoke({"finding_id": "test-sql-001", "json_path": json_path})
+        details = get_finding_details.invoke({"result_hash": "hash-001", "json_path": json_path})
         assert "error" not in details
-        assert details["findingId"] == "test-sql-001"
+        assert details["resultHash"] == "hash-001"
         assert details["cweID"] == 89
         assert len(details["dataflow"]) == 2
         assert details["dataflow"][0]["domType"] == "source"
         assert details["dataflow"][1]["domType"] == "sink"
         
         # Test non-existent finding
-        details = get_finding_details.invoke({"finding_id": "nonexistent", "json_path": json_path})
+        details = get_finding_details.invoke({"result_hash": "nonexistent", "json_path": json_path})
         assert "error" in details
         assert "not found" in details["error"]
     
