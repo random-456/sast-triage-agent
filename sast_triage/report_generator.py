@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, List
+from urllib.parse import quote
 
 
 class ReportGenerator:
@@ -390,7 +391,7 @@ class ReportGenerator:
             <!-- Footer with result hash -->
             <div class="px-4 py-2 bg-gray-50 border-t border-gray-200 rounded-b-lg">
                 <span class="text-xs text-gray-500">Result Hash: 
-                    {f'<a href="{self.base_url}/sast-results/{self.project_id}/{self.scan_id}?resultId={result_hash}" target="_blank" class="text-blue-600 hover:underline">{result_hash}</a>' if self.base_url and self.project_id and self.scan_id else result_hash}
+                    {f'<a href="{self.base_url}/sast-results/{self.project_id}/{self.scan_id}?resultId={quote(result_hash)}" target="_blank" class="text-blue-600 hover:underline">{result_hash}</a>' if self.base_url and self.project_id and self.scan_id else result_hash}
                 </span>
             </div>
         </div>"""
