@@ -19,11 +19,15 @@ Edit `.env` file:
 BASE_URL=https://
 REFRESH_TOKEN=refresh-token
 
-# LiteLLM Proxy Configuration
-LLM_BASE_URL=http://localhost:4000
-LLM_MODEL=gemini-2.5-pro
-LLM_API_KEY=sk-1234
+# Vertex AI Configuration
+PROJECT_ID=your-gcp-project-id
+DEFAULT_LOCATION=europe-west4
+MODEL_NAME=gemini-2.5-flash
 ```
+
+**Prerequisites:**
+- Access to Google Cloud Project with Vertex AI API enabled
+- Application Default Credentials configured (`gcloud auth application-default login`)
 
 ## Usage
 

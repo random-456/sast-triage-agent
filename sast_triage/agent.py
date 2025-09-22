@@ -7,7 +7,7 @@ import csv
 import json
 from typing import Dict, List, Any, Optional
 
-from langchain_openai import ChatOpenAI
+from langchain_google_vertexai import ChatVertexAI
 from langchain_core.messages import ToolMessage
 
 from .config import CODEBASE_PATH, DEFAULT_CSV_FILE, DEFAULT_JSON_FILE, MAX_ANALYSIS_ITERATIONS
@@ -23,10 +23,10 @@ class SASTTriageAgent:
     """Main SAST Triage Agent using LangChain with custom LLM endpoint"""
     
     def __init__(
-        self, 
-        base_url: str = "http://localhost:4000",
-        model_name: str = "gemini-2.5-pro", 
-        api_key: str = "dummy-key",
+        self,
+        project: str,
+        location: str = "europe-west4",
+        model_name: str = "gemini-2.5-flash",
         temperature: float = 0.1,
         project_name: Optional[str] = None,
         project_id: Optional[str] = None,
@@ -36,11 +36,11 @@ class SASTTriageAgent:
     ):
         """
         Initialize the SAST Triage Agent.
-        
+
         Args:
-            base_url: Base URL for the OpenAI-compatible endpoint
-            model_name: Model name as configured in your proxy
-            api_key: API key (can be dummy for local proxies)
+            project: Google Cloud Project ID for Vertex AI
+            location: Vertex AI location (default: europe-west4)
+            model_name: Vertex AI model name
             temperature: Model temperature for consistency
             project_name: Project name for reporting
             project_id: Project identifier for reporting
@@ -53,10 +53,10 @@ class SASTTriageAgent:
         self.scan_id = scan_id
         self.checkmarx_base_url = checkmarx_base_url
         self.branch = branch
-        self.llm = ChatOpenAI(
-            base_url=base_url,
-            model=model_name,
-            api_key=api_key,
+        self.llm = ChatVertexAI(
+            project=project,
+            location=location,
+            model_name=model_name,
             temperature=temperature,
             max_retries=3
         )
