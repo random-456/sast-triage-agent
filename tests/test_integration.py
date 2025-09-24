@@ -28,16 +28,16 @@ class TestIntegration:
     @pytest.fixture
     def mock_llm_agent(self, test_data_path):
         """Create an agent with mocked LLM for deterministic testing."""
-        with patch('sast_triage.agent.ChatOpenAI') as mock_chat:
+        with patch('sast_triage.agent.ChatVertexAI') as mock_chat:
             # Mock the LLM
             mock_llm = Mock()
             mock_llm.bind_tools = Mock(return_value=mock_llm)
             mock_chat.return_value = mock_llm
             
             agent = SASTTriageAgent(
-                base_url="http://test.local",
+                project="test-project",
+                location="test-location",
                 model_name="test-model",
-                api_key="test-key",
                 temperature=0.0
             )
             

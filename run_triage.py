@@ -95,13 +95,18 @@ async def run_triage_analysis(output_dir: Path, project_name: str = None, projec
     os.chdir(output_dir)
     
     try:
-        # Get LLM configuration
-        llm_base_url = os.getenv("LLM_BASE_URL", "http://localhost:4000")
-        llm_model = os.getenv("LLM_MODEL", "gemini-2.0-flash-exp")
-        llm_api_key = os.getenv("LLM_API_KEY", "dummy-key")
-        
-        print(f"\nUsing LLM endpoint: {llm_base_url}")
-        print(f"Using model: {llm_model}")
+        # Get Vertex AI configuration
+        vertex_project = os.getenv("PROJECT_ID")
+        vertex_location = os.getenv("DEFAULT_LOCATION", "europe-west4")
+        vertex_model = os.getenv("MODEL_NAME", "gemini-2.5-flash")
+
+        if not vertex_project:
+            print("\n✗ Error: PROJECT_ID environment variable is required for Vertex AI")
+            return 1
+
+        print(f"\nUsing Vertex AI project: {vertex_project}")
+        print(f"Using location: {vertex_location}")
+        print(f"Using model: {vertex_model}")
         print()
         
         print("Starting triage analysis...")
@@ -109,9 +114,9 @@ async def run_triage_analysis(output_dir: Path, project_name: str = None, projec
         
         # Initialize and run the agent
         agent = SASTTriageAgent(
-            base_url=llm_base_url,
-            model_name=llm_model,
-            api_key=llm_api_key,
+            project=vertex_project,
+            location=vertex_location,
+            model_name=vertex_model,
             temperature=0.1,
             project_name=project_name,
             project_id=project_id,

@@ -23,16 +23,16 @@ class TestSASTTriageAgent:
     @pytest.fixture
     def agent(self):
         """Create an agent instance for testing."""
-        with patch('sast_triage.agent.ChatOpenAI') as mock_chat:
+        with patch('sast_triage.agent.ChatVertexAI') as mock_chat:
             # Mock the LLM
             mock_llm = Mock()
             mock_llm.bind_tools = Mock(return_value=mock_llm)
             mock_chat.return_value = mock_llm
             
             agent = SASTTriageAgent(
-                base_url="http://test.local",
+                project="test-project",
+                location="test-location",
                 model_name="test-model",
-                api_key="test-key",
                 temperature=0.1
             )
             # Store the mock for later access in tests
