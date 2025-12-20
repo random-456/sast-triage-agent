@@ -20,7 +20,7 @@ BASE_URL=https://
 REFRESH_TOKEN=refresh-token
 
 # Vertex AI Configuration
-PROJECT_ID=your-gcp-project-id
+PROJECT_ID=gcp-project-id
 DEFAULT_LOCATION=europe-west4
 MODEL_NAME=gemini-2.5-flash
 ```
@@ -79,7 +79,6 @@ Options:
 - Color-coded severity badges (CRITICAL, HIGH, MEDIUM, LOW, INFO)
 - Grayscale styling for NOT_EXPLOITABLE findings
 - Detailed dataflow visualization
-- Real-time progress tracking
 
 ## Testing
 

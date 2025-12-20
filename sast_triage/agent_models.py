@@ -4,7 +4,6 @@ Pydantic models for SAST Triage Agent
 
 from pydantic import BaseModel, Field
 
-
 class TriageDecision(BaseModel):
     """Structured output for triage decisions matching Checkmarx format"""
     resultHash: str = Field(description="Unique result hash identifier from Checkmarx")

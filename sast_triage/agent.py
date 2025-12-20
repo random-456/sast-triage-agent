@@ -5,41 +5,47 @@ Main SAST Triage Agent using LangChain
 import os
 import csv
 import json
-from typing import Dict, List, Any, Optional
+import logging
+from typing import Dict, List, Optional
 
 from langchain_google_vertexai import ChatVertexAI
 from langchain_core.messages import ToolMessage
 
-from .config import CODEBASE_PATH, DEFAULT_CSV_FILE, DEFAULT_JSON_FILE, MAX_ANALYSIS_ITERATIONS
-from .models import TriageDecision
-from .tools import (
-    read_file, search_in_files, list_directory, submit_triage_decision,
-    parse_csv_findings, get_finding_details
+from sast_triage.agent_models import TriageDecision
+from sast_triage.agent_tools import (
+    read_file, search_in_files, list_directory, verify_analysis_completeness,
+    submit_triage_decision, parse_csv_findings, get_finding_details
 )
-from .logging_utils import LoggingManager
+from sast_triage.agent_logging import AgentLoggingManager
+from utils.report_helpers import ReportGenerator
 
+from sast_triage.prompts import TRIAGE_SYSTEM_PROMPT, TRIAGE_INPUT_PROMPT_TEMPLATE
+from config import CODEBASE_DIR, FINDINGS_JSON_FILE, FINDINGS_CSV_FILE, MAX_ANALYSIS_ITERATIONS, DEFAULT_OUTPUT_DIR
 
 class SASTTriageAgent:
     """Main SAST Triage Agent using LangChain with custom LLM endpoint"""
-    
+
+    logger = logging.getLogger(__name__)
+
     def __init__(
         self,
         project: str,
-        location: str = "europe-west4",
-        model_name: str = "gemini-2.5-flash",
+        model_name: str,
+        location: str,
         temperature: float = 0.1,
         project_name: Optional[str] = None,
         project_id: Optional[str] = None,
         scan_id: Optional[str] = None,
         checkmarx_base_url: Optional[str] = None,
-        branch: Optional[str] = None
+        branch: Optional[str] = None,
+        output_dir: str = DEFAULT_OUTPUT_DIR
     ):
         """
         Initialize the SAST Triage Agent.
-
+        
         Args:
             project: Google Cloud Project ID for Vertex AI
-            location: Vertex AI location (default: europe-west4)
+            location: Vertex AI location (default: europa-west4)
             model_name: Vertex AI model name
             temperature: Model temperature for consistency
             project_name: Project name for reporting
@@ -60,84 +66,36 @@ class SASTTriageAgent:
             temperature=temperature,
             max_retries=3
         )
-        
+
         self.tools = [
             read_file,  # Read entire files
             search_in_files,  # Search patterns across codebase
             list_directory,  # Explore directory structure
+            verify_analysis_completeness,  # Verification checkpoint before decision
             submit_triage_decision  # Submit final triage decision
         ]
-        
+
         # Bind tools to the LLM
         self.llm_with_tools = self.llm.bind_tools(self.tools)
-        
+
         # Store model configuration for logging
         self.model_name = model_name
         self.temperature = temperature
-        
-        # Setup logging
-        self.logger = LoggingManager(model_name, temperature)
-        
-        # System prompt for the security analyst
-        self.system_prompt = """You are an experienced senior security analyst evaluating SAST findings from Checkmarx.
-        
-        Your approach should be investigative and thorough:
-        - Start by understanding what the vulnerability claim is
-        - Investigate the code to see if it's truly exploitable
-        - Look for evidence, not just follow procedures
-        - Consider real-world exploitability, not just theoretical risks
-        
-        Be skeptical but fair:
-        - Don't assume sanitization exists without seeing it
-        - Don't assume it's safe just because it looks okay
-        - But also don't mark everything as vulnerable without evidence
-        
-        For each finding assessment, you must provide:
-        - assessment_result: "CONFIRMED" (true positive), "NOT_EXPLOITABLE" (false positive), or "REFUSED" (insufficient information)
-        - assessment_confidence: Score between 0 and 1 (where 1 is maximum confidence)
-        - assessment_justification: Detailed justification for your decision
-        
-        Your analysis must be thorough and consider:
-        a) Component Context: The code's role, environment, and interactions within the system
-        b) Data Flow & Trust: Trace data origins and movement, identifying trust boundaries and input sources (trusted vs. untrusted)
-        c) Security Controls: Assess existing mitigations (validation, authentication, authorization) and their effectiveness
-        d) Exploitation Potential: Consider how an attacker might leverage the finding, including indirect or chained attack vectors
-        
-        IMPORTANT CONSIDERATIONS:
-        - Even if exploitation potential is relatively low (but not zero), report as CONFIRMED with details
-        - Consider privileged attacker scenarios in your analyses
-        - Focus on HIGH QUALITY assessment - think hard and perform as many analysis steps as needed
-        
-        Use ALL available tools to:
-        1. Get finding details from JSON
-        2. Trace complete dataflow from source to sink
-        3. Analyze code at each critical point in dataflow
-        4. Check for vulnerability patterns and existing mitigations
-        5. Make informed decision based on comprehensive analysis
-        
-        CRITICAL: Before reading any file with the read_file tool, CHECK THE CONVERSATION HISTORY FIRST.
-        Do NOT re-read files you have already accessed - the complete file content is already available 
-        in the conversation above. Re-reading the same file is wasteful and unnecessary.
-        
-        MANDATORY: You MUST use a tool in EVERY response. Choose one of:
-        - read_file: Read source code files
-        - search_in_files: Search for patterns across codebase  
-        - list_directory: Explore directory structure
-        - submit_triage_decision: Submit your final assessment
-        
-        DO NOT respond with text only - all responses must include tool usage.
-        
-        When you have completed your analysis and are ready to provide your final assessment,
-        use the 'submit_triage_decision' tool with:
-        - is_exploitable: true/false based on your analysis
-        - confidence: your confidence level (0.0 to 1.0)
-        - justification: detailed explanation of your decision
-        """
-    
-    async def analyze_single_finding(self, result_hash: str, severity: str = None, update_csv: bool = True) -> TriageDecision:
+
+        # Setup agent logging
+        self.agent_logger = AgentLoggingManager(model_name, temperature)
+
+        # System and Human prompts
+        self.system_prompt = TRIAGE_SYSTEM_PROMPT
+        self.human_prompt_template = TRIAGE_INPUT_PROMPT_TEMPLATE
+
+        # File to store assessment results
+        self.assessments_file = os.path.join(output_dir, f"findings_assessment_{project_name}.json")
+
+    async def analyze_single_finding(self, result_hash: str) -> TriageDecision:
         """
         Analyze a single finding and return triage decision.
-        
+
         Args:
             result_hash: The finding ID to analyze
             severity: Original severity from Checkmarx (unused, kept for compatibility)
@@ -147,10 +105,10 @@ class SASTTriageAgent:
             TriageDecision with analysis results
         """
         # Start logging for this finding
-        finding_log = self.logger.log_finding_start(result_hash)
-        
+        finding_log = self.agent_logger.log_finding_start(result_hash)
+
         # Pre-load the complete finding details including dataflow
-        finding_details = get_finding_details(result_hash)
+        finding_details = get_finding_details.invoke({"result_hash": result_hash})
         if 'error' in finding_details:
             decision = TriageDecision(
                 resultHash=result_hash,
@@ -158,77 +116,51 @@ class SASTTriageAgent:
                 assessment_confidence=0.0,
                 assessment_justification=f"Could not load finding details: {finding_details['error']}"
             )
-            self.logger.log_finding_complete(finding_log, decision)
+            self.agent_logger.log_finding_complete(finding_log, decision)
             return decision
-        
+
         # Create comprehensive initial context
-        input_prompt = f"""
-        Here is a SAST finding from Checkmarx. Investigate the codebase and determine if it's truly exploitable.
-        
-        FINDING DETAILS:
-        {json.dumps(finding_details, indent=2)}
-        
-        CODEBASE ACCESS:
-        You can explore the codebase however you want using these tools:
-        - read_file: Read any file completely
-        - search_in_files: Search for patterns across all files
-        - list_directory: Explore the project structure
-        
-        INVESTIGATION:
-        Investigate however you think is best. You might want to:
-        - Read the files mentioned in the dataflow
-        - Look for sanitization or validation functions
-        - Understand how the application works
-        - Search for similar patterns or security controls
-        - Explore related files or directories
-        
-        Take as much time as you need. Read whatever files you think are relevant.
-        The goal is to understand if this vulnerability is real and exploitable.
-        
-        IMPORTANT: When you have completed your analysis and are ready to submit your decision,
-        use the 'submit_triage_decision' tool with:
-        - is_exploitable: true if the vulnerability is real and exploitable, false otherwise
-        - confidence: your confidence level (0.0 to 1.0)
-        - justification: detailed explanation of your decision
-        
-        Finding ID for reference: {result_hash}
-        """
-        
+        input_prompt = self.human_prompt_template.format(
+            finding_details=json.dumps(finding_details, indent=2),
+            finding_id=result_hash
+        )
+
         try:
             # Build conversation with system prompt and user request
             messages = [
                 ("system", self.system_prompt),
                 ("human", input_prompt)
             ]
-            
+
             # Log initial messages
-            self.logger.log_message(finding_log, "system", self.system_prompt)
-            self.logger.log_message(finding_log, "human", input_prompt)
-            
+            self.agent_logger.log_message(finding_log, "system", self.system_prompt)
+            self.agent_logger.log_message(finding_log, "human", input_prompt)
+
             # Run the agent with tools - allow MORE iterations for deeper investigation
             max_iterations = MAX_ANALYSIS_ITERATIONS
-            
+
             for iteration in range(max_iterations):
-                print(f"  Iteration {iteration + 1}/{max_iterations}")
-                
+                self.logger.debug(f"  Iteration {iteration + 1}/{max_iterations}")
+
                 # Get LLM response
                 response = await self.llm_with_tools.ainvoke(messages)
                 messages.append(response)
-                
+
                 # Log assistant response
                 tool_calls_info = []
                 if response.tool_calls:
                     tool_calls_info = [{"name": tc["name"], "args": tc["args"]} for tc in response.tool_calls]
-                self.logger.log_message(finding_log, "assistant", response.content, tool_calls_info)
-                
+
+                self.agent_logger.log_message(finding_log, "assistant", response.content, tool_calls_info)
+
                 # If LLM wants to use tools
                 if response.tool_calls:
                     for tool_call in response.tool_calls:
                         tool_name = tool_call["name"]
                         tool_args = tool_call["args"]
-                        
-                        print(f"    Using tool: {tool_name}")
-                        
+
+                        self.logger.debug(f"Using tool: {tool_name}")
+
                         # Check if this is the submit_triage_decision tool
                         if tool_name == "submit_triage_decision":
                             # Extract decision from tool arguments
@@ -239,15 +171,15 @@ class SASTTriageAgent:
                                     assessment_confidence=tool_args.get("confidence", 0.5),
                                     assessment_justification=tool_args.get("justification", "")
                                 )
-                                
+
                                 # Log the decision
-                                self.logger.log_finding_complete(finding_log, decision)
-                                
-                                print(f"  Decision submitted: {decision.assessment_result} (confidence: {decision.assessment_confidence:.2f})")
+                                self.agent_logger.log_finding_complete(finding_log, decision)
+
+                                self.logger.info(f"Decision submitted: {decision.assessment_result} (confidence: {decision.assessment_confidence:.2f})")
                                 return decision
-                                
+
                             except Exception as e:
-                                print(f"  Error processing decision: {e}")
+                                self.logger.error(f"Error processing decision: {e}")
                                 tool_result = {"error": f"Failed to process decision: {str(e)}"}
                         else:
                             # Execute other tools normally
@@ -259,28 +191,29 @@ class SASTTriageAgent:
                                     except Exception as e:
                                         tool_result = {"error": str(e)}
                                     break
-                            
+
                             if tool_result is None:
                                 tool_result = {"error": f"Tool {tool_name} not found"}
-                        
+
                         # Log tool result
-                        self.logger.log_tool_result(finding_log, tool_name, tool_args, tool_result)
-                        
+                        self.agent_logger.log_tool_result(finding_log, tool_name, tool_args, tool_result)
+
                         # Add tool result to conversation
                         tool_message = ToolMessage(
                             content=str(tool_result),
                             tool_call_id=tool_call["id"]
                         )
                         messages.append(tool_message)
+
                 else:
                     # No tool calls - force tool usage immediately
                     prompt = "You must use a tool. Either continue investigating with read_file/search_in_files/list_directory, or submit your final decision with submit_triage_decision."
                     messages.append(("human", prompt))
-                    self.logger.log_message(finding_log, "human", prompt)
-            
+                    self.agent_logger.log_message(finding_log, "human", prompt)
+
             # If we reach here, no decision was submitted via tool
             print(f"  Warning: No decision submitted after {max_iterations} iterations")
-            
+
             # Return a timeout/refused decision
             decision = TriageDecision(
                 resultHash=result_hash,
@@ -288,21 +221,22 @@ class SASTTriageAgent:
                 assessment_confidence=0.0,
                 assessment_justification=f"Analysis did not complete within {max_iterations} iterations. Manual review required."
             )
-            
-            self.logger.log_finding_complete(finding_log, decision)
+
+            self.agent_logger.log_finding_complete(finding_log, decision)
             return decision
+
         except Exception as e:
-            print(f"Error analyzing finding {result_hash}: {str(e)}")
+            self.logger.error(f"Error analyzing finding {result_hash}: {str(e)}")
             decision = TriageDecision(
                 resultHash=result_hash,
                 assessment_result="REFUSED",
                 assessment_confidence=0.0,
                 assessment_justification=f"Analysis failed due to error: {str(e)}. Manual review required."
             )
-            self.logger.log_finding_complete(finding_log, decision)
+            self.agent_logger.log_finding_complete(finding_log, decision)
             return decision
-    
-    def update_csv_status(self, result_hash: str, csv_path: str = DEFAULT_CSV_FILE):
+
+    def update_csv_status(self, result_hash: str, csv_path: str = FINDINGS_CSV_FILE):
         """Update the triaged status in CSV file."""
         try:
             # Read CSV
@@ -314,27 +248,26 @@ class SASTTriageAgent:
                     if row['resultHash'] == result_hash:
                         row['triaged'] = 'yes'
                     rows.append(row)
-            
+
             # Write updated CSV
             with open(csv_path, 'w', encoding='utf-8', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(rows)
-            
-            print(f"  Updated CSV: marked {result_hash} as triaged")
+
+            self.logger.debug(f"Updated CSV: marked {result_hash} as triaged")
         except Exception as e:
-            print(f"  Warning: Could not update CSV for {result_hash}: {str(e)}")
-    
+            self.logger.warning(f"Could not update CSV for {result_hash}: {str(e)}")
+
     def save_incremental_result(self, result: Dict):
-        """Save individual result immediately to findings_assessment.json."""
-        output_file = 'findings_assessment.json'
+        """Save individual result immediately to output/findings_assessment.json."""
         try:
             # Load existing results if file exists
             existing_results = []
-            if os.path.exists(output_file):
-                with open(output_file, 'r') as f:
+            if os.path.exists(self.assessments_file):
+                with open(self.assessments_file, 'r') as f:
                     existing_results = json.load(f)
-            
+
             # Add new result (or update if finding already exists)
             result_hash = result['resultHash']
             updated = False
@@ -343,69 +276,70 @@ class SASTTriageAgent:
                     existing_results[i] = result
                     updated = True
                     break
-            
+
             if not updated:
                 existing_results.append(result)
-            
+
             # Save back to file
-            with open(output_file, 'w') as f:
+            with open(self.assessments_file, 'w') as f:
                 json.dump(existing_results, f, indent=2)
-            
-            print(f"  Saved result to {output_file}")
+
+            self.logger.info(f"Saved result to {self.assessments_file}")
         except Exception as e:
-            print(f"  Warning: Could not save incremental result: {str(e)}")
-    
+            self.logger.warning(f"Could not save incremental result: {str(e)}")
+
     def get_pending_findings(self, csv_path: str) -> List[Dict]:
         """Get findings that haven't been triaged yet (triaged = 'no')."""
         try:
-            findings = parse_csv_findings(csv_path)
+            findings = parse_csv_findings.invoke({"file_path": csv_path})
             if findings and 'error' not in findings[0]:
                 # Only return findings not yet triaged
                 pending = [f for f in findings if f.get('triaged', '').lower() == 'no']
                 return pending
             return []
         except Exception as e:
-            print(f"Error getting pending findings: {str(e)}")
+            self.logger.error(f"Error getting pending findings: {str(e)}")
             return []
-    
+
     async def process_all_findings(
         self,
-        csv_path: str = DEFAULT_CSV_FILE,
-        json_path: str = DEFAULT_JSON_FILE
+        output_dir: str = DEFAULT_OUTPUT_DIR,
+        csv_path: str = FINDINGS_CSV_FILE,
+        json_path: str = FINDINGS_JSON_FILE
     ) -> Dict:
         """
         Process all findings from CSV and generate triage report.
-        
+
         Args:
             csv_path: Path to CSV file with findings list
             json_path: Path to JSON file with finding details
             output_path: Path to save the triage results
-        
+
         Returns:
             Complete triage report
         """
-        print(f"Starting SAST triage analysis...")
-        print(f"CSV: {csv_path}")
-        print(f"JSON: {json_path}")
-        print(f"Codebase: {CODEBASE_PATH}")
-        
+
+        self.logger.info(f"Starting SAST triage analysis...")
+        self.logger.info(f"CSV: {csv_path}")
+        self.logger.info(f"JSON: {json_path}")
+        self.logger.info(f"Codebase: {CODEBASE_DIR}")
+
         # Get only pending findings (skip already triaged)
         findings = self.get_pending_findings(csv_path)
-        
+
         if not findings:
-            print("No pending findings to triage (all marked as 'yes' in CSV)")
+            self.logger.warning("No pending findings to triage (all marked as 'yes' in CSV)")
             # Load existing results if any
-            if os.path.exists('findings_assessment.json'):
-                with open('findings_assessment.json', 'r') as f:
+            if os.path.exists(self.assessments_file):
+                with open(self.assessments_file, 'r') as f:
                     return json.load(f)
             return []
-        
-        print(f"Found {len(findings)} pending findings to triage")
-        
+
+        self.logger.info(f"Found {len(findings)} pending findings to triage")
+
         # Initialize report generator
-        from sast_triage.report_generator import ReportGenerator
         report_gen = ReportGenerator(
-            output_dir=".",
+            output_dir=output_dir,
             project_name=self.project_name or "Unknown",
             project_id=self.project_id or "Unknown",
             scan_id=self.scan_id,
@@ -413,20 +347,20 @@ class SASTTriageAgent:
             branch=self.branch,
             model_name=self.model_name
         )
-        
+
         # Load all finding details for report
         with open(json_path, 'r') as f:
             all_details = {d['resultHash']: d for d in json.load(f)}
-        
+
         # Get total count including already triaged
         total_count = len(all_details)
-        
+
         # Initialize report with total count
         report_gen.initialize_report(total_findings=total_count)
-        
+
         # Add already triaged findings to report if they exist
-        if os.path.exists('findings_assessment.json'):
-            with open('findings_assessment.json', 'r') as f:
+        if os.path.exists(self.assessments_file):
+            with open(self.assessments_file, 'r') as f:
                 existing_results = json.load(f)
                 for idx, result in enumerate(existing_results):
                     result_hash = result.get('resultHash')
@@ -437,34 +371,32 @@ class SASTTriageAgent:
                             current=idx + 1,
                             total=total_count
                         )
-        
+
         # Analyze each pending finding
         triage_results = []
         existing_count = total_count - len(findings)
         for i, finding in enumerate(findings):
-            print(f"\nAnalyzing finding {i+1}/{len(findings)}: {finding['resultHash']}")
-            
+            self.logger.info(f"Analyzing finding {i+1}/{len(findings)}: {finding['resultHash']}")
+
             try:
                 decision = await self.analyze_single_finding(
-                    finding['resultHash'],
-                    finding['severity'],
-                    update_csv=False
+                    finding['resultHash']
                 )
-                
+
                 result_dict = decision.model_dump()
                 triage_results.append(result_dict)
-                
+
                 # Save result
                 self.save_incremental_result(result_dict)
-                
+
                 # Mark as triaged after analysis
                 self.update_csv_status(finding['resultHash'], csv_path)
-                
+
                 # Print summary
-                print(f"  Result: {decision.assessment_result}")
-                print(f"  Confidence: {decision.assessment_confidence:.2f}")
-                print(f"  Justification: {decision.assessment_justification[:100]}...")
-                
+                self.logger.info(f"Result: {decision.assessment_result}")
+                self.logger.info(f"Confidence: {decision.assessment_confidence:.2f}")
+                self.logger.info(f"Justification: {decision.assessment_justification[:100]}...")
+
                 # Add to HTML report
                 finding_details = all_details.get(finding['resultHash'], {})
                 report_gen.add_finding(
@@ -473,9 +405,9 @@ class SASTTriageAgent:
                     current=existing_count + i + 1,
                     total=total_count
                 )
-                
+
             except Exception as e:
-                print(f"  Error analyzing {finding['resultHash']}: {str(e)}")
+                self.logger.error(f"Error analyzing {finding['resultHash']}: {str(e)}")
                 # Save error result
                 error_result = {
                     'resultHash': finding['resultHash'],
@@ -485,10 +417,10 @@ class SASTTriageAgent:
                 }
                 triage_results.append(error_result)
                 self.save_incremental_result(error_result)
-                
+
                 # Mark as triaged even for errors (so they don't retry indefinitely)
                 self.update_csv_status(finding['resultHash'], csv_path)
-                
+
                 # Add error to HTML report
                 finding_details = all_details.get(finding['resultHash'], {})
                 report_gen.add_finding(
@@ -497,13 +429,13 @@ class SASTTriageAgent:
                     current=existing_count + i + 1,
                     total=total_count
                 )
-        
-        # Save results (findings_assessment.json)
-        with open('findings_assessment.json', 'w') as f:
+
+        # Save results (output/findings_assessment.json)
+        with open(self.assessments_file, 'w') as f:
             json.dump(triage_results, f, indent=2)
-        
-        print(f"\n✓ HTML report generated: {report_gen.report_path.name}")
-        
+
+        self.logger.info(f"HTML report generated: {report_gen.report_path}")
+
         # Generate summary for display
         summary = {
             'total_findings': len(triage_results),
@@ -512,19 +444,19 @@ class SASTTriageAgent:
             'refused': sum(1 for r in triage_results if r['assessment_result'] == 'REFUSED'),
             'high_confidence': sum(1 for r in triage_results if r['assessment_confidence'] >= 0.8)
         }
-        
-        print(f"\nTriage complete! Results saved to findings_assessment.json")
-        print(f"Summary:")
-        print(f"  CONFIRMED: {summary['confirmed']}")
-        print(f"  NOT_EXPLOITABLE: {summary['not_exploitable']}")
-        print(f"  REFUSED: {summary['refused']}")
-        print(f"  High Confidence (>=0.8): {summary['high_confidence']}/{summary['total_findings']}")
-        
+
+        self.logger.info(f"Triage complete! Results saved to {self.assessments_file}")
+        self.logger.info("Summary:")
+        self.logger.info(f"CONFIRMED: {summary['confirmed']}")
+        self.logger.info(f"NOT_EXPLOITABLE: {summary['not_exploitable']}")
+        self.logger.info(f"REFUSED: {summary['refused']}")
+        self.logger.info(f"High Confidence (>=0.8): {summary['high_confidence']}/{summary['total_findings']}")
+
         # Check for code mismatch
         if summary['refused'] == summary['total_findings']:
             error_result = [{"error": "Code base and findings report do not match."}]
-            with open('findings_assessment.json', 'w') as f:
+            with open(self.assessments_file, 'w') as f:
                 json.dump(error_result, f, indent=2)
             return error_result
-        
+
         return triage_results

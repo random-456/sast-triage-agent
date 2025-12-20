@@ -56,16 +56,11 @@ Thumbs.db
 *.log
 logs/
 
-# Output files
-findings_assessment.json
-triage_results.json
-
-# Test data (keep samples)
-findings/triage_list.csv
-findings/findings_details.json
-
 # Local notes
 local-notes/
+
+# Test data
+context/
 
 # Jupyter
 .ipynb_checkpoints
@@ -74,3 +69,7 @@ local-notes/
 htmlcov/
 .coverage
 .coverage.*
+
+# Output and temp files
+output
+temp
