@@ -13,7 +13,7 @@ from langchain_core.messages import ToolMessage
 
 from sast_triage.agent_models import TriageDecision
 from sast_triage.agent_tools import (
-    read_file, search_in_files, list_directory, verify_analysis_completeness,
+    read_file, search_in_files, list_directory, verify_analysis,
     submit_triage_decision, parse_csv_findings, get_finding_details
 )
 from sast_triage.agent_logging import AgentLoggingManager
@@ -71,7 +71,7 @@ class SASTTriageAgent:
             read_file,  # Read entire files
             search_in_files,  # Search patterns across codebase
             list_directory,  # Explore directory structure
-            verify_analysis_completeness,  # Verification checkpoint before decision
+            verify_analysis,  # Verification checkpoint before decision
             submit_triage_decision  # Submit final triage decision
         ]
 

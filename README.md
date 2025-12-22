@@ -2,6 +2,22 @@
 
 Automated triage of Checkmarx One SAST findings using LangChain and LLM. Fetches findings directly from Checkmarx API, clones repositories, and analyzes dataflow paths to make exploitability decisions.
 
+## How It Works
+
+The agent uses a ReAct (Reasoning + Acting) pattern with verification:
+
+1. Receives finding details including dataflow from Checkmarx API
+2. Investigates using available tools (read files, search patterns, list directories)
+3. Verifies analysis by articulating findings and identifying potential gaps
+4. Submits triage decision with confidence score and justification
+
+Available tools:
+- `read_file` - Read source code files
+- `search_in_files` - Search for patterns across codebase
+- `list_directory` - Explore project structure
+- `verify_analysis` - Verification checkpoint before final decision
+- `submit_triage_decision` - Submit final triage result
+
 ## Setup
 
 ```bash
@@ -22,46 +38,57 @@ REFRESH_TOKEN=refresh-token
 # Vertex AI Configuration
 PROJECT_ID=gcp-project-id
 DEFAULT_LOCATION=europe-west4
-MODEL_NAME=gemini-2.5-flash
+DEFAULT_MODEL=gemini-2.5-pro
 ```
 
 **Prerequisites:**
 - Access to Google Cloud Project with Vertex AI API enabled
 - Application Default Credentials configured (`gcloud auth application-default login`)
 
+**Advanced Configuration (config.py):**
+- `MAX_ANALYSIS_ITERATIONS`: Maximum agent iterations per finding (default: 30)
+- `MAX_SEARCH_RESULTS`: Search result limit (default: 5000)
+- `DEFAULT_SEVERITIES`: Default severity filters (default: HIGH, MEDIUM)
+
 ## Usage
 
 ```bash
 python run_triage.py PROJECT_NAME [OPTIONS]
+```
 
 # Examples:
-python run_triage.py "My Application"                         # Analyze project with default settings
-python run_triage.py "My Application" --severities HIGH       # Only HIGH severity findings
-python run_triage.py "My Application" --output-dir ./analysis # Custom output directory
-python run_triage.py "My Application" --branch main           # Analyze specific branch
+python run_triage.py my-project                              # Analyze project with default settings
+python run_triage.py my-project --severities HIGH            # Only HIGH severity findings
+python run_triage.py my-project --output ./analysis          # Custom output directory
+python run_triage.py my-project --branch main                # Analyze specific branch
+python run_triage.py my-project --findings <hash1>,<hash2>   # Analyze specific findings
 ```
 
 Options:
+- `--model`: AI model to use (default: gemini-2.5-pro)
 - `--severities`: Comma-separated severities (default: HIGH,MEDIUM)
-- `--output-dir`: Output directory (default: current directory)
+- `--output`: Output directory (default: output)
 - `--branch`: Git branch to analyze (default: default.SecurityPipeline)
+- `--findings`: Comma-separated result hashes to analyze specific findings
+- `--keep-temp`: Keep temp directory after analysis
+- `-v, --verbose`: Enable verbose logging
 
 ## Output Structure
 
 ```
 <output-dir>/
 ├── findings/
-│   ├── triage_list.csv         # Finding IDs with severity and triage status
-│   └── findings_details.json   # Detailed finding data with dataflow
-├── codebase/                   # Cloned repository (if available)
-├── findings_assessment.json    # Final triage decisions
-├── triage_report.html          # Interactive HTML report with findings
-└── triage_agent.log            # Execution log
+│   ├── triage_list.csv                    # Finding IDs with severity and triage status
+│   └── findings_details.json              # Detailed finding data with dataflow
+├── codebase/                              # Cloned repository (if available)
+├── logs/                                  # Detailed agent conversation logs (JSON)
+├── findings_assessment_<project>.json     # Final triage decisions
+└── triage_report_<timestamp>.html         # Interactive HTML report
 ```
 
 ## Results Format
 
-**findings_assessment.json**:
+**findings_assessment_<project>.json**:
 ```json
 [{
     "resultHash": "8ac6484c12c49772",
@@ -71,14 +98,17 @@ Options:
 }]
 ```
 
-**triage_report.html**:
+**triage_report_<timestamp>.html**:
 - Interactive HTML report with Tailwind CSS styling
-- Progressive generation (updates after each finding)
 - Sortable by severity, result, or confidence
 - Filterable by assessment result
 - Color-coded severity badges (CRITICAL, HIGH, MEDIUM, LOW, INFO)
-- Grayscale styling for NOT_EXPLOITABLE findings
 - Detailed dataflow visualization
+
+**logs/sast_triage_<timestamp>.json**:
+- Complete agent conversation logs
+- Tool calls and responses
+- Decision-making process for each finding
 
 ## Testing
 
@@ -88,3 +118,44 @@ python -m pytest tests/
 ```
 
 The test suite includes security tests, tool functionality tests and end-to-end integration tests.
+
+## Benchmark
+
+A benchmark mode can be used to compare the accuracy of different models for triage of CheckmarxOne findings.
+
+### Creating a benchmarking dataset
+
+A ready-to-use dataset can be found in **benchmark/datasets**. Each project to use for the benchmark must have a separate file in this directory following the naming convention [CXONE_PROJECT_NAME].json and this format:
+
+```json
+{
+    "project": "CXONE PROJECT NAME",
+    "github_url": "GITHUB URL",
+    "findings": [ {
+        {
+            "id": "CXONE FINDING ID",
+            "language": "LANGUAGE",
+            "category": "CXONE FINDING TYPE",
+            "severity": "CXONE FINDING SEVERITY",
+            "complexity": "EASY / MEDIUM / COMPLEX",
+            "analyst_triage": {
+                "result": "CONFIRMED / NOT_EXPLOITABLE",
+                "justification": "A brief justification for the result"
+            }
+        },
+        ...
+    ]
+}
+```
+
+### Running a benchmark
+
+```bash
+Usage: run_benchmark.py [OPTIONS]
+
+Options:
+- `--model TEXT`     AI Model used for analysis
+- `--output TEXT`    Output directory
+- `-v, --verbose`    Enable verbose output
+- `--help`           Show this message and exit.
+```

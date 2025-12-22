@@ -263,7 +263,7 @@ def list_directory(directory_path: str) -> Dict:
 
 
 @tool
-def verify_analysis_completeness(
+def verify_analysis(
     investigation_summary: str,
     key_evidence: str,
     preliminary_assessment: str,
