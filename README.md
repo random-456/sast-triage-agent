@@ -57,6 +57,7 @@ python run_triage.py PROJECT_NAME [OPTIONS]
 ```
 
 # Examples:
+```
 python run_triage.py my-project                              # Analyze project with default settings
 python run_triage.py my-project --severities HIGH            # Only HIGH severity findings
 python run_triage.py my-project --output ./analysis          # Custom output directory
