@@ -9,7 +9,7 @@ from typing import List
 PROJECT_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9._-]+$')
 BRANCH_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9._/-]+$')
 SESSION_ID_PATTERN = re.compile(r'^\d{8}_\d{6}_[a-zA-Z0-9]{6}$')
-FINDING_HASH_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')  # Allow alphanumeric, underscore, hyphen
+FINDING_HASH_PATTERN = re.compile(r'^[a-zA-Z0-9+/=_-]+$')  # Base64 chars: +, /, =
 
 # Whitelists
 ALLOWED_SEVERITIES = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}
@@ -146,7 +146,7 @@ class SecurityValidator:
     @staticmethod
     def validate_finding_hash(hash_value: str) -> str:
         """
-        Validate finding hash (alphanumeric, hyphen, underscore).
+        Validate finding hash (base64 format).
 
         Args:
             hash_value: Finding hash to validate
@@ -159,7 +159,7 @@ class SecurityValidator:
         """
         if not FINDING_HASH_PATTERN.match(hash_value):
             raise ValueError(
-                "Invalid finding hash format (must be alphanumeric with hyphens/underscores)"
+                "Invalid finding hash format (must be base64: alphanumeric, +, /, =)"
             )
         if len(hash_value) > 128:
             raise ValueError("Finding hash too long")
