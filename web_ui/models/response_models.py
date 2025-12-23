@@ -1,7 +1,7 @@
 """
 Pydantic models for API responses
 """
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from web_ui.middleware.security import SecurityValidator
@@ -16,12 +16,19 @@ class FindingSummary(BaseModel):
     languageName: str
     queryName: str
     severity: str
-    state: str
+    state: str = "TO_VERIFY"  # Default if not provided
     checkmarx_url: Optional[str] = None
 
-    @validator('queryName', 'category', 'languageName', pre=True, always=True)
+    @field_validator('queryName', 'category', 'languageName', mode='before')
+    @classmethod
     def sanitize_text_fields(cls, v):
         return SecurityValidator.sanitize_html(v) if v else ""
+
+    @field_validator('cweID', mode='before')
+    @classmethod
+    def convert_cweid_to_string(cls, v):
+        """Convert cweID to string if it's an integer."""
+        return str(v) if v is not None else ""
 
 
 class FetchFindingsResponse(BaseModel):

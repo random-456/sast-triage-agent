@@ -1,7 +1,7 @@
 """
 Pydantic models for session data storage
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -41,7 +41,7 @@ class FindingData(BaseModel):
     languageName: str
     queryName: str
     severity: str
-    state: str
+    state: str = "TO_VERIFY"  # Default if not provided
     checkmarx_url: Optional[str] = None
     dataflow: List[Dict[str, Any]] = Field(default_factory=list)
 
@@ -50,6 +50,18 @@ class FindingData(BaseModel):
 
     # Write-back status
     writeback: WritebackDetails = Field(default_factory=WritebackDetails)
+
+    @field_validator('cweID', mode='before')
+    @classmethod
+    def convert_cweid_to_string(cls, v):
+        """Convert cweID to string if it's an integer."""
+        return str(v) if v is not None else ""
+
+    @field_validator('category', mode='before')
+    @classmethod
+    def handle_group_alias(cls, v):
+        """Handle 'group' field from API as 'category'."""
+        return v if v else ""
 
 
 class SessionMetadata(BaseModel):

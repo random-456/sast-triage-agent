@@ -107,15 +107,25 @@ class CheckmarxService:
 
             logger.info(f"Retrieved {len(findings)} findings from scan {scan_id}")
 
-            # Process findings to add Checkmarx URLs
+            # Process findings to match Pydantic model expectations
             processed_findings = []
             for finding in findings:
                 # Add Checkmarx URL for the finding
                 result_hash = finding.get("resultHash", "")
                 checkmarx_url = self._generate_checkmarx_url(project_id, scan_id, result_hash)
 
+                # Transform raw API response to match model structure
+                # API returns: group, cweID (int), nodes, state (optional)
+                # Models expect: category, cweID (str), dataflow, state (required)
                 processed_findings.append({
-                    **finding,
+                    "resultHash": result_hash,
+                    "category": finding.get("group", ""),  # group → category
+                    "cweID": str(finding.get("cweID", "")),  # int → str
+                    "languageName": finding.get("languageName", ""),
+                    "queryName": finding.get("queryName", ""),
+                    "severity": finding.get("severity", ""),
+                    "state": finding.get("state", "TO_VERIFY"),  # Default if missing
+                    "dataflow": finding.get("nodes", []),  # nodes → dataflow
                     "checkmarx_url": checkmarx_url
                 })
 
