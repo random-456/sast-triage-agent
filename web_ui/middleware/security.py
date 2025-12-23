@@ -4,7 +4,6 @@ Security middleware for input validation and sanitization
 import re
 import html
 from typing import List
-from fastapi import HTTPException, status
 
 # Validation patterns
 PROJECT_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9._-]+$')
@@ -34,17 +33,13 @@ class SecurityValidator:
             Validated project name
 
         Raises:
-            HTTPException: If validation fails
+            ValueError: If validation fails
         """
         if not name or len(name) > 255:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Project name must be 1-255 characters"
-            )
+            raise ValueError("Project name must be 1-255 characters")
         if not PROJECT_NAME_PATTERN.match(name):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Project name contains invalid characters (allowed: a-z, A-Z, 0-9, ., -, _)"
+            raise ValueError(
+                "Project name contains invalid characters (allowed: a-z, A-Z, 0-9, ., -, _)"
             )
         return name
 
@@ -60,18 +55,12 @@ class SecurityValidator:
             Validated branch name
 
         Raises:
-            HTTPException: If validation fails
+            ValueError: If validation fails
         """
         if not branch or len(branch) > 255:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Branch name must be 1-255 characters"
-            )
+            raise ValueError("Branch name must be 1-255 characters")
         if not BRANCH_NAME_PATTERN.match(branch):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Branch name contains invalid characters"
-            )
+            raise ValueError("Branch name contains invalid characters")
         return branch
 
     @staticmethod
@@ -86,13 +75,10 @@ class SecurityValidator:
             Validated session ID
 
         Raises:
-            HTTPException: If validation fails
+            ValueError: If validation fails
         """
         if not SESSION_ID_PATTERN.match(session_id):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid session ID format"
-            )
+            raise ValueError("Invalid session ID format")
         return session_id
 
     @staticmethod
@@ -107,14 +93,13 @@ class SecurityValidator:
             Validated severity list (uppercased)
 
         Raises:
-            HTTPException: If any severity is invalid
+            ValueError: If any severity is invalid
         """
         upper_severities = [s.upper() for s in severities]
         invalid = set(upper_severities) - ALLOWED_SEVERITIES
         if invalid:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid severities: {invalid}. Allowed: {ALLOWED_SEVERITIES}"
+            raise ValueError(
+                f"Invalid severities: {invalid}. Allowed: {ALLOWED_SEVERITIES}"
             )
         return upper_severities
 
@@ -130,14 +115,13 @@ class SecurityValidator:
             Validated state list (uppercased)
 
         Raises:
-            HTTPException: If any state is invalid
+            ValueError: If any state is invalid
         """
         upper_states = [s.upper() for s in states]
         invalid = set(upper_states) - ALLOWED_STATES
         if invalid:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid states: {invalid}. Allowed: {ALLOWED_STATES}"
+            raise ValueError(
+                f"Invalid states: {invalid}. Allowed: {ALLOWED_STATES}"
             )
         return upper_states
 
@@ -153,19 +137,16 @@ class SecurityValidator:
             Validated model name
 
         Raises:
-            HTTPException: If model is invalid
+            ValueError: If model is invalid
         """
         if model not in ALLOWED_MODELS:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid model. Allowed: {ALLOWED_MODELS}"
-            )
+            raise ValueError(f"Invalid model. Allowed: {ALLOWED_MODELS}")
         return model
 
     @staticmethod
     def validate_finding_hash(hash_value: str) -> str:
         """
-        Validate finding hash (alphanumeric only).
+        Validate finding hash (alphanumeric, hyphen, underscore).
 
         Args:
             hash_value: Finding hash to validate
@@ -174,18 +155,14 @@ class SecurityValidator:
             Validated finding hash
 
         Raises:
-            HTTPException: If hash is invalid
+            ValueError: If hash is invalid
         """
         if not FINDING_HASH_PATTERN.match(hash_value):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid finding hash format (must be alphanumeric)"
+            raise ValueError(
+                "Invalid finding hash format (must be alphanumeric with hyphens/underscores)"
             )
         if len(hash_value) > 128:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Finding hash too long"
-            )
+            raise ValueError("Finding hash too long")
         return hash_value
 
     @staticmethod
