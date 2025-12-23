@@ -99,8 +99,8 @@ A FastAPI-based web interface for interactive triage analysis with real-time pro
 cp .env.example .env
 
 # Edit .env with required settings:
-# - GOOGLE_CLOUD_PROJECT: Your GCP project ID
-# - GOOGLE_CLOUD_LOCATION: Vertex AI location (default: us-central1)
+# - PROJECT_ID: Your GCP project ID
+# - DEFAULT_LOCATION: Vertex AI location (default: us-central1)
 # - BASE_URL: Checkmarx instance URL
 # - REFRESH_TOKEN: Checkmarx API token
 

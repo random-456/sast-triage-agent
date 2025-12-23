@@ -650,8 +650,8 @@ if not session_path.startswith(os.path.abspath(WEB_SESSIONS_DIR)):
 **Environment Variables**: All sensitive data stored in `.env` file (gitignored).
 
 **Required Variables**:
-- `GOOGLE_CLOUD_PROJECT`: GCP project ID
-- `GOOGLE_CLOUD_LOCATION`: Vertex AI region
+- `PROJECT_ID`: GCP project ID
+- `DEFAULT_LOCATION`: Vertex AI region
 - `BASE_URL`: Checkmarx instance URL
 - `REFRESH_TOKEN`: Checkmarx API token
 
@@ -778,7 +778,7 @@ ls web_sessions/{session_id}.json
 **Debugging Steps**:
 ```bash
 # Check environment variables
-cat .env | grep GOOGLE_CLOUD_PROJECT
+cat .env | grep PROJECT_ID
 cat .env | grep REFRESH_TOKEN
 
 # Test Google Cloud auth

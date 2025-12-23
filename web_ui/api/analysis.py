@@ -62,13 +62,13 @@ async def start_analysis(request: StartAnalysisRequest):
         SecurityValidator.validate_model_name(model_name)
 
         # Get Google Cloud credentials from environment
-        google_cloud_project = os.getenv("GOOGLE_CLOUD_PROJECT")
-        google_cloud_location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        google_cloud_project = os.getenv("PROJECT_ID")
+        google_cloud_location = os.getenv("DEFAULT_LOCATION", "us-central1")
 
         if not google_cloud_project:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Google Cloud project not configured. Set GOOGLE_CLOUD_PROJECT environment variable."
+                detail="Google Cloud project not configured. Set PROJECT_ID environment variable."
             )
 
         # Check if we can start analysis
@@ -194,13 +194,13 @@ async def retry_failed_finding(session_id: str, request: RetryFindingRequest):
         SecurityValidator.validate_finding_hash(request.finding_hash)
 
         # Get Google Cloud credentials from environment
-        google_cloud_project = os.getenv("GOOGLE_CLOUD_PROJECT")
-        google_cloud_location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        google_cloud_project = os.getenv("PROJECT_ID")
+        google_cloud_location = os.getenv("DEFAULT_LOCATION", "us-central1")
 
         if not google_cloud_project:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Google Cloud project not configured"
+                detail="Google Cloud project not configured. Set PROJECT_ID environment variable."
             )
 
         # Check if we can start analysis
