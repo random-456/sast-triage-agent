@@ -48,15 +48,13 @@ class CheckmarxService:
             if not project_id:
                 return None
 
-            # Get project details
-            project_details = self.client.get_project_details(project_id)
-            if not project_details:
-                return None
+            # Get project details (returns repository URL string)
+            repo_url = self.client.get_project_details(project_id)
 
             return {
                 "id": project_id,
                 "name": project_name,
-                "repoUrl": project_details.get("repoUrl", "")
+                "repoUrl": repo_url if repo_url else ""
             }
 
         except Exception as e:
@@ -93,9 +91,8 @@ class CheckmarxService:
 
             logger.info(f"Found project ID: {project_id}")
 
-            # Get project details for GitHub URL
-            project_details = self.client.get_project_details(project_id)
-            github_url = project_details.get("repoUrl", "") if project_details else ""
+            # Get project details for GitHub URL (returns repository URL string)
+            github_url = self.client.get_project_details(project_id) or ""
 
             # Get findings
             scan_id, findings = self.client.get_findings_for_project(
