@@ -113,7 +113,7 @@ async def save_writeback(request: SaveWritebackRequest):
 
         # Save session
         session["updated_at"] = datetime.now().isoformat()
-        session_storage.save_session(request.session_id, session)
+        session_storage.save_session(session)
 
         logger.info(f"Saved write-back decision for finding {request.finding_hash} in session {request.session_id}")
 

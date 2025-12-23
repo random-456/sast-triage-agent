@@ -99,7 +99,7 @@ class AnalysisService:
         # Update session status
         session["status"] = "in_progress"
         session["updated_at"] = datetime.now().isoformat()
-        self.session_storage.save_session(session_id, session)
+        self.session_storage.save_session(session)
 
         # Create background task
         task = asyncio.create_task(
@@ -183,7 +183,7 @@ class AnalysisService:
                 # Mark as in_progress
                 finding_data["analysis"]["status"] = "in_progress"
                 finding_data["analysis"]["started_at"] = datetime.now().isoformat()
-                self.session_storage.save_session(session_id, session)
+                self.session_storage.save_session(session)
 
                 try:
                     # Run analysis
@@ -231,7 +231,7 @@ class AnalysisService:
                     )
 
                 # Save session after each finding
-                self.session_storage.save_session(session_id, session)
+                self.session_storage.save_session(session)
 
             # Update session status
             session["status"] = "completed"
@@ -241,7 +241,7 @@ class AnalysisService:
             session["statistics"] = self._calculate_statistics(session["findings"])
 
             # Save final session
-            self.session_storage.save_session(session_id, session)
+            self.session_storage.save_session(session)
 
             logger.info(f"Background analysis completed for session {session_id}")
 
@@ -254,7 +254,7 @@ class AnalysisService:
                 if session:
                     session["status"] = "failed"
                     session["updated_at"] = datetime.now().isoformat()
-                    self.session_storage.save_session(session_id, session)
+                    self.session_storage.save_session(session)
             except Exception as save_error:
                 logger.error(f"Failed to update session status: {save_error}")
 
