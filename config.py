@@ -35,3 +35,10 @@ DEFAULT_BRANCH = "default.SecurityPipeline"  # Default branch for scans
 
 # Benchmark Configuration
 BENCHMARK_DATASETS_DIR = os.path.join("benchmark", "datasets")
+
+# Web UI Configuration
+WEB_UI_HOST = "127.0.0.1"
+WEB_UI_PORT = 8765
+MAX_CONCURRENT_ANALYSES = 1
+WEB_SESSIONS_DIR = "web_sessions"
+MAX_SESSION_HISTORY = 100

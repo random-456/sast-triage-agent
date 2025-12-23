@@ -74,6 +74,60 @@ Options:
 - `--keep-temp`: Keep temp directory after analysis
 - `-v, --verbose`: Enable verbose logging
 
+## Web UI
+
+A FastAPI-based web interface for interactive triage analysis with real-time progress updates via WebSockets.
+
+**📖 For detailed technical documentation, architecture, and design principles, see [Web UI Architecture](docs/WEB_UI_ARCHITECTURE.md)**
+
+### Features
+
+- **Finding Management**: Select and analyze findings of a Checkmarx project
+- **Real-time Progress**: Live updates during analysis with latest action per finding
+- **Session History**: View and manage historical analysis sessions
+- **Write-back with Challenge**: Save triage decisions with optional override and justification
+- **CSV Export**: Export analysis results to CSV format
+- **Progressive Enhancement**: Table updates in place with color-coded results
+  - Green: NOT_EXPLOITABLE
+  - Red: CONFIRMED
+  - Gray: REFUSED
+
+### Running the Web UI
+
+```bash
+# Configure environment variables
+cp .env.example .env
+
+# Edit .env with required settings:
+# - GOOGLE_CLOUD_PROJECT: Your GCP project ID
+# - GOOGLE_CLOUD_LOCATION: Vertex AI location (default: us-central1)
+# - BASE_URL: Checkmarx instance URL
+# - REFRESH_TOKEN: Checkmarx API token
+
+# Start the web server
+python -m web_ui.main
+
+# Access the UI at http://localhost:8765
+```
+
+### Workflow
+
+1. **Fetch Findings**: Enter project name, branch, and filters (severity/state)
+2. **Select Findings**: Check boxes to select findings for analysis
+3. **Run Triage**: Click "Run Triage" to start background analysis with real-time updates
+4. **Review Results**: View color-coded results with confidence scores and justifications
+5. **Write-back**: Save decisions to session JSON (Checkmarx write-back is placeholder)
+6. **Session Management**: Access historical sessions from the sidebar
+
+### Technical Details
+
+- **Port**: 8765 (configurable in `config.py`)
+- **Concurrent Analyses**: 1 at a time (configurable via `MAX_CONCURRENT_ANALYSES`)
+- **Session Storage**: JSON files in `web_sessions/` directory
+- **Max Sessions**: 100 (configurable via `MAX_SESSION_HISTORY`)
+- **WebSocket**: Automatic reconnection (up to 5 attempts)
+- **Security**: Input validation, rate limiting, HTML escaping, localhost-only CORS
+
 ## Output Structure
 
 ```

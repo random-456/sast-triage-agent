@@ -159,7 +159,8 @@ class CheckmarxClient:
         self,
         project_id: str,
         severities: Optional[List[str]] = None,
-        branch: Optional[str] = None
+        branch: Optional[str] = None,
+        states: Optional[List[str]] = None
     ) -> Tuple[Optional[str], List[Dict]]:
         """
         Retrieve SAST findings from the latest scan of a project.
@@ -168,6 +169,7 @@ class CheckmarxClient:
             project_id: The ID of the project
             severities: List of severities to filter (e.g., ["HIGH", "MEDIUM"])
             branch: Optional branch name to get latest scan from
+            states: List of states to filter (e.g., ["TO_VERIFY", "CONFIRMED"])
 
         Returns:
             A tuple of (scan_id, list of findings)
@@ -241,6 +243,8 @@ class CheckmarxClient:
         self.logger.info(f"Getting findings for scan {scan_id}...")
         if severities:
             self.logger.info(f"Filtering by severities: {', '.join(severities)}")
+        if states:
+            self.logger.info(f"Filtering by states: {', '.join(states)}")
 
         while True:
             findings_url = f"{self.base_url}/api/sast-results"
@@ -252,6 +256,10 @@ class CheckmarxClient:
                 "limit": limit,
                 "sort": "+status,-severity,-queryname",
             }
+
+            # Add state filter if provided
+            if states:
+                findings_params["state"] = ",".join(states)
 
             response = requests.get(
                 findings_url,
@@ -277,9 +285,18 @@ class CheckmarxClient:
                     r for r in results
                     if r.get("severity", "").upper() in severity_set
                 ]
-                all_findings.extend(filtered_results)
             else:
-                all_findings.extend(results)
+                filtered_results = results
+
+            # Filter by state if specified (client-side fallback)
+            if states:
+                state_set = {s.upper() for s in states}
+                filtered_results = [
+                    r for r in filtered_results
+                    if r.get("state", "").upper() in state_set
+                ]
+
+            all_findings.extend(filtered_results)
 
             self.logger.info(f"Fetched {len(all_findings)} findings...")
 
@@ -326,6 +343,7 @@ class CheckmarxClient:
                 "languageName": finding.get("languageName", ""),
                 "queryName": finding.get("queryName", ""),
                 "severity": finding.get("severity", ""),
+                "state": finding.get("state", ""),
                 "dataflow": nodes
             })
 

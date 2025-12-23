@@ -6,6 +6,7 @@ import os
 import csv
 import json
 import logging
+from datetime import datetime
 from typing import Dict, List, Optional
 
 from langchain_google_vertexai import ChatVertexAI
@@ -38,11 +39,12 @@ class SASTTriageAgent:
         scan_id: Optional[str] = None,
         checkmarx_base_url: Optional[str] = None,
         branch: Optional[str] = None,
-        output_dir: str = DEFAULT_OUTPUT_DIR
+        output_dir: str = DEFAULT_OUTPUT_DIR,
+        progress_callback: Optional[callable] = None
     ):
         """
         Initialize the SAST Triage Agent.
-        
+
         Args:
             project: Google Cloud Project ID for Vertex AI
             location: Vertex AI location (default: europa-west4)
@@ -53,6 +55,8 @@ class SASTTriageAgent:
             scan_id: Scan identifier for reporting
             checkmarx_base_url: Checkmarx base URL for report links
             branch: Git branch being analyzed
+            output_dir: Output directory for results
+            progress_callback: Optional callback for progress updates (web UI integration)
         """
         self.project_name = project_name
         self.project_id = project_id
@@ -85,6 +89,9 @@ class SASTTriageAgent:
         # Setup agent logging
         self.agent_logger = AgentLoggingManager(model_name, temperature)
 
+        # Store progress callback for web UI integration
+        self.progress_callback = progress_callback
+
         # System and Human prompts
         self.system_prompt = TRIAGE_SYSTEM_PROMPT
         self.human_prompt_template = TRIAGE_INPUT_PROMPT_TEMPLATE
@@ -106,6 +113,14 @@ class SASTTriageAgent:
         """
         # Start logging for this finding
         finding_log = self.agent_logger.log_finding_start(result_hash)
+
+        # Emit analysis started event for web UI
+        if self.progress_callback:
+            self.progress_callback({
+                "event": "analysis_started",
+                "finding_hash": result_hash,
+                "timestamp": datetime.now().isoformat()
+            })
 
         # Pre-load the complete finding details including dataflow
         finding_details = get_finding_details.invoke({"result_hash": result_hash})
@@ -153,6 +168,36 @@ class SASTTriageAgent:
 
                 self.agent_logger.log_message(finding_log, "assistant", response.content, tool_calls_info)
 
+                # Emit analysis progress event for web UI
+                if self.progress_callback:
+                    # Extract last action from tool calls or content
+                    last_action = "Analyzing..."
+                    if response.tool_calls:
+                        # Use first tool name as action
+                        tool_names = [tc["name"] for tc in response.tool_calls]
+                        if "read_file" in tool_names:
+                            last_action = "Reading code files..."
+                        elif "search_in_files" in tool_names:
+                            last_action = "Searching codebase..."
+                        elif "list_directory" in tool_names:
+                            last_action = "Exploring directory structure..."
+                        elif "verify_analysis" in tool_names:
+                            last_action = "Verifying analysis..."
+                        elif "submit_triage_decision" in tool_names:
+                            last_action = "Submitting decision..."
+                    elif response.content:
+                        # Use content snippet as action
+                        last_action = response.content[:50] + "..." if len(response.content) > 50 else response.content
+
+                    self.progress_callback({
+                        "event": "analysis_progress",
+                        "finding_hash": result_hash,
+                        "iteration": iteration + 1,
+                        "max_iterations": max_iterations,
+                        "last_action": last_action,
+                        "timestamp": datetime.now().isoformat()
+                    })
+
                 # If LLM wants to use tools
                 if response.tool_calls:
                     for tool_call in response.tool_calls:
@@ -160,6 +205,16 @@ class SASTTriageAgent:
                         tool_args = tool_call["args"]
 
                         self.logger.debug(f"Using tool: {tool_name}")
+
+                        # Emit tool execution event for web UI
+                        if self.progress_callback:
+                            self.progress_callback({
+                                "event": "tool_execution",
+                                "finding_hash": result_hash,
+                                "tool_name": tool_name,
+                                "tool_args": tool_args,
+                                "timestamp": datetime.now().isoformat()
+                            })
 
                         # Check if this is the submit_triage_decision tool
                         if tool_name == "submit_triage_decision":
@@ -174,6 +229,27 @@ class SASTTriageAgent:
 
                                 # Log the decision
                                 self.agent_logger.log_finding_complete(finding_log, decision)
+
+                                # Calculate duration
+                                duration_seconds = 0
+                                if "start_time" in finding_log:
+                                    try:
+                                        start_time = datetime.fromisoformat(finding_log["start_time"])
+                                        duration_seconds = (datetime.now() - start_time).total_seconds()
+                                    except Exception:
+                                        pass
+
+                                # Emit analysis complete event for web UI
+                                if self.progress_callback:
+                                    self.progress_callback({
+                                        "event": "analysis_complete",
+                                        "finding_hash": result_hash,
+                                        "result": decision.assessment_result,
+                                        "confidence": decision.assessment_confidence,
+                                        "justification": decision.assessment_justification,
+                                        "duration_seconds": duration_seconds,
+                                        "timestamp": datetime.now().isoformat()
+                                    })
 
                                 self.logger.info(f"Decision submitted: {decision.assessment_result} (confidence: {decision.assessment_confidence:.2f})")
                                 return decision
@@ -227,6 +303,16 @@ class SASTTriageAgent:
 
         except Exception as e:
             self.logger.error(f"Error analyzing finding {result_hash}: {str(e)}")
+
+            # Emit analysis failed event for web UI
+            if self.progress_callback:
+                self.progress_callback({
+                    "event": "analysis_failed",
+                    "finding_hash": result_hash,
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat()
+                })
+
             decision = TriageDecision(
                 resultHash=result_hash,
                 assessment_result="REFUSED",
@@ -396,6 +482,16 @@ class SASTTriageAgent:
                 self.logger.info(f"Result: {decision.assessment_result}")
                 self.logger.info(f"Confidence: {decision.assessment_confidence:.2f}")
                 self.logger.info(f"Justification: {decision.assessment_justification[:100]}...")
+
+                # Emit batch progress event for web UI
+                if self.progress_callback:
+                    self.progress_callback({
+                        "event": "batch_progress",
+                        "completed": i + 1,
+                        "total": len(findings),
+                        "current_finding_hash": finding['resultHash'],
+                        "timestamp": datetime.now().isoformat()
+                    })
 
                 # Add to HTML report
                 finding_details = all_details.get(finding['resultHash'], {})

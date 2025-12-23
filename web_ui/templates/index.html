@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAST Triage Agent</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/custom.css">
+</head>
+<body class="bg-gray-900 text-gray-100 h-screen overflow-hidden">
+    <!-- Top Navigation Bar -->
+    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+            <button id="sidebar-toggle" class="text-gray-400 hover:text-white">
+                <i class="fas fa-bars"></i>
+            </button>
+            <h1 class="text-xl font-bold">SAST Triage Agent</h1>
+        </div>
+        <div class="flex items-center space-x-4">
+            <button id="settings-btn" class="text-gray-400 hover:text-white">
+                <i class="fas fa-cog"></i>
+            </button>
+        </div>
+    </nav>
+
+    <div class="flex h-[calc(100vh-57px)]">
+        <!-- Left Sidebar: Session History -->
+        <aside id="sidebar" class="w-64 bg-gray-800 border-r border-gray-700 overflow-y-auto transition-all duration-300">
+            <div class="p-4">
+                <h2 class="text-sm font-semibold text-gray-400 uppercase mb-3">History</h2>
+                <div id="session-list" class="space-y-2">
+                    <!-- Sessions will be populated here -->
+                    <div class="text-gray-500 text-sm text-center py-8">
+                        No sessions yet
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 overflow-hidden flex flex-col">
+            <!-- Screen 1: Project Input -->
+            <div id="screen-project-input" class="flex-1 overflow-y-auto p-8">
+                <div class="max-w-4xl mx-auto">
+                    <h2 class="text-3xl font-bold mb-8">Start New Analysis</h2>
+
+                    <div class="bg-gray-800 rounded-lg p-6 space-y-6">
+                        <!-- Project Name -->
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Project Name</label>
+                            <input type="text" id="input-project-name"
+                                   class="w-full bg-gray-700 border border-gray-600 rounded px-4 py-2 focus:outline-none focus:border-blue-500"
+                                   placeholder="Enter Checkmarx project name">
+                        </div>
+
+                        <!-- Branch -->
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Branch</label>
+                            <input type="text" id="input-branch"
+                                   class="w-full bg-gray-700 border border-gray-600 rounded px-4 py-2 focus:outline-none focus:border-blue-500"
+                                   placeholder="e.g., main, develop" value="default.SecurityPipeline">
+                        </div>
+
+                        <!-- Severity Filters -->
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Severity</label>
+                            <div class="grid grid-cols-4 gap-3">
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" name="severity" value="CRITICAL" class="form-checkbox bg-gray-700 border-gray-600">
+                                    <span>CRITICAL</span>
+                                </label>
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" name="severity" value="HIGH" checked class="form-checkbox bg-gray-700 border-gray-600">
+                                    <span>HIGH</span>
+                                </label>
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" name="severity" value="MEDIUM" checked class="form-checkbox bg-gray-700 border-gray-600">
+                                    <span>MEDIUM</span>
+                                </label>
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" name="severity" value="LOW" class="form-checkbox bg-gray-700 border-gray-600">
+                                    <span>LOW</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- State Filters -->
+                        <div>
+                            <label class="block text-sm font-medium mb-2">State</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" name="state" value="TO_VERIFY" checked class="form-checkbox bg-gray-700 border-gray-600">
+                                    <span>TO_VERIFY</span>
+                                </label>
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" name="state" value="CONFIRMED" class="form-checkbox bg-gray-700 border-gray-600">
+                                    <span>CONFIRMED</span>
+                                </label>
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" name="state" value="NOT_EXPLOITABLE" class="form-checkbox bg-gray-700 border-gray-600">
+                                    <span>NOT_EXPLOITABLE</span>
+                                </label>
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" name="state" value="PROPOSED_NOT_EXPLOITABLE" class="form-checkbox bg-gray-700 border-gray-600">
+                                    <span>PROPOSED_NOT_EXPLOITABLE</span>
+                                </label>
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" name="state" value="URGENT" class="form-checkbox bg-gray-700 border-gray-600">
+                                    <span>URGENT</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Fetch Button -->
+                        <div class="flex justify-end">
+                            <button id="btn-fetch-findings"
+                                    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded">
+                                <i class="fas fa-download mr-2"></i>Fetch Findings
+                            </button>
+                        </div>
+
+                        <!-- Error/Loading Display -->
+                        <div id="fetch-status" class="hidden"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Screen 2: Findings Display -->
+            <div id="screen-findings-display" class="hidden flex-1 flex flex-col overflow-hidden">
+                <!-- Header with GitHub URL -->
+                <div class="bg-gray-800 border-b border-gray-700 px-6 py-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-xl font-bold" id="findings-project-name"></h2>
+                            <div class="flex items-center space-x-4 text-sm text-gray-400 mt-1">
+                                <span id="findings-branch"></span>
+                                <a id="findings-github-link" href="#" target="_blank" class="hover:text-blue-400">
+                                    <i class="fas fa-external-link-alt mr-1"></i>GitHub
+                                </a>
+                            </div>
+                        </div>
+                        <div class="text-sm text-gray-400">
+                            <span id="findings-count">0</span> findings
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Findings Table -->
+                <div class="flex-1 overflow-auto p-6">
+                    <table class="w-full">
+                        <thead class="bg-gray-800 sticky top-0">
+                            <tr class="text-left text-sm text-gray-400">
+                                <th class="p-3 w-12">
+                                    <input type="checkbox" id="select-all-findings" class="form-checkbox">
+                                </th>
+                                <th class="p-3">Query Name</th>
+                                <th class="p-3">CWE</th>
+                                <th class="p-3">Severity</th>
+                                <th class="p-3">State</th>
+                                <th class="p-3">Category</th>
+                                <th class="p-3">Language</th>
+                                <th class="p-3">Link</th>
+                            </tr>
+                        </thead>
+                        <tbody id="findings-table-body" class="text-sm">
+                            <!-- Findings will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Action Bar -->
+                <div class="bg-gray-800 border-t border-gray-700 px-6 py-4 flex items-center justify-between">
+                    <button id="btn-back-to-input" class="text-gray-400 hover:text-white">
+                        <i class="fas fa-arrow-left mr-2"></i>Back
+                    </button>
+                    <button id="btn-run-triage"
+                            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled>
+                        <i class="fas fa-play mr-2"></i>Run Triage
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="text-lg font-semibold">Settings</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">AI Model</label>
+                        <select id="settings-model" class="w-full bg-gray-700 border border-gray-600 rounded px-4 py-2">
+                            <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="settings-save" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">
+                    Save
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis Detail Modal -->
+    <div id="analysis-modal" class="modal-overlay hidden">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 class="text-lg font-semibold">Analysis Details</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="analysis-details-content" class="space-y-2 text-sm">
+                    <!-- Analysis details will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Write-back Modal -->
+    <div id="writeback-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="text-lg font-semibold">Write Back to Checkmarx</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="writeback-content" class="space-y-4">
+                    <!-- Write-back content will be populated here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="writeback-save" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">
+                    Save Decision
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/state-manager.js"></script>
+    <script src="/static/js/websocket-client.js"></script>
+    <script src="/static/js/components/sidebar.js"></script>
+    <script src="/static/js/components/findings-table.js"></script>
+    <script src="/static/js/components/analysis-modal.js"></script>
+    <script src="/static/js/components/writeback-modal.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

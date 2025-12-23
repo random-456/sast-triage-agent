@@ -133,5 +133,26 @@ class AgentLoggingManager:
         # Add final decision
         finding_log["final_decision"] = decision.model_dump() if decision else None
 
+        # Count iterations
+        finding_log["iteration_count"] = sum(
+            1 for entry in finding_log["conversation"]
+            if entry.get("type") == "assistant"
+        )
+
         # Save final state
         self.save_log()
+
+    def get_finding_log(self, result_hash: str) -> Dict:
+        """
+        Retrieve the log for a specific finding.
+
+        Args:
+            result_hash: The finding identifier
+
+        Returns:
+            The finding log dictionary, or None if not found
+        """
+        for finding_log in self.session_log["findings_processed"]:
+            if finding_log["result_hash"] == result_hash:
+                return finding_log
+        return None

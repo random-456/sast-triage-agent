@@ -1,0 +1,396 @@
+/*
+ * Custom styles for SAST Triage Agent Web UI
+ * Dark mode professional theme
+ */
+
+/* Dark mode theme variables */
+:root {
+    --bg-primary: #111827;
+    --bg-secondary: #1f2937;
+    --bg-tertiary: #374151;
+    --text-primary: #f9fafb;
+    --text-secondary: #d1d5db;
+    --text-tertiary: #9ca3af;
+    --accent-primary: #3b82f6;
+    --accent-success: #10b981;
+    --accent-danger: #ef4444;
+    --accent-warning: #f59e0b;
+    --border-color: #4b5563;
+}
+
+/* Smooth transitions */
+* {
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+/* Remove default margins */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Scrollbar styling for dark mode */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+}
+
+/* Sidebar collapsed state */
+#sidebar.collapsed {
+    width: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Modal Styling */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.modal-content.modal-large {
+    max-width: 800px;
+}
+
+.modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-footer {
+    padding: 1.5rem;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+.modal-close {
+    font-size: 1.5rem;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+/* Session Card Styling */
+.session-card {
+    background-color: var(--bg-tertiary);
+    border: 1px solid transparent;
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.session-card:hover {
+    background-color: #4b5563;
+    border-color: var(--accent-primary);
+}
+
+.session-card.active {
+    background-color: #4b5563;
+    border-color: var(--accent-primary);
+}
+
+.session-card .session-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+    margin-bottom: 0.25rem;
+}
+
+.session-card .session-meta {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.session-card .session-delete {
+    opacity: 0;
+    float: right;
+    color: var(--text-tertiary);
+    transition: opacity 0.2s;
+}
+
+.session-card:hover .session-delete {
+    opacity: 1;
+}
+
+.session-card .session-delete:hover {
+    color: var(--accent-danger);
+}
+
+/* Severity Badge Styling */
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-CRITICAL {
+    background-color: #7f1d1d;
+    color: #fca5a5;
+}
+
+.badge-HIGH {
+    background-color: #991b1b;
+    color: #fecaca;
+}
+
+.badge-MEDIUM {
+    background-color: #92400e;
+    color: #fed7aa;
+}
+
+.badge-LOW {
+    background-color: #365314;
+    color: #bef264;
+}
+
+.badge-INFO {
+    background-color: #1e3a8a;
+    color: #93c5fd;
+}
+
+/* State Badge Styling */
+.state-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.state-TO_VERIFY {
+    background-color: #1e3a8a;
+    color: #93c5fd;
+}
+
+.state-CONFIRMED {
+    background-color: #991b1b;
+    color: #fecaca;
+}
+
+.state-NOT_EXPLOITABLE {
+    background-color: #14532d;
+    color: #86efac;
+}
+
+.state-PROPOSED_NOT_EXPLOITABLE {
+    background-color: #3f6212;
+    color: #bef264;
+}
+
+.state-URGENT {
+    background-color: #7c2d12;
+    color: #fdba74;
+}
+
+/* Finding Row Styling */
+.finding-row {
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.2s;
+}
+
+.finding-row:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.finding-row.selected {
+    background-color: rgba(59, 130, 246, 0.1);
+}
+
+/* Result Background Colors */
+.finding-row.result-CONFIRMED {
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+.finding-row.result-NOT_EXPLOITABLE {
+    background-color: rgba(16, 185, 129, 0.1);
+}
+
+.finding-row.result-REFUSED {
+    background-color: rgba(107, 114, 128, 0.1);
+}
+
+/* Progress/Analysis Status */
+.analysis-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.analysis-status .spinner {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Justification Text (Small) */
+.justification-text {
+    font-size: 0.6875rem;
+    line-height: 1.2;
+    color: var(--text-tertiary);
+    margin-top: 0.25rem;
+    max-width: 100%;
+}
+
+.justification-expanded {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.justification-collapsed {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Alert Styling */
+.alert {
+    padding: 1rem;
+    border-radius: 0.375rem;
+    margin-bottom: 1rem;
+}
+
+.alert-error {
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid #991b1b;
+    color: #fecaca;
+}
+
+.alert-success {
+    background-color: rgba(16, 185, 129, 0.1);
+    border: 1px solid #14532d;
+    color: #86efac;
+}
+
+.alert-info {
+    background-color: rgba(59, 130, 246, 0.1);
+    border: 1px solid #1e3a8a;
+    color: #93c5fd;
+}
+
+.alert-warning {
+    background-color: rgba(245, 158, 11, 0.1);
+    border: 1px solid #92400e;
+    color: #fed7aa;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    border: 2px solid var(--bg-tertiary);
+    border-top: 2px solid var(--accent-primary);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    animation: spin 0.8s linear infinite;
+}
+
+/* Checkbox Styling */
+.form-checkbox {
+    border-radius: 0.25rem;
+    border-color: var(--border-color);
+    background-color: var(--bg-tertiary);
+    color: var(--accent-primary);
+}
+
+.form-checkbox:checked {
+    background-color: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+/* Link Styling */
+a {
+    color: var(--accent-primary);
+    text-decoration: none;
+}
+
+a:hover {
+    color: #60a5fa;
+    text-decoration: underline;
+}
+
+/* Utility Classes */
+.text-xs {
+    font-size: 0.75rem;
+}
+
+.text-xxs {
+    font-size: 0.6875rem;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Focus States */
+input:focus, select:focus, textarea:focus, button:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
