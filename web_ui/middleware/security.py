@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 PROJECT_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9._-]+$')
 BRANCH_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9._/-]+$')
 SESSION_ID_PATTERN = re.compile(r'^\d{8}_\d{6}_[a-zA-Z0-9]{6}$')
-FINDING_HASH_PATTERN = re.compile(r'^[a-zA-Z0-9]+$')
+FINDING_HASH_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')  # Allow alphanumeric, underscore, hyphen
 
 # Whitelists
 ALLOWED_SEVERITIES = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}

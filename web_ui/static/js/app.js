@@ -283,6 +283,7 @@ class App {
 
             if (!response.ok) {
                 const error = await response.json();
+                console.error('Analysis start failed:', error);
                 throw new Error(error.detail || 'Failed to start analysis');
             }
 

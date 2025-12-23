@@ -74,7 +74,7 @@ async def start_analysis(request: StartAnalysisRequest):
         # Check if we can start analysis
         if not analysis_service.can_start_analysis():
             return StartAnalysisResponse(
-                session_id=request.session_id,
+                analysis_id=request.session_id,
                 status="rejected",
                 message="Maximum concurrent analyses reached. Please wait for an analysis to complete."
             )
@@ -82,7 +82,7 @@ async def start_analysis(request: StartAnalysisRequest):
         # Check if analysis is already running
         if analysis_service.is_analysis_running(request.session_id):
             return StartAnalysisResponse(
-                session_id=request.session_id,
+                analysis_id=request.session_id,
                 status="rejected",
                 message="Analysis already running for this session."
             )
@@ -98,7 +98,7 @@ async def start_analysis(request: StartAnalysisRequest):
 
         if success:
             return StartAnalysisResponse(
-                session_id=request.session_id,
+                analysis_id=request.session_id,
                 status="running",
                 message=f"Analysis started for {len(request.selected_finding_hashes)} findings"
             )
