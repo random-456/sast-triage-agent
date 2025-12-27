@@ -210,6 +210,9 @@ class WebSocketClient {
             // Update table row
             findingsTable.updateFindingRow(finding);
         }
+
+        // Show error notification
+        this.showNotification('error', `Analysis failed: ${data.error}`);
     }
 
     /**
@@ -282,6 +285,35 @@ class WebSocketClient {
      */
     isConnected() {
         return this.ws && this.ws.readyState === WebSocket.OPEN;
+    }
+
+    /**
+     * Show toast notification
+     */
+    showNotification(type, message) {
+        // Simple toast notification
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            background: ${type === 'error' ? '#ef4444' : '#10b981'};
+            color: white;
+            border-radius: 6px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 10000;
+            animation: slideIn 0.3s ease-out;
+        `;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease-in';
+            setTimeout(() => notification.remove(), 300);
+        }, 5000);
     }
 }
 
