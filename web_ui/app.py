@@ -1,6 +1,7 @@
 """
 FastAPI application for SAST Triage Agent Web UI
 """
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -8,7 +9,11 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 import logging
 
-from config import WEB_UI_HOST, WEB_UI_PORT
+from config import WEB_UI_HOST, WEB_UI_PORT, CERTIFICATES_CRT_FILE
+
+# Set SSL certificate for corporate network (before any API clients are initialized)
+os.environ['REQUESTS_CA_BUNDLE'] = CERTIFICATES_CRT_FILE
+os.environ['GRPC_DEFAULT_SSL_ROOTS_FILE_PATH'] = CERTIFICATES_CRT_FILE
 from web_ui.middleware.rate_limiter import RateLimiter
 from web_ui.services.websocket_manager import WebSocketManager
 from web_ui.services.analysis_service import AnalysisService
