@@ -86,6 +86,10 @@ body {
     max-width: 800px;
 }
 
+.modal-content.modal-xlarge {
+    max-width: 1200px;
+}
+
 .modal-header {
     padding: 1.5rem;
     border-bottom: 1px solid var(--border-color);

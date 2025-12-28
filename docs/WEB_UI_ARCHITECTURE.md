@@ -708,18 +708,9 @@ if not session_path.startswith(os.path.abspath(WEB_SESSIONS_DIR)):
 
 ---
 
-### Why FastAPI over Flask?
+### Why FastAPI?
 
-| Feature | FastAPI | Flask |
-|---------|---------|-------|
-| Async/await | Native support | Requires extensions |
-| WebSockets | Native support | Requires Flask-SocketIO |
-| Type hints | Pydantic integration | Manual validation |
-| Auto documentation | OpenAPI/Swagger built-in | Requires extensions |
-| Performance | ASGI-based | WSGI-based |
-| Learning curve | Steeper | Lower |
-
-**Decision**: FastAPI selected for native async and WebSocket support.
+FastAPI was chosen for its native async/await and WebSocket support, which are essential for real-time progress updates during analysis. It also provides built-in request/response validation via Pydantic and automatic API documentation.
 
 ---
 

@@ -75,9 +75,25 @@ class AgentLoggingManager:
         Args:
             finding_log: The finding log dictionary to append to
             message_type: Type of message (e.g., 'system', 'human', 'assistant')
-            content: The message content
+            content: The message content (string or list of content blocks)
             tool_calls: Optional list of tool calls made in this message
         """
+        # Handle content that might be a list of content blocks (from multimodal LLMs)
+        if isinstance(content, list):
+            # Extract text from content blocks
+            text_parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    # Content block format: {"type": "text", "text": "..."}
+                    if block.get("type") == "text" and "text" in block:
+                        text_parts.append(block["text"])
+                elif isinstance(block, str):
+                    text_parts.append(block)
+            content = " ".join(text_parts) if text_parts else str(content)
+        elif not isinstance(content, str):
+            # Ensure content is always a string
+            content = str(content)
+
         log_entry = {
             "type": message_type,
             "timestamp": datetime.datetime.now().isoformat(),
