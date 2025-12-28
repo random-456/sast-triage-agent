@@ -10,7 +10,13 @@ from pathlib import Path
 import random
 import string
 import tempfile
-import fcntl
+import sys
+
+# Platform-specific file locking imports
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 from config import WEB_SESSIONS_DIR, MAX_SESSION_HISTORY
 from web_ui.models.session_models import SessionData, SessionMetadata, FindingData
@@ -38,7 +44,7 @@ class SessionStorage:
         Context manager for exclusive file locking on index file.
 
         Prevents race conditions during concurrent read-modify-write operations.
-        Uses fcntl.LOCK_EX for exclusive lock with blocking.
+        Uses platform-specific locking: fcntl on Unix/Linux/macOS, msvcrt on Windows.
 
         Usage:
             with self._lock_index_file() as lock_file:
@@ -53,15 +59,24 @@ class SessionStorage:
             lock_file_path = INDEX_FILE + ".lock"
             lock_file = None
             try:
-                # Open lock file (create if doesn't exist)
-                lock_file = open(lock_file_path, 'w')
-                # Acquire exclusive lock (blocks until available)
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                if sys.platform == "win32":
+                    # Windows: Use msvcrt.locking
+                    lock_file = open(lock_file_path, 'w')
+                    # Lock the file (retry until success)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                else:
+                    # Unix/Linux/macOS: Use fcntl.flock
+                    lock_file = open(lock_file_path, 'w')
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
                 yield lock_file
             finally:
                 # Release lock and close file
                 if lock_file:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    if sys.platform == "win32":
+                        msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
                     lock_file.close()
 
         return lock()
