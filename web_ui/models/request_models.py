@@ -110,4 +110,7 @@ class SaveWritebackRequest(BaseModel):
                 raise ValueError("user_override must contain decision and justification")
             if v['decision'] not in ["CONFIRMED", "NOT_EXPLOITABLE"]:
                 raise ValueError("Override decision must be CONFIRMED or NOT_EXPLOITABLE")
+
+            # Sanitize justification to prevent XSS
+            v['justification'] = SecurityValidator.sanitize_html(v['justification'])
         return v

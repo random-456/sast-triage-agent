@@ -11,6 +11,7 @@ class StateManager {
             sessions: [],
             findings: [],
             selectedFindings: [],
+            analysisRunning: false,
             settings: {
                 modelName: 'gemini-2.5-pro',
                 sidebarVisible: true
@@ -141,6 +142,37 @@ class StateManager {
      */
     switchScreen(screenName) {
         this.setState({ currentScreen: screenName });
+    }
+
+    /**
+     * Set analysis running state
+     */
+    setAnalysisRunning(running) {
+        this.setState({ analysisRunning: running });
+    }
+
+    /**
+     * Check if any findings can be analyzed
+     * Returns filtered list of findings that haven't been analyzed (or were REFUSED)
+     */
+    getAnalyzableFindings() {
+        const findings = this.state.selectedFindings
+            .map(hash => this.state.findings.find(f => f.resultHash === hash))
+            .filter(f => f);
+
+        return findings.filter(finding => {
+            // No analysis data = can analyze
+            if (!finding.analysis) return true;
+
+            // No result yet (pending or failed) = can analyze
+            if (!finding.analysis.result) return true;
+
+            // REFUSED = can re-analyze
+            if (finding.analysis.result === 'REFUSED') return true;
+
+            // Completed with result (not REFUSED) = cannot re-analyze
+            return false;
+        });
     }
 }
 

@@ -17,8 +17,30 @@ from web_ui.services.checkmarx_service import CheckmarxService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["projects"])
-storage = SessionStorage()
-checkmarx_service = CheckmarxService()
+session_storage: SessionStorage = None
+checkmarx_service: CheckmarxService = None
+
+
+def set_session_storage(storage: SessionStorage):
+    """
+    Set the SessionStorage instance.
+
+    Args:
+        storage: SessionStorage instance to use
+    """
+    global session_storage
+    session_storage = storage
+
+
+def set_checkmarx_service(service: CheckmarxService):
+    """
+    Set the CheckmarxService instance.
+
+    Args:
+        service: CheckmarxService instance to use
+    """
+    global checkmarx_service
+    checkmarx_service = service
 
 
 @router.get("/settings/models", response_model=ModelsResponse)
@@ -123,7 +145,7 @@ async def fetch_findings(request: FetchFindingsRequest):
             )
 
         # Create session
-        session_id = storage.create_session(
+        session_id = session_storage.create_session(
             project_name=request.project_name,
             project_id=project_id,
             scan_id=scan_id,
@@ -181,7 +203,7 @@ async def get_session_findings(session_id: str):
     Returns:
         Session findings
     """
-    session_data = storage.load_session(session_id)
+    session_data = session_storage.load_session(session_id)
     if not session_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

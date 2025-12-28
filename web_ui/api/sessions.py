@@ -14,7 +14,18 @@ from web_ui.middleware.security import SecurityValidator
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
-storage = SessionStorage()
+session_storage: SessionStorage = None
+
+
+def set_session_storage(storage: SessionStorage):
+    """
+    Set the SessionStorage instance.
+
+    Args:
+        storage: SessionStorage instance to use
+    """
+    global session_storage
+    session_storage = storage
 
 
 @router.get("", response_model=List[SessionSummary])
@@ -26,7 +37,7 @@ async def list_sessions():
         List of session summaries
     """
     try:
-        sessions = storage.list_sessions()
+        sessions = session_storage.list_sessions()
         return sessions
     except Exception as e:
         logger.error(f"Error listing sessions: {e}")
@@ -51,7 +62,7 @@ async def get_session(session_id: str):
         # Validate session ID
         SecurityValidator.validate_session_id(session_id)
 
-        session_data = storage.load_session(session_id)
+        session_data = session_storage.load_session(session_id)
         if not session_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -84,7 +95,7 @@ async def delete_session(session_id: str):
         # Validate session ID
         SecurityValidator.validate_session_id(session_id)
 
-        success = storage.delete_session(session_id)
+        success = session_storage.delete_session(session_id)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -117,7 +128,7 @@ async def export_session_csv(session_id: str):
         # Validate session ID
         SecurityValidator.validate_session_id(session_id)
 
-        session_data = storage.load_session(session_id)
+        session_data = session_storage.load_session(session_id)
         if not session_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

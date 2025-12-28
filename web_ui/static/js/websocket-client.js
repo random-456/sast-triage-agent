@@ -11,6 +11,7 @@ class WebSocketClient {
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 2000; // 2 seconds
         this.pingInterval = null;
+        this.pendingAnalyses = new Set(); // Track in-progress analyses
     }
 
     /**
@@ -119,6 +120,12 @@ class WebSocketClient {
     handleAnalysisStarted(data) {
         console.log(`Analysis started for finding: ${data.finding_hash}`);
 
+        // Track this pending analysis
+        this.pendingAnalyses.add(data.finding_hash);
+
+        // Set analysis running flag
+        stateManager.setAnalysisRunning(true);
+
         // Update finding status in state
         const state = stateManager.getState();
         const finding = state.findings.find(f => f.resultHash === data.finding_hash);
@@ -173,6 +180,9 @@ class WebSocketClient {
     handleAnalysisComplete(data) {
         console.log(`Analysis complete for finding: ${data.finding_hash}`);
 
+        // Remove from pending analyses
+        this.pendingAnalyses.delete(data.finding_hash);
+
         // Update finding with final results
         const state = stateManager.getState();
         const finding = state.findings.find(f => f.resultHash === data.finding_hash);
@@ -189,6 +199,9 @@ class WebSocketClient {
             // Update table row
             findingsTable.updateFindingRow(finding);
         }
+
+        // Check if all analyses are complete
+        this.checkAllAnalysesComplete();
     }
 
     /**
@@ -196,6 +209,9 @@ class WebSocketClient {
      */
     handleAnalysisFailed(data) {
         console.error(`Analysis failed for finding: ${data.finding_hash}`);
+
+        // Remove from pending analyses
+        this.pendingAnalyses.delete(data.finding_hash);
 
         // Update finding with error status
         const state = stateManager.getState();
@@ -213,6 +229,9 @@ class WebSocketClient {
 
         // Show error notification
         this.showNotification('error', `Analysis failed: ${data.error}`);
+
+        // Check if all analyses are complete
+        this.checkAllAnalysesComplete();
     }
 
     /**
@@ -223,6 +242,54 @@ class WebSocketClient {
 
         // Optional: Could show overall progress in header
         // For now, individual finding updates are sufficient
+    }
+
+    /**
+     * Check if all analyses are complete and reload session
+     */
+    async checkAllAnalysesComplete() {
+        if (this.pendingAnalyses.size === 0) {
+            console.log('All analyses complete - reloading session from server');
+
+            // Clear analysis running flag
+            stateManager.setAnalysisRunning(false);
+
+            // Reload session from server to get updated analysis data
+            const state = stateManager.getState();
+            if (state.currentSession && state.currentSession.session_id) {
+                await this.reloadSession(state.currentSession.session_id);
+            }
+
+            // Dispatch event for UI components
+            window.dispatchEvent(new CustomEvent('all-analyses-complete'));
+        }
+    }
+
+    /**
+     * Reload session from server
+     */
+    async reloadSession(sessionId) {
+        try {
+            const response = await fetch(`/api/sessions/${sessionId}`);
+            if (!response.ok) {
+                console.error('Failed to reload session');
+                return;
+            }
+
+            const session = await response.json();
+
+            // Update state with fresh session data
+            stateManager.setCurrentSession(session);
+            stateManager.setFindings(session.findings);
+
+            console.log('Session reloaded successfully');
+
+            // Trigger table re-render
+            findingsTable.render(session.findings);
+
+        } catch (error) {
+            console.error('Error reloading session:', error);
+        }
     }
 
     /**

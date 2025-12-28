@@ -60,14 +60,28 @@ class App {
             stateManager.switchScreen('project-input');
         });
 
-        // Run triage button
-        this.elements.btnRunTriage?.addEventListener('click', () => {
-            this.runTriage();
-        });
+        // Run triage button (with debouncing)
+        let triageClickTimeout = null;
+        if (this.elements.btnRunTriage) {
+            this.elements.btnRunTriage.addEventListener('click', () => {
+                if (triageClickTimeout) return;
+
+                triageClickTimeout = setTimeout(() => {
+                    triageClickTimeout = null;
+                }, 1000);
+
+                this.runTriage();
+            });
+        }
 
         // Session loaded event
         window.addEventListener('session-loaded', (e) => {
             this.handleSessionLoaded(e.detail);
+        });
+
+        // All analyses complete event
+        window.addEventListener('all-analyses-complete', () => {
+            this.handleAllAnalysesComplete();
         });
     }
 
@@ -114,8 +128,10 @@ class App {
      * Update run triage button state
      */
     updateRunTriageButton(selectedCount) {
+        const state = stateManager.getState();
         if (this.elements.btnRunTriage) {
-            this.elements.btnRunTriage.disabled = selectedCount === 0;
+            // Disable if no selections OR analysis is running
+            this.elements.btnRunTriage.disabled = selectedCount === 0 || state.analysisRunning;
         }
     }
 
@@ -245,6 +261,18 @@ class App {
     }
 
     /**
+     * Handle all analyses complete
+     */
+    handleAllAnalysesComplete() {
+        // Re-enable run triage button
+        this.elements.btnRunTriage.disabled = false;
+        this.elements.btnRunTriage.innerHTML = '<i class="fas fa-play mr-2"></i>Run Triage';
+
+        // Show completion notification
+        this.showStatus('success', 'All analyses completed!');
+    }
+
+    /**
      * Run triage analysis
      */
     async runTriage() {
@@ -259,6 +287,29 @@ class App {
             alert('No session loaded');
             return;
         }
+
+        // Check if analysis is already running
+        if (state.analysisRunning) {
+            this.showStatus('warning', 'Analysis is already running. Please wait for it to complete.');
+            return;
+        }
+
+        // Get analyzable findings (not already analyzed, or REFUSED)
+        const analyzableFindings = stateManager.getAnalyzableFindings();
+
+        if (analyzableFindings.length === 0) {
+            this.showStatus('warning', 'All selected findings have already been analyzed. Only REFUSED findings can be re-analyzed.');
+            return;
+        }
+
+        // Warn user if some findings are skipped
+        if (analyzableFindings.length < state.selectedFindings.length) {
+            const skipped = state.selectedFindings.length - analyzableFindings.length;
+            this.showStatus('info', `Skipping ${skipped} already-analyzed finding(s). Analyzing ${analyzableFindings.length} finding(s).`);
+        }
+
+        // Get hashes of analyzable findings
+        const analyzableFindingHashes = analyzableFindings.map(f => f.resultHash);
 
         // Disable run button during analysis
         this.elements.btnRunTriage.disabled = true;
@@ -276,7 +327,7 @@ class App {
                 },
                 body: JSON.stringify({
                     session_id: state.currentSession.session_id,
-                    selected_finding_hashes: state.selectedFindings,
+                    selected_finding_hashes: analyzableFindingHashes,
                     model_name: state.settings.modelName
                 })
             });
@@ -290,7 +341,7 @@ class App {
             const data = await response.json();
 
             if (data.status === 'running') {
-                this.showStatus('success', `Analysis started for ${state.selectedFindings.length} findings`);
+                this.showStatus('success', `Analysis started for ${analyzableFindingHashes.length} finding(s)`);
                 this.elements.btnRunTriage.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Analysis Running...';
             } else {
                 this.showStatus('warning', data.message || 'Analysis could not be started');

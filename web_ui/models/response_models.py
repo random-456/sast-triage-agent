@@ -62,8 +62,7 @@ class AnalysisStatusResponse(BaseModel):
 
     session_id: str
     status: str  # running, completed, failed
-    progress: Dict[str, Any]  # {current: int, total: int, findings: {hash: status}}
-    results: List[Dict[str, Any]]  # List of completed findings with results
+    active_analyses_count: int = 0
 
 
 class StartAnalysisResponse(BaseModel):
@@ -102,6 +101,8 @@ class WritebackResponse(BaseModel):
     success: bool
     message: str
     finding_hash: str
+    final_decision: Optional[str] = None
+    saved_at: Optional[str] = None
 
 
 class ErrorResponse(BaseModel):

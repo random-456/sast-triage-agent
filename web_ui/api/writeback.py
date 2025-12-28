@@ -61,9 +61,9 @@ async def save_writeback(request: SaveWritebackRequest):
 
         # Validate user override if present
         if request.user_override:
-            if request.user_override.decision not in ["CONFIRMED", "NOT_EXPLOITABLE"]:
+            if request.user_override['decision'] not in ["CONFIRMED", "NOT_EXPLOITABLE"]:
                 raise ValueError("User override decision must be CONFIRMED or NOT_EXPLOITABLE")
-            if not request.user_override.justification or not request.user_override.justification.strip():
+            if not request.user_override['justification'] or not request.user_override['justification'].strip():
                 raise ValueError("User override justification is required")
 
         # Load session
@@ -105,8 +105,8 @@ async def save_writeback(request: SaveWritebackRequest):
         # Add user override if present
         if request.user_override:
             finding_data["writeback"]["user_override"] = {
-                "decision": request.user_override.decision,
-                "justification": request.user_override.justification
+                "decision": request.user_override['decision'],
+                "justification": request.user_override['justification']
             }
         else:
             finding_data["writeback"]["user_override"] = None
@@ -118,7 +118,7 @@ async def save_writeback(request: SaveWritebackRequest):
         logger.info(f"Saved write-back decision for finding {request.finding_hash} in session {request.session_id}")
 
         # Determine final decision (user override takes precedence)
-        final_decision = request.user_override.decision if request.user_override else request.decision
+        final_decision = request.user_override['decision'] if request.user_override else request.decision
 
         return WritebackResponse(
             success=True,

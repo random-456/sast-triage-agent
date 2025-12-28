@@ -18,6 +18,7 @@ from web_ui.middleware.rate_limiter import RateLimiter
 from web_ui.services.websocket_manager import WebSocketManager
 from web_ui.services.analysis_service import AnalysisService
 from web_ui.services.session_storage import SessionStorage
+from web_ui.services.checkmarx_service import CheckmarxService
 from web_ui.api import sessions, projects, websocket, analysis, writeback
 
 # Configure logging
@@ -54,12 +55,16 @@ rate_limiter = RateLimiter()
 # Initialize services
 session_storage = SessionStorage()
 websocket_manager = WebSocketManager()
+checkmarx_service = CheckmarxService()
 analysis_service = AnalysisService(session_storage, websocket_manager)
 
 # Inject services into API modules
 websocket.set_websocket_manager(websocket_manager)
 analysis.set_analysis_service(analysis_service)
 writeback.set_session_storage(session_storage)
+sessions.set_session_storage(session_storage)
+projects.set_session_storage(session_storage)
+projects.set_checkmarx_service(checkmarx_service)
 
 
 # Add rate limiting middleware

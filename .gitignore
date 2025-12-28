@@ -73,3 +73,7 @@ htmlcov/
 # Output and temp files
 output
 temp
+
+# Local development mocks (DO NOT COMMIT)
+dev_local/
+web_sessions

@@ -243,10 +243,10 @@ class FindingsTable {
         const checkbox = row.querySelector('.finding-checkbox');
         const isChecked = checkbox ? checkbox.checked : false;
 
-        // Replace row HTML
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = this.renderRow(finding);
-        const newRow = tempDiv.firstElementChild;
+        // Replace row HTML - use tbody element for correct TR parsing
+        const tempTbody = document.createElement('tbody');
+        tempTbody.innerHTML = this.renderRow(finding);
+        const newRow = tempTbody.firstElementChild;
 
         // Preserve checkbox state
         const newCheckbox = newRow.querySelector('.finding-checkbox');

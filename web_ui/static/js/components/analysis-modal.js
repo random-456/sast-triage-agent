@@ -112,20 +112,19 @@ class AnalysisModal {
 
         return `
             <div class="bg-gray-700 rounded p-3">
-                <div class="text-xs text-gray-400 mb-1">
+                <div class="text-xs text-gray-400 mb-2">
                     <i class="fas fa-robot"></i> Agent (#${index + 1})
                 </div>
                 ${entry.content ? `
-                    <div class="text-xs mb-2">${this.escapeHtml(entry.content).substring(0, 200)}...</div>
+                    <div class="text-sm mb-2 whitespace-pre-wrap">${this.escapeHtml(entry.content)}</div>
                 ` : ''}
                 ${hasToolCalls ? `
-                    <div class="mt-2">
-                        <div class="text-xs text-gray-400 mb-1">Tool Calls:</div>
+                    <div class="mt-2 flex flex-wrap gap-2">
                         ${entry.tool_calls.map(tc => `
-                            <div class="text-xs bg-gray-800 rounded px-2 py-1 mb-1">
+                            <span class="inline-flex items-center gap-1 text-xs bg-gray-800 rounded px-2 py-1">
                                 <i class="fas fa-wrench text-blue-400"></i>
-                                <span class="font-mono">${this.escapeHtml(tc.tool)}</span>
-                            </div>
+                                <span class="font-mono text-blue-300">${this.escapeHtml(tc.name)}</span>
+                            </span>
                         `).join('')}
                     </div>
                 ` : ''}
@@ -137,17 +136,29 @@ class AnalysisModal {
      * Render tool result
      */
     renderToolResult(entry, index) {
-        const resultPreview = typeof entry.result === 'string' ?
-                             entry.result.substring(0, 100) :
-                             JSON.stringify(entry.result).substring(0, 100);
+        let resultText = '';
+
+        if (typeof entry.result === 'string') {
+            resultText = entry.result;
+        } else if (typeof entry.result === 'object') {
+            resultText = JSON.stringify(entry.result, null, 2);
+        } else {
+            resultText = String(entry.result);
+        }
+
+        // Limit to 500 characters for very long results
+        const maxLength = 500;
+        const truncated = resultText.length > maxLength;
+        const displayText = truncated ? resultText.substring(0, maxLength) + '...' : resultText;
 
         return `
             <div class="bg-gray-800 rounded p-3">
-                <div class="text-xs text-gray-400 mb-1">
-                    <i class="fas fa-tools"></i> ${this.escapeHtml(entry.tool)}
+                <div class="flex items-center gap-2 text-xs text-gray-400 mb-2">
+                    <i class="fas fa-tools"></i>
+                    <span class="font-mono text-green-400">${this.escapeHtml(entry.tool)}</span>
                 </div>
-                <div class="text-xxs text-gray-500 font-mono">
-                    ${this.escapeHtml(resultPreview)}...
+                <div class="text-xs text-gray-300 font-mono whitespace-pre-wrap overflow-x-auto">
+                    ${this.escapeHtml(displayText)}
                 </div>
             </div>
         `;

@@ -147,20 +147,21 @@ class AnalysisService:
                 raise ValueError(f"Session {session_id} not found")
 
             # Create progress callback that broadcasts to WebSocket
-            def progress_callback(event: dict):
-                """Callback that broadcasts progress events to WebSocket"""
-                asyncio.create_task(
-                    self.websocket_manager.broadcast(
+            async def progress_callback(event: dict):
+                """Async callback that broadcasts progress events to WebSocket"""
+                try:
+                    await self.websocket_manager.broadcast(
                         session_id,
                         {"type": event["event"], "data": event}
                     )
-                )
+                except Exception as e:
+                    logger.error(f"Failed to broadcast progress event: {e}")
 
             # Clone repository to CODEBASE_DIR
             repo_url = session["metadata"].get("github_url")
             if repo_url:
                 logger.info(f"Cloning repository: {repo_url}")
-                clone_success = GitHelpers.clone_repository(repo_url)
+                clone_success = await asyncio.to_thread(GitHelpers.clone_repository, repo_url)
                 if not clone_success:
                     # Send error via WebSocket
                     await self.websocket_manager.broadcast(

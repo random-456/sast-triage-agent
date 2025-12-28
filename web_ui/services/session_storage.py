@@ -9,6 +9,8 @@ import logging
 from pathlib import Path
 import random
 import string
+import tempfile
+import fcntl
 
 from config import WEB_SESSIONS_DIR, MAX_SESSION_HISTORY
 from web_ui.models.session_models import SessionData, SessionMetadata, FindingData
@@ -31,6 +33,39 @@ class SessionStorage:
         if not os.path.exists(INDEX_FILE):
             self._save_index({"sessions": [], "last_updated": datetime.now().isoformat()})
 
+    def _lock_index_file(self):
+        """
+        Context manager for exclusive file locking on index file.
+
+        Prevents race conditions during concurrent read-modify-write operations.
+        Uses fcntl.LOCK_EX for exclusive lock with blocking.
+
+        Usage:
+            with self._lock_index_file() as lock_file:
+                # Critical section - read, modify, write index
+                pass
+        """
+        from contextlib import contextmanager
+
+        @contextmanager
+        def lock():
+            # Create lock file in same directory as index
+            lock_file_path = INDEX_FILE + ".lock"
+            lock_file = None
+            try:
+                # Open lock file (create if doesn't exist)
+                lock_file = open(lock_file_path, 'w')
+                # Acquire exclusive lock (blocks until available)
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                yield lock_file
+            finally:
+                # Release lock and close file
+                if lock_file:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    lock_file.close()
+
+        return lock()
+
     def _load_index(self) -> Dict:
         """Load sessions index"""
         try:
@@ -41,11 +76,37 @@ class SessionStorage:
             return {"sessions": [], "last_updated": datetime.now().isoformat()}
 
     def _save_index(self, index_data: Dict):
-        """Save sessions index"""
+        """
+        Save sessions index using atomic write.
+
+        Uses tempfile + atomic rename to prevent corruption on crash.
+        """
         try:
             index_data["last_updated"] = datetime.now().isoformat()
-            with open(INDEX_FILE, 'w', encoding='utf-8') as f:
-                json.dump(index_data, f, indent=2)
+
+            # Write to temporary file first
+            dir_path = os.path.dirname(INDEX_FILE)
+            temp_fd, temp_path = tempfile.mkstemp(
+                dir=dir_path,
+                prefix=".sessions_index_",
+                suffix=".json"
+            )
+
+            try:
+                with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                    json.dump(index_data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())  # Ensure written to disk
+
+                # Atomic rename
+                os.replace(temp_path, INDEX_FILE)
+
+            except Exception:
+                # Cleanup temp file on error
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                raise
+
         except Exception as e:
             logger.error(f"Error saving index: {e}")
 
@@ -158,10 +219,15 @@ class SessionStorage:
 
     def save_session(self, session_data: Dict):
         """
-        Save session data to file.
+        Save session data to file using atomic write.
+
+        Uses tempfile + atomic rename to prevent corruption on crash.
 
         Args:
             session_data: Session data dictionary
+
+        Raises:
+            Exception: If save fails
         """
         session_id = session_data["session_id"]
         file_path = self._get_session_file_path(session_id)
@@ -169,8 +235,29 @@ class SessionStorage:
         session_data["updated_at"] = datetime.now().isoformat()
 
         try:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(session_data, f, indent=2)
+            # Write to temporary file first
+            dir_path = os.path.dirname(file_path)
+            temp_fd, temp_path = tempfile.mkstemp(
+                dir=dir_path,
+                prefix=f".{session_id}_",
+                suffix=".json"
+            )
+
+            try:
+                with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                    json.dump(session_data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())  # Ensure written to disk
+
+                # Atomic rename
+                os.replace(temp_path, file_path)
+
+            except Exception:
+                # Cleanup temp file on error
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                raise
+
         except Exception as e:
             logger.error(f"Error saving session {session_id}: {e}")
             raise
@@ -200,7 +287,7 @@ class SessionStorage:
 
     def delete_session(self, session_id: str) -> bool:
         """
-        Delete a session.
+        Delete a session with file locking to prevent race conditions.
 
         Args:
             session_id: Session ID
@@ -214,10 +301,11 @@ class SessionStorage:
             if os.path.exists(file_path):
                 os.remove(file_path)
 
-            # Remove from index
-            index = self._load_index()
-            index["sessions"] = [s for s in index["sessions"] if s["session_id"] != session_id]
-            self._save_index(index)
+            # Remove from index with locking
+            with self._lock_index_file():
+                index = self._load_index()
+                index["sessions"] = [s for s in index["sessions"] if s["session_id"] != session_id]
+                self._save_index(index)
 
             logger.info(f"Deleted session {session_id}")
             return True
@@ -245,39 +333,41 @@ class SessionStorage:
 
     def _add_to_index(self, session_data: Dict):
         """
-        Add session to index.
+        Add session to index with file locking to prevent race conditions.
 
         Args:
             session_data: Complete session data
         """
-        index = self._load_index()
+        # Use file locking to prevent concurrent modification
+        with self._lock_index_file():
+            index = self._load_index()
 
-        # Create summary for index
-        summary = {
-            "session_id": session_data["session_id"],
-            "project_name": session_data["metadata"]["project_name"],
-            "branch": session_data["metadata"]["branch"],
-            "created_at": session_data["created_at"],
-            "total_findings": session_data["statistics"]["total_findings"],
-            "analyzed_count": session_data["statistics"]["analyzed_count"],
-            "confirmed_count": session_data["statistics"]["confirmed_count"],
-            "not_exploitable_count": session_data["statistics"]["not_exploitable_count"],
-            "refused_count": session_data["statistics"]["refused_count"],
-            "status": session_data["status"]
-        }
+            # Create summary for index
+            summary = {
+                "session_id": session_data["session_id"],
+                "project_name": session_data["metadata"]["project_name"],
+                "branch": session_data["metadata"]["branch"],
+                "created_at": session_data["created_at"],
+                "total_findings": session_data["statistics"]["total_findings"],
+                "analyzed_count": session_data["statistics"]["analyzed_count"],
+                "confirmed_count": session_data["statistics"]["confirmed_count"],
+                "not_exploitable_count": session_data["statistics"]["not_exploitable_count"],
+                "refused_count": session_data["statistics"]["refused_count"],
+                "status": session_data["status"]
+            }
 
-        # Add to beginning
-        index["sessions"].insert(0, summary)
+            # Add to beginning
+            index["sessions"].insert(0, summary)
 
-        # Trim to max size
-        if len(index["sessions"]) > MAX_SESSION_HISTORY:
-            index["sessions"] = index["sessions"][:MAX_SESSION_HISTORY]
+            # Trim to max size
+            if len(index["sessions"]) > MAX_SESSION_HISTORY:
+                index["sessions"] = index["sessions"][:MAX_SESSION_HISTORY]
 
-        self._save_index(index)
+            self._save_index(index)
 
     def update_index_entry(self, session_id: str):
         """
-        Update index entry after session modification.
+        Update index entry after session modification with file locking to prevent race conditions.
 
         Args:
             session_id: Session ID
@@ -286,23 +376,25 @@ class SessionStorage:
         if not session_data:
             return
 
-        index = self._load_index()
+        # Use file locking to prevent concurrent modification
+        with self._lock_index_file():
+            index = self._load_index()
 
-        # Find and update entry
-        for i, entry in enumerate(index["sessions"]):
-            if entry["session_id"] == session_id:
-                index["sessions"][i] = {
-                    "session_id": session_data["session_id"],
-                    "project_name": session_data["metadata"]["project_name"],
-                    "branch": session_data["metadata"]["branch"],
-                    "created_at": session_data["created_at"],
-                    "total_findings": session_data["statistics"]["total_findings"],
-                    "analyzed_count": session_data["statistics"]["analyzed_count"],
-                    "confirmed_count": session_data["statistics"]["confirmed_count"],
-                    "not_exploitable_count": session_data["statistics"]["not_exploitable_count"],
-                    "refused_count": session_data["statistics"]["refused_count"],
-                    "status": session_data["status"]
-                }
-                break
+            # Find and update entry
+            for i, entry in enumerate(index["sessions"]):
+                if entry["session_id"] == session_id:
+                    index["sessions"][i] = {
+                        "session_id": session_data["session_id"],
+                        "project_name": session_data["metadata"]["project_name"],
+                        "branch": session_data["metadata"]["branch"],
+                        "created_at": session_data["created_at"],
+                        "total_findings": session_data["statistics"]["total_findings"],
+                        "analyzed_count": session_data["statistics"]["analyzed_count"],
+                        "confirmed_count": session_data["statistics"]["confirmed_count"],
+                        "not_exploitable_count": session_data["statistics"]["not_exploitable_count"],
+                        "refused_count": session_data["statistics"]["refused_count"],
+                        "status": session_data["status"]
+                    }
+                    break
 
-        self._save_index(index)
+            self._save_index(index)

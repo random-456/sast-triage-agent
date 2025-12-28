@@ -6,6 +6,7 @@ import os
 import csv
 import json
 import logging
+import inspect
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -116,11 +117,15 @@ class SASTTriageAgent:
 
         # Emit analysis started event for web UI
         if self.progress_callback:
-            self.progress_callback({
+            event = {
                 "event": "analysis_started",
                 "finding_hash": result_hash,
                 "timestamp": datetime.now().isoformat()
-            })
+            }
+            if inspect.iscoroutinefunction(self.progress_callback):
+                await self.progress_callback(event)
+            else:
+                self.progress_callback(event)
 
         # Pre-load the complete finding details including dataflow
         finding_details = get_finding_details.invoke({"result_hash": result_hash})
@@ -189,14 +194,18 @@ class SASTTriageAgent:
                         # Use content snippet as action
                         last_action = response.content[:50] + "..." if len(response.content) > 50 else response.content
 
-                    self.progress_callback({
+                    event = {
                         "event": "analysis_progress",
                         "finding_hash": result_hash,
                         "iteration": iteration + 1,
                         "max_iterations": max_iterations,
                         "last_action": last_action,
                         "timestamp": datetime.now().isoformat()
-                    })
+                    }
+                    if inspect.iscoroutinefunction(self.progress_callback):
+                        await self.progress_callback(event)
+                    else:
+                        self.progress_callback(event)
 
                 # If LLM wants to use tools
                 if response.tool_calls:
@@ -208,13 +217,17 @@ class SASTTriageAgent:
 
                         # Emit tool execution event for web UI
                         if self.progress_callback:
-                            self.progress_callback({
+                            event = {
                                 "event": "tool_execution",
                                 "finding_hash": result_hash,
                                 "tool_name": tool_name,
                                 "tool_args": tool_args,
                                 "timestamp": datetime.now().isoformat()
-                            })
+                            }
+                            if inspect.iscoroutinefunction(self.progress_callback):
+                                await self.progress_callback(event)
+                            else:
+                                self.progress_callback(event)
 
                         # Check if this is the submit_triage_decision tool
                         if tool_name == "submit_triage_decision":
@@ -241,7 +254,7 @@ class SASTTriageAgent:
 
                                 # Emit analysis complete event for web UI
                                 if self.progress_callback:
-                                    self.progress_callback({
+                                    event = {
                                         "event": "analysis_complete",
                                         "finding_hash": result_hash,
                                         "result": decision.assessment_result,
@@ -249,7 +262,11 @@ class SASTTriageAgent:
                                         "justification": decision.assessment_justification,
                                         "duration_seconds": duration_seconds,
                                         "timestamp": datetime.now().isoformat()
-                                    })
+                                    }
+                                    if inspect.iscoroutinefunction(self.progress_callback):
+                                        await self.progress_callback(event)
+                                    else:
+                                        self.progress_callback(event)
 
                                 self.logger.info(f"Decision submitted: {decision.assessment_result} (confidence: {decision.assessment_confidence:.2f})")
                                 return decision
@@ -306,12 +323,16 @@ class SASTTriageAgent:
 
             # Emit analysis failed event for web UI
             if self.progress_callback:
-                self.progress_callback({
+                event = {
                     "event": "analysis_failed",
                     "finding_hash": result_hash,
                     "error": str(e),
                     "timestamp": datetime.now().isoformat()
-                })
+                }
+                if inspect.iscoroutinefunction(self.progress_callback):
+                    await self.progress_callback(event)
+                else:
+                    self.progress_callback(event)
 
             decision = TriageDecision(
                 resultHash=result_hash,
@@ -485,13 +506,17 @@ class SASTTriageAgent:
 
                 # Emit batch progress event for web UI
                 if self.progress_callback:
-                    self.progress_callback({
+                    event = {
                         "event": "batch_progress",
                         "completed": i + 1,
                         "total": len(findings),
                         "current_finding_hash": finding['resultHash'],
                         "timestamp": datetime.now().isoformat()
-                    })
+                    }
+                    if inspect.iscoroutinefunction(self.progress_callback):
+                        await self.progress_callback(event)
+                    else:
+                        self.progress_callback(event)
 
                 # Add to HTML report
                 finding_details = all_details.get(finding['resultHash'], {})
