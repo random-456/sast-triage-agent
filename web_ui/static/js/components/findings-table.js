@@ -60,13 +60,20 @@ class FindingsTable {
         if (isSelected) rowClass += ' selected';
         if (analysis.result) rowClass += ` result-${analysis.result}`;
 
+        // Conditionally render checkbox only if finding can be analyzed
+        const checkboxCell = this.isFindingAnalyzable(finding) ? `
+            <td class="p-3">
+                <input type="checkbox" class="finding-checkbox form-checkbox"
+                       data-result-hash="${finding.resultHash}"
+                       ${isSelected ? 'checked' : ''}>
+            </td>
+        ` : `
+            <td class="p-3"></td>
+        `;
+
         return `
             <tr class="${rowClass}" data-result-hash="${finding.resultHash}">
-                <td class="p-3">
-                    <input type="checkbox" class="finding-checkbox form-checkbox"
-                           data-result-hash="${finding.resultHash}"
-                           ${isSelected ? 'checked' : ''}>
-                </td>
+                ${checkboxCell}
                 <td class="p-3">
                     <div class="font-medium">${this.escapeHtml(finding.queryName)}</div>
                     ${analysis.status ? this.renderAnalysisStatus(analysis) : ''}
@@ -78,28 +85,33 @@ class FindingsTable {
                 <td class="p-3 text-xs">${this.escapeHtml(finding.category)}</td>
                 <td class="p-3 text-xs">${this.escapeHtml(finding.languageName)}</td>
                 <td class="p-3">
-                    ${finding.checkmarx_url ? `
-                        <a href="${finding.checkmarx_url}" target="_blank" class="text-blue-400 hover:text-blue-300">
-                            <i class="fas fa-external-link-alt"></i>
-                        </a>
-                    ` : '-'}
                     ${analysis.status === 'completed' ? `
-                        <button class="ml-2 text-gray-400 hover:text-white"
+                        <button class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium py-1 px-3 rounded"
                                 data-action="view-details"
                                 data-result-hash="${finding.resultHash}">
-                            <i class="fas fa-info-circle"></i>
+                            Review
                         </button>
-                    ` : ''}
-                    ${analysis.result && analysis.result !== 'REFUSED' ? `
-                        <button class="ml-2 text-gray-400 hover:text-white"
-                                data-action="writeback"
-                                data-result-hash="${finding.resultHash}">
-                            <i class="fas fa-upload"></i>
-                        </button>
-                    ` : ''}
+                    ` : '-'}
                 </td>
             </tr>
         `;
+    }
+
+    /**
+     * Check if a finding can be analyzed
+     */
+    isFindingAnalyzable(finding) {
+        // No analysis data = can analyze
+        if (!finding.analysis) return true;
+
+        // No result yet (pending or failed) = can analyze
+        if (!finding.analysis.result) return true;
+
+        // REFUSED = can re-analyze
+        if (finding.analysis.result === 'REFUSED') return true;
+
+        // Completed with CONFIRMED or NOT_EXPLOITABLE = cannot re-analyze
+        return false;
     }
 
     /**
@@ -184,15 +196,6 @@ class FindingsTable {
                 window.dispatchEvent(new CustomEvent('view-finding-details', { detail: { resultHash } }));
             });
         });
-
-        // Writeback buttons
-        const writebackButtons = this.tbody.querySelectorAll('[data-action="writeback"]');
-        writebackButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const resultHash = e.target.closest('[data-action="writeback"]').dataset.resultHash;
-                window.dispatchEvent(new CustomEvent('writeback-finding', { detail: { resultHash } }));
-            });
-        });
     }
 
     /**
@@ -209,9 +212,15 @@ class FindingsTable {
 
         // Update select all checkbox
         if (this.selectAllCheckbox) {
-            const allChecked = state.findings.length > 0 &&
-                             state.selectedFindings.length === state.findings.length;
-            this.selectAllCheckbox.checked = allChecked;
+            // Hide select-all checkbox if there are no analyzable findings
+            if (checkboxes.length === 0) {
+                this.selectAllCheckbox.style.visibility = 'hidden';
+            } else {
+                this.selectAllCheckbox.style.visibility = 'visible';
+                const allChecked = state.findings.length > 0 &&
+                                 state.selectedFindings.length === state.findings.length;
+                this.selectAllCheckbox.checked = allChecked;
+            }
         }
     }
 
@@ -256,6 +265,9 @@ class FindingsTable {
 
         // Re-attach event listeners for this row
         this.attachRowEventListeners();
+
+        // Update select-all checkbox visibility (hide if no analyzable findings remain)
+        this.updateCheckboxes();
     }
 
     /**

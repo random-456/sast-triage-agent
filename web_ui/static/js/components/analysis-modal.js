@@ -1,12 +1,28 @@
 /**
- * Analysis Detail Modal Component
- * Shows analysis conversation log and tool calls
+ * Enhanced Analysis Modal Component
+ * Shows finding details, analysis steps, and writeback functionality in tabs
  */
 
 class AnalysisModal {
     constructor() {
+        // Modal elements
         this.modal = document.getElementById('analysis-modal');
-        this.content = document.getElementById('analysis-details-content');
+        this.findingHeader = document.getElementById('finding-header-section');
+        this.aiAssessment = document.getElementById('ai-assessment-section');
+        this.conversationLog = document.getElementById('analysis-conversation-log');
+        this.writebackContent = document.getElementById('writeback-form-content');
+        this.writebackFooter = document.getElementById('modal-footer-writeback');
+        this.writebackSaveBtn = document.getElementById('writeback-save-btn');
+
+        // Tab elements
+        this.tabAnalysis = document.getElementById('tab-analysis');
+        this.tabWriteback = document.getElementById('tab-writeback');
+        this.tabContentAnalysis = document.getElementById('tab-content-analysis');
+        this.tabContentWriteback = document.getElementById('tab-content-writeback');
+
+        // Current state
+        this.currentFinding = null;
+        this.activeTab = 'analysis';
 
         this.setupEventListeners();
     }
@@ -28,25 +44,59 @@ class AnalysisModal {
             }
         });
 
-        // Listen for view details events
+        // Tab switching
+        this.tabAnalysis?.addEventListener('click', () => this.switchTab('analysis'));
+        this.tabWriteback?.addEventListener('click', () => this.switchTab('writeback'));
+
+        // Save button
+        this.writebackSaveBtn?.addEventListener('click', () => this.saveWriteback());
+
+        // Listen for view details events (from info icon)
         window.addEventListener('view-finding-details', (e) => {
-            this.show(e.detail.resultHash);
+            this.show(e.detail.resultHash, 'analysis');
+        });
+
+        // Listen for writeback events (from upload icon)
+        window.addEventListener('writeback-finding', (e) => {
+            this.show(e.detail.resultHash, 'writeback');
         });
     }
 
     /**
      * Show modal for a finding
+     * @param {string} resultHash - Finding result hash
+     * @param {string} initialTab - Initial tab to show ('analysis' or 'writeback')
      */
-    show(resultHash) {
+    show(resultHash, initialTab = 'analysis') {
         const state = stateManager.getState();
         const finding = state.findings.find(f => f.resultHash === resultHash);
 
-        if (!finding || !finding.analysis) {
+        if (!finding) {
+            alert('Finding not found');
+            return;
+        }
+
+        // Check if analysis exists for analysis tab
+        if (initialTab === 'analysis' && !finding.analysis) {
             alert('No analysis details available');
             return;
         }
 
-        this.render(finding);
+        // Check if can writeback
+        if (initialTab === 'writeback' && (!finding.analysis || !finding.analysis.result || finding.analysis.result === 'REFUSED')) {
+            alert('No analysis result available for writeback');
+            return;
+        }
+
+        this.currentFinding = finding;
+        this.renderFindingHeader(finding);
+        this.renderAIAssessment(finding);
+        this.renderConversationLog(finding);
+        this.renderWritebackForm(finding);
+
+        // Switch to requested tab
+        this.switchTab(initialTab);
+
         this.modal.classList.remove('hidden');
     }
 
@@ -55,83 +105,160 @@ class AnalysisModal {
      */
     close() {
         this.modal.classList.add('hidden');
+        this.currentFinding = null;
+        this.switchTab('analysis'); // Reset to analysis tab
     }
 
     /**
-     * Render analysis details
+     * Switch between tabs
+     * @param {string} tabName - 'analysis' or 'writeback'
      */
-    render(finding) {
-        const analysis = finding.analysis;
+    switchTab(tabName) {
+        this.activeTab = tabName;
 
-        if (!analysis.conversation_log || analysis.conversation_log.length === 0) {
-            this.content.innerHTML = `
-                <div class="text-gray-500 text-center py-8">
-                    No conversation log available
-                </div>
-            `;
-            return;
+        if (tabName === 'analysis') {
+            // Show analysis tab
+            this.tabAnalysis?.classList.add('tab-active');
+            this.tabAnalysis?.classList.remove('text-gray-400');
+            this.tabAnalysis?.classList.add('text-blue-400');
+            this.tabAnalysis?.classList.remove('border-transparent');
+            this.tabAnalysis?.classList.add('border-blue-500');
+
+            this.tabWriteback?.classList.remove('tab-active');
+            this.tabWriteback?.classList.remove('text-blue-400');
+            this.tabWriteback?.classList.add('text-gray-400');
+            this.tabWriteback?.classList.add('border-transparent');
+            this.tabWriteback?.classList.remove('border-blue-500');
+
+            this.tabContentAnalysis?.classList.remove('hidden');
+            this.tabContentWriteback?.classList.add('hidden');
+            this.writebackFooter?.classList.add('hidden');
+        } else if (tabName === 'writeback') {
+            // Show writeback tab
+            this.tabWriteback?.classList.add('tab-active');
+            this.tabWriteback?.classList.remove('text-gray-400');
+            this.tabWriteback?.classList.add('text-blue-400');
+            this.tabWriteback?.classList.remove('border-transparent');
+            this.tabWriteback?.classList.add('border-blue-500');
+
+            this.tabAnalysis?.classList.remove('tab-active');
+            this.tabAnalysis?.classList.remove('text-blue-400');
+            this.tabAnalysis?.classList.add('text-gray-400');
+            this.tabAnalysis?.classList.add('border-transparent');
+            this.tabAnalysis?.classList.remove('border-blue-500');
+
+            this.tabContentWriteback?.classList.remove('hidden');
+            this.tabContentAnalysis?.classList.add('hidden');
+            this.writebackFooter?.classList.remove('hidden');
         }
+    }
 
-        this.content.innerHTML = `
-            <!-- Section 1: Finding Details Header -->
-            <div class="bg-gray-800 rounded-lg p-4 mb-4">
-                <h4 class="text-lg font-bold mb-3 text-white">${this.escapeHtml(finding.queryName)}</h4>
-                <div class="flex flex-wrap items-center gap-x-8 gap-y-2 text-sm">
-                    <div class="flex items-center gap-2 whitespace-nowrap">
-                        <span class="text-gray-400">Severity:</span>
-                        <span class="font-semibold ${this.getSeverityColor(finding.severity)}">${finding.severity}</span>
-                        <span class="text-gray-400">(CWE-${finding.cweID})</span>
-                    </div>
-                    <div class="flex items-center gap-2 whitespace-nowrap">
-                        <span class="text-gray-400">Language:</span>
-                        <span class="text-white">${finding.languageName}</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Section 2: Agent Assessment Verdict -->
-            <div class="bg-gray-800 rounded-lg p-4 mb-4">
-                <h5 class="text-md font-semibold text-white mb-3">Agent Assessment</h5>
-                <div class="flex items-center gap-3 mb-3">
-                        <span class="px-3 py-1 rounded ${this.getResultBadgeColor(analysis.result)} font-semibold">
-                            ${analysis.result || 'PENDING'}
-                        </span>
-                        <span class="text-sm text-gray-400">
-                            Confidence: <span class="text-white font-medium">
-                                ${analysis.confidence ? Math.round(analysis.confidence * 100) + '%' : 'N/A'}
-                            </span>
-                        </span>
-                    </div>
-                <div class="mb-3 text-sm">
-                    <span class="text-gray-400">Analysis steps:</span>
-                    <span class="ml-2 text-white">${analysis.iterations_used || 0}</span>
-                </div>
-                ${analysis.justification ? `
-                    <div class="mt-2 p-3 bg-gray-900 rounded text-sm text-gray-300">
-                        ${this.escapeHtml(analysis.justification)}
-                    </div>
+    /**
+     * Render finding header section
+     */
+    renderFindingHeader(finding) {
+        this.findingHeader.innerHTML = `
+            <div class="flex items-start justify-between mb-3">
+                <h4 class="text-lg font-bold text-white">${this.escapeHtml(finding.queryName)}</h4>
+                ${finding.checkmarx_url ? `
+                    <a href="${this.escapeHtml(finding.checkmarx_url)}" target="_blank" rel="noopener noreferrer"
+                       class="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1">
+                        <i class="fas fa-external-link-alt"></i>
+                        <span>View in Checkmarx</span>
+                    </a>
                 ` : ''}
             </div>
-
-            <!-- Section 3: Agent Conversation -->
-            <div class="bg-gray-800 rounded-lg p-4">
-                <h5 class="text-md font-semibold text-white mb-3">Analysis Steps</h5>
-                <div class="space-y-3">
-                    ${this.renderConversationLog(analysis.conversation_log)}
+            <div class="finding-metadata">
+                <div class="metadata-item">
+                    <span class="metadata-label">CWE:</span>
+                    <span class="metadata-value">CWE-${this.escapeHtml(finding.cweID)}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Query:</span>
+                    <span class="metadata-value">${this.escapeHtml(finding.queryName)}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Category:</span>
+                    <span class="metadata-value">${this.escapeHtml(finding.category)}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Finding ID:</span>
+                    <span class="metadata-value font-mono text-xs">${this.escapeHtml(finding.resultHash.substring(0, 48))}${finding.resultHash.length > 48 ? '...' : ''}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Severity:</span>
+                    <span class="font-semibold ${this.getSeverityColor(finding.severity)}">${this.escapeHtml(finding.severity)}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">State:</span>
+                    <span class="metadata-value">${this.escapeHtml(finding.state)}</span>
                 </div>
             </div>
         `;
     }
 
     /**
-     * Render conversation log
+     * Render AI assessment section
      */
-    renderConversationLog(log) {
-        return log.map((entry, index) => {
-            if (entry.type === 'system') {
-                return ''; // Skip system messages in modal
-            } else if (entry.type === 'human') {
-                return ''; // Skip human messages in modal
+    renderAIAssessment(finding) {
+        const analysis = finding.analysis;
+
+        if (!analysis || !analysis.result) {
+            this.aiAssessment.innerHTML = `
+                <div class="text-gray-500 text-center py-4">
+                    <i class="fas fa-info-circle mr-2"></i>No analysis available
+                </div>
+            `;
+            return;
+        }
+
+        this.aiAssessment.innerHTML = `
+            <h5 class="text-md font-semibold text-white mb-3">Agent Assessment</h5>
+            <div class="assessment-grid">
+                <div class="flex items-center gap-3">
+                    <span class="px-3 py-1 rounded ${this.getResultBadgeColor(analysis.result)} font-semibold">
+                        ${this.escapeHtml(analysis.result || 'PENDING')}
+                    </span>
+                </div>
+                <div class="flex items-center gap-4 text-sm text-gray-400">
+                    <span>
+                        Confidence: <span class="text-white font-medium">
+                            ${analysis.confidence ? Math.round(analysis.confidence * 100) + '%' : 'N/A'}
+                        </span>
+                    </span>
+                    <span>
+                        Analysis steps: <span class="text-white font-medium">${analysis.iterations_used || 0}</span>
+                    </span>
+                </div>
+                ${analysis.justification ? `
+                    <div class="justification-box">
+                        <div class="text-xs text-gray-400 mb-1 font-semibold">Justification:</div>
+                        ${this.escapeHtml(analysis.justification)}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    /**
+     * Render conversation log (Tab 1 content)
+     */
+    renderConversationLog(finding) {
+        const analysis = finding.analysis;
+
+        if (!analysis || !analysis.conversation_log || analysis.conversation_log.length === 0) {
+            this.conversationLog.innerHTML = `
+                <div class="text-gray-500 text-center py-8">
+                    <i class="fas fa-comments mr-2"></i>No conversation log available
+                </div>
+            `;
+            return;
+        }
+
+        // Render conversation log
+        const conversationHtml = analysis.conversation_log.map((entry, index) => {
+            if (entry.type === 'system' || entry.type === 'human') {
+                return ''; // Skip
             } else if (entry.type === 'assistant') {
                 return this.renderAssistantMessage(entry, index);
             } else if (entry.type === 'tool_result') {
@@ -139,7 +266,178 @@ class AnalysisModal {
             }
             return '';
         }).filter(Boolean).join('');
+
+        this.conversationLog.innerHTML = conversationHtml;
     }
+
+    /**
+     * Render writeback form (Tab 2 content)
+     */
+    renderWritebackForm(finding) {
+        const analysis = finding.analysis;
+
+        if (!analysis || !analysis.result || analysis.result === 'REFUSED') {
+            this.writebackContent.innerHTML = `
+                <div class="text-gray-500 text-center py-8">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>
+                    No valid analysis result available for writeback
+                </div>
+            `;
+            return;
+        }
+
+        // Determine what to pre-fill: saved writeback data or original AI analysis
+        let prefilledDecision = analysis.result;
+        let prefilledJustification = analysis.justification;
+
+        if (finding.writeback && finding.writeback.saved) {
+            // If writeback was saved, use saved data
+            if (finding.writeback.user_override) {
+                // User override exists, use that
+                prefilledDecision = finding.writeback.user_override.decision;
+                prefilledJustification = finding.writeback.user_override.justification;
+            } else {
+                // No override, use saved AI decision
+                prefilledDecision = finding.writeback.decision;
+                prefilledJustification = finding.writeback.justification;
+            }
+        }
+
+        this.writebackContent.innerHTML = `
+            <!-- Modify Decision Checkbox -->
+            <div>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                    <input type="checkbox" id="challenge-checkbox" class="form-checkbox">
+                    <span class="font-medium">Modify Decision</span>
+                </label>
+                <p class="text-xs text-gray-400 mt-1 ml-6">
+                    Check this to challenge the agent's decision
+                </p>
+            </div>
+
+            <!-- Override Fields (hidden by default) -->
+            <div id="override-fields" class="hidden override-fields">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Decision</label>
+                        <select id="override-decision" class="w-full bg-gray-700 border border-gray-600 rounded px-4 py-2">
+                            <option value="CONFIRMED" ${prefilledDecision === 'CONFIRMED' ? 'selected' : ''}>CONFIRMED</option>
+                            <option value="NOT_EXPLOITABLE" ${prefilledDecision === 'NOT_EXPLOITABLE' ? 'selected' : ''}>NOT_EXPLOITABLE</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Justification</label>
+                        <textarea id="override-justification"
+                                  class="w-full bg-gray-700 border border-gray-600 rounded px-4 py-2 h-32 resize-none"
+                                  placeholder="Provide justification for the decision...">${this.escapeHtml(prefilledJustification)}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info Banner -->
+            <div class="info-banner info-blue">
+                <i class="fas fa-info-circle"></i>
+                <span>This will save the decision to the session file. No write-back to Checkmarx implemented yet.</span>
+            </div>
+        `;
+
+        // Setup challenge checkbox toggle
+        const challengeCheckbox = this.writebackContent.querySelector('#challenge-checkbox');
+        const overrideFields = this.writebackContent.querySelector('#override-fields');
+
+        if (challengeCheckbox && overrideFields) {
+            challengeCheckbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    overrideFields.classList.remove('hidden');
+                } else {
+                    overrideFields.classList.add('hidden');
+                }
+            });
+        }
+    }
+
+    /**
+     * Save writeback decision
+     */
+    async saveWriteback() {
+        if (!this.currentFinding) return;
+
+        const challengeCheckbox = this.writebackContent.querySelector('#challenge-checkbox');
+        const isChallenged = challengeCheckbox && challengeCheckbox.checked;
+
+        let userOverride = null;
+        if (isChallenged) {
+            const decision = this.writebackContent.querySelector('#override-decision')?.value;
+            const justification = this.writebackContent.querySelector('#override-justification')?.value;
+
+            // Validate decision value
+            if (!decision || !['CONFIRMED', 'NOT_EXPLOITABLE'].includes(decision)) {
+                alert('Invalid decision value');
+                return;
+            }
+
+            // Validate justification
+            if (!justification || justification.trim() === '') {
+                alert('Please provide justification for your decision');
+                return;
+            }
+
+            // Validate justification length (max 10000 characters)
+            if (justification.length > 10000) {
+                alert('Justification is too long (maximum 10000 characters)');
+                return;
+            }
+
+            userOverride = {
+                decision,
+                justification: justification.trim()
+            };
+        }
+
+        const payload = {
+            session_id: stateManager.getState().currentSession.session_id,
+            finding_hash: this.currentFinding.resultHash,
+            decision: this.currentFinding.analysis.result,
+            justification: this.currentFinding.analysis.justification,
+            user_override: userOverride
+        };
+
+        try {
+            this.writebackSaveBtn.disabled = true;
+            this.writebackSaveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving...';
+
+            const response = await fetch('/api/writeback/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to save write-back');
+            }
+
+            // Success
+            alert('Write-back decision saved successfully!');
+            this.close();
+
+            // Reload session to get updated data
+            sidebar.loadSession(stateManager.getState().currentSession.session_id);
+
+        } catch (error) {
+            console.error('Error saving write-back:', error);
+            // Don't expose internal error details to user
+            alert('Failed to save write-back. Please try again or contact support.');
+        } finally {
+            this.writebackSaveBtn.disabled = false;
+            this.writebackSaveBtn.innerHTML = 'Save Decision';
+        }
+    }
+
+    // === HELPER RENDERING METHODS ===
 
     /**
      * Render assistant message
@@ -252,7 +550,9 @@ class AnalysisModal {
         return `
             <div class="bg-gray-800 rounded p-3">
                 <div class="flex items-center gap-2 text-xs mb-2">
-                    <i class="fas fa-file-code text-gray-400"></i><span class="font-mono text-blue-400">${this.escapeHtml(fileName)}</span>${totalLines > 0 ? ` <span class="text-gray-500">(${totalLines} lines)</span>` : ''}
+                    <i class="fas fa-file-code text-gray-400"></i>
+                    <span class="font-mono text-blue-400">${this.escapeHtml(fileName)}</span>
+                    ${totalLines > 0 ? `<span class="text-gray-500">(${totalLines} lines)</span>` : ''}
                 </div>
                 <div class="bg-gray-900 rounded overflow-hidden">
                     <pre class="text-xs text-gray-300 font-mono p-3 overflow-y-auto" style="max-height: 8rem; line-height: 1.4;"><code>${this.escapeHtml(content)}</code></pre>

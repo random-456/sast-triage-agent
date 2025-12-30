@@ -52,15 +52,9 @@ class Sidebar {
         const date = new Date(session.created_at);
         const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 
-        const statusIcon = session.status === 'completed' ? 'check-circle' :
-                          session.status === 'in_progress' ? 'spinner fa-spin' :
-                          session.status === 'failed' ? 'exclamation-circle' :
-                          'clock';
-
-        const statusColor = session.status === 'completed' ? 'text-green-500' :
-                           session.status === 'in_progress' ? 'text-blue-500' :
-                           session.status === 'failed' ? 'text-red-500' :
-                           'text-gray-500';
+        // Always use gray list-check icon for the counter
+        const statusIcon = 'list-check';
+        const statusColor = 'text-gray-500';
 
         return `
             <div class="session-card" data-session-id="${session.session_id}">
