@@ -267,6 +267,9 @@ class SessionStorage:
                 # Atomic rename
                 os.replace(temp_path, file_path)
 
+                # Update index entry to keep sidebar statistics in sync
+                self.update_index_entry(session_id)
+
             except Exception:
                 # Cleanup temp file on error
                 if os.path.exists(temp_path):

@@ -196,6 +196,11 @@ class WebSocketClient {
             finding.analysis.duration_seconds = data.duration_seconds;
             stateManager.setState({ findings: state.findings });
 
+            // Deselect finding if it can no longer be re-analyzed (CONFIRMED or NOT_EXPLOITABLE)
+            if (data.result !== 'REFUSED' && state.selectedFindings.includes(data.finding_hash)) {
+                stateManager.toggleFindingSelection(data.finding_hash);
+            }
+
             // Update table row
             findingsTable.updateFindingRow(finding);
         }
@@ -286,6 +291,9 @@ class WebSocketClient {
 
             // Trigger table re-render
             findingsTable.render(session.findings);
+
+            // Refresh sidebar to update session statistics in history
+            await sidebar.loadSessions();
 
         } catch (error) {
             console.error('Error reloading session:', error);

@@ -16,7 +16,7 @@ class App {
             settingsBtn: document.getElementById('settings-btn'),
             settingsModal: document.getElementById('settings-modal'),
             btnFetchFindings: document.getElementById('btn-fetch-findings'),
-            btnBackToInput: document.getElementById('btn-back-to-input'),
+            btnNewAnalysis: document.getElementById('btn-new-analysis'),
             btnRunTriage: document.getElementById('btn-run-triage'),
             fetchStatus: document.getElementById('fetch-status')
         };
@@ -55,8 +55,8 @@ class App {
             this.fetchFindings();
         });
 
-        // Back to input button
-        this.elements.btnBackToInput?.addEventListener('click', () => {
+        // New analysis button
+        this.elements.btnNewAnalysis?.addEventListener('click', () => {
             stateManager.switchScreen('project-input');
         });
 
@@ -225,8 +225,9 @@ class App {
 
             this.showStatus('success', `Fetched ${data.total_findings} findings`);
 
-            // Load the session
+            // Refresh sidebar session list and load the new session
             setTimeout(async () => {
+                await sidebar.loadSessions();
                 await sidebar.loadSession(data.session_id);
             }, 1000);
 
@@ -264,9 +265,8 @@ class App {
      * Handle all analyses complete
      */
     handleAllAnalysesComplete() {
-        // Re-enable run triage button
-        this.elements.btnRunTriage.disabled = false;
-        this.elements.btnRunTriage.innerHTML = '<i class="fas fa-play mr-2"></i>Run Triage';
+        // Reset button text (state subscription will handle enabled/disabled)
+        this.elements.btnRunTriage.innerHTML = '<i class="fas fa-play mr-2"></i>Run Analysis';
 
         // Show completion notification
         this.showStatus('success', 'All analyses completed!');
@@ -346,14 +346,14 @@ class App {
             } else {
                 this.showStatus('warning', data.message || 'Analysis could not be started');
                 this.elements.btnRunTriage.disabled = false;
-                this.elements.btnRunTriage.innerHTML = '<i class="fas fa-play mr-2"></i>Run Triage';
+                this.elements.btnRunTriage.innerHTML = '<i class="fas fa-play mr-2"></i>Run Analysis';
             }
 
         } catch (error) {
             console.error('Error starting analysis:', error);
             this.showStatus('error', `Failed to start analysis: ${error.message}`);
             this.elements.btnRunTriage.disabled = false;
-            this.elements.btnRunTriage.innerHTML = '<i class="fas fa-play mr-2"></i>Run Triage';
+            this.elements.btnRunTriage.innerHTML = '<i class="fas fa-play mr-2"></i>Run Analysis';
         }
     }
 

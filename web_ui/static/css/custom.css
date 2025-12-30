@@ -398,3 +398,112 @@ input:focus, select:focus, textarea:focus, button:focus {
     outline: none;
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
 }
+
+/* Tab Navigation Styles */
+.tab-button {
+    transition: all 0.2s ease;
+    cursor: pointer;
+    background: none;
+    outline: none;
+}
+
+.tab-button:hover {
+    border-bottom-color: var(--border-color);
+}
+
+.tab-button.tab-active {
+    color: var(--accent-primary);
+    border-bottom-color: var(--accent-primary);
+}
+
+.tab-button:not(.tab-active) {
+    border-bottom-color: transparent;
+}
+
+/* Tab Content Visibility */
+.tab-content {
+    display: block;
+}
+
+.tab-content.hidden {
+    display: none !important;
+}
+
+/* Finding Header Section */
+#finding-header-section .finding-metadata {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 0.75rem;
+}
+
+#finding-header-section .metadata-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+}
+
+#finding-header-section .metadata-label {
+    color: var(--text-tertiary);
+}
+
+#finding-header-section .metadata-value {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* AI Assessment Section */
+#ai-assessment-section .assessment-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1rem;
+    align-items: start;
+}
+
+#ai-assessment-section .justification-box {
+    grid-column: 1 / -1;
+    background-color: var(--bg-primary);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    max-height: 10rem;
+    overflow-y: auto;
+}
+
+/* Writeback Form Styles */
+#writeback-form-content .form-section {
+    padding: 1rem;
+    background-color: var(--bg-tertiary);
+    border-radius: 0.375rem;
+}
+
+#writeback-form-content .challenge-section {
+    border-top: 1px solid var(--border-color);
+    padding-top: 1rem;
+    margin-top: 1rem;
+}
+
+#writeback-form-content .override-fields {
+    background-color: var(--bg-primary);
+    border-radius: 0.375rem;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+/* Info Banner Styles */
+.info-banner {
+    display: flex;
+    align-items: start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+}
+
+.info-banner.info-blue {
+    background-color: rgba(59, 130, 246, 0.1);
+    border: 1px solid #1e3a8a;
+    color: #93c5fd;
+}
