@@ -3,15 +3,46 @@ Tool definitions for SAST Triage Agent
 """
 
 import os
-import csv
 import json
 import re
 import glob
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from langchain_core.tools import tool
 
-from config import CODEBASE_DIR, FINDINGS_CSV_FILE, FINDINGS_JSON_FILE, MAX_SEARCH_RESULTS
+from config import MAX_SEARCH_RESULTS
+
+# Module-level variable for current execution context
+_current_path_manager: Optional["PathManager"] = None
+
+
+def set_path_manager(path_manager: "PathManager"):
+    """
+    Set the path manager for tool execution context.
+    Called by SASTTriageAgent before running tools.
+    """
+    global _current_path_manager
+    _current_path_manager = path_manager
+
+
+def get_current_codebase_dir() -> str:
+    """Get current codebase directory based on context."""
+    if _current_path_manager:
+        return _current_path_manager.codebase_dir
+    raise RuntimeError(
+        "PathManager not set. Agent tools require session context. "
+        "Both CLI and WebUI must provide PathManager to agent."
+    )
+
+
+def get_current_findings_json() -> str:
+    """Get current findings JSON path based on context."""
+    if _current_path_manager:
+        return _current_path_manager.findings_json_file
+    raise RuntimeError(
+        "PathManager not set. Agent tools require session context. "
+        "Both CLI and WebUI must provide PathManager to agent."
+    )
 
 
 def validate_safe_path(base_path: str, requested_path: str) -> str:
@@ -48,45 +79,54 @@ def validate_safe_path(base_path: str, requested_path: str) -> str:
 
 
 @tool
-def parse_csv_findings(file_path: str = FINDINGS_CSV_FILE) -> List[Dict]:
+def get_pending_findings() -> Dict:
     """
-    Parse the CSV file containing SAST findings list.
+    Get all findings that haven't been analyzed yet.
 
-    Args:
-        file_path: Path to the CSV file with resultHash, severity, triaged columns
-
-    Returns:
-        List of finding records from CSV
+    Returns findings where agent_analyzed=False from the JSON file.
     """
     try:
-        findings = []
-        with open(file_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if row['triaged'].lower() == 'no':
-                    findings.append({
-                        'resultHash': row['resultHash'],
-                        'severity': row['severity'],
-                        'triaged': row['triaged']
-                    })
-        return findings
+        json_path = get_current_findings_json()
+
+        with open(json_path, 'r', encoding='utf-8') as f:
+            all_findings = json.load(f)
+
+        # Filter for unanalyzed findings
+        pending = [
+            f for f in all_findings
+            if not f.get('agent_analyzed', False)
+        ]
+
+        return {
+            "success": True,
+            "total_findings": len(all_findings),
+            "pending_count": len(pending),
+            "findings": pending,
+            "message": f"Found {len(pending)} pending findings out of {len(all_findings)} total"
+        }
+
+    except FileNotFoundError:
+        return {"success": False, "error": "Findings file not found"}
+    except json.JSONDecodeError as e:
+        return {"success": False, "error": f"Invalid JSON: {str(e)}"}
     except Exception as e:
-        return [{"error": f"Failed to parse CSV: {str(e)}"}]
+        return {"success": False, "error": str(e)}
 
 
 @tool
-def get_finding_details(result_hash: str, json_path: str = FINDINGS_JSON_FILE) -> Dict:
+def get_finding_details(result_hash: str) -> Dict:
     """
     Get detailed information for a specific finding from JSON file.
 
     Args:
         result_hash: The result hash to look up
-        json_path: Path to the JSON file with detailed findings
 
     Returns:
         Detailed finding information including dataflow
     """
     try:
+        json_path = get_current_findings_json()
+
         with open(json_path, 'r', encoding='utf-8') as f:
             all_findings = json.load(f)
 
@@ -111,9 +151,11 @@ def read_file(file_path: str) -> Dict:
         Complete file contents with line numbers
     """
     try:
+        codebase_dir = get_current_codebase_dir()
+
         # Validate path to prevent directory traversal
         try:
-            full_path = validate_safe_path(CODEBASE_DIR, file_path)
+            full_path = validate_safe_path(codebase_dir, file_path)
         except ValueError as e:
             return {"error": f"Invalid path: {str(e)}"}
 
@@ -151,9 +193,10 @@ def search_in_files(pattern: str, file_extension: str) -> Dict:
         Search results with file paths and matching lines
     """
     try:
+        codebase_dir = get_current_codebase_dir()
         results = []
         file_pattern = f"*.{file_extension}"
-        search_path = os.path.join(CODEBASE_DIR, "**", file_pattern)
+        search_path = os.path.join(codebase_dir, "**", file_pattern)
         files = glob.glob(search_path, recursive=True)
 
         pattern_re = re.compile(pattern, re.IGNORECASE)
@@ -165,7 +208,7 @@ def search_in_files(pattern: str, file_extension: str) -> Dict:
                     lines = f.readlines()
                     for i, line in enumerate(lines):
                         if pattern_re.search(line):
-                            rel_path = os.path.relpath(file_path, CODEBASE_DIR)
+                            rel_path = os.path.relpath(file_path, codebase_dir)
                             results.append({
                                 'file': rel_path,
                                 'line': i + 1,
@@ -232,12 +275,14 @@ def list_directory(directory_path: str) -> Dict:
         List of files and directories
     """
     try:
+        codebase_dir = get_current_codebase_dir()
+
         # Validate path to prevent directory traversal
         if directory_path == ".":
-            full_path = CODEBASE_DIR
+            full_path = codebase_dir
         else:
             try:
-                full_path = validate_safe_path(CODEBASE_DIR, directory_path)
+                full_path = validate_safe_path(codebase_dir, directory_path)
             except ValueError as e:
                 return {"error": f"Invalid path: {str(e)}"}
 

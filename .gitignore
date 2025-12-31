@@ -70,10 +70,10 @@ htmlcov/
 .coverage
 .coverage.*
 
-# Output and temp files
+# Output and session files
 output
-temp
+analysis_sessions
 
 # Local development mocks (DO NOT COMMIT)
 dev_local/
-web_sessions
+dev_mock_data/

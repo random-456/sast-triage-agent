@@ -101,7 +101,7 @@ The Web UI is a FastAPI-based local web interface for the SAST Triage Agent. It 
 
 **Rationale**: This is a local tool for quick demonstrations and internal use. Adding a database (PostgreSQL, SQLite, etc.) would introduce complexity and deployment overhead that is not necessary for the current use case.
 
-**Implementation**: All session data is stored in JSON files (`web_sessions/*.json`), with an index file for listing.
+**Implementation**: All session data is stored in JSON files (`analysis_sessions/{session_id}/session.json`), with an index file for listing.
 
 **Characteristics**:
 - Zero setup requirement
@@ -278,11 +278,11 @@ web_ui/
 
 ### JSON File Structure
 
-**Location**: `web_sessions/{session_id}.json`
+**Location**: `analysis_sessions/{session_id}/session.json`
 
 **Session ID Format**: `YYYYMMDD_HHMMSS_{random_6chars}`
 
-**Example**: `20251223_143052_a1b2c3.json`
+**Example**: `analysis_sessions/20251223_143052_a1b2c3/session.json`
 
 ### Session Schema
 
@@ -360,15 +360,42 @@ web_ui/
 
 ### Session Management
 
-**Creation**: When user clicks "Fetch Findings", creates new session with findings.
+**Creation**: When user clicks "Fetch Findings", creates new session folder with session.json.
 
 **Updates**: After each finding analysis completes, session JSON is saved.
 
-**Listing**: Index file `web_sessions/sessions_index.json` stores metadata for fast listing.
+**Listing**: Index file `analysis_sessions/sessions_index.json` stores metadata for fast listing.
 
 **Limit**: Maximum 100 sessions (configurable via `MAX_SESSION_HISTORY`).
 
-**Cleanup**: Oldest sessions automatically deleted when limit exceeded.
+**Cleanup**:
+- **WebUI**: Sessions persist until manually deleted by user (click X button)
+- **CLI**: Only `codebase/` folder deleted after analysis; session results persist
+- **Automatic**: Oldest sessions deleted when limit exceeded (100 sessions)
+
+### CLI vs WebUI Session Handling
+
+Both CLI and WebUI use the unified session architecture in `analysis_sessions/`:
+
+| Aspect | CLI | WebUI |
+|--------|-----|-------|
+| **Session Creation** | Creates new session for each run | Creates new session via UI |
+| **Index Registration** | Adds to `sessions_index.json` | Adds to `sessions_index.json` |
+| **Results Storage** | Updates `session.json` after each finding | Updates `session.json` after each finding |
+| **Codebase Cleanup** | Deletes `codebase/` folder after completion | Keeps `codebase/` for incremental analysis |
+| **Session Persistence** | Session persists (without codebase) | Session persists until manual deletion |
+| **Resumability** | Cannot resume (codebase deleted) | Can resume analysis anytime |
+
+**Why CLI Deletes Codebase:**
+- CLI analyzes all selected findings in one batch
+- After analysis completes, codebase is no longer needed
+- Saves significant disk space for large repositories
+- Session results remain accessible via `session.json`
+
+**Why WebUI Keeps Codebase:**
+- Enables incremental analysis (analyze 5 findings, then 5 more later)
+- Avoids re-cloning repository between batches
+- User can manually delete session when done
 
 ---
 
@@ -638,8 +665,8 @@ rate_limiter.check_rate_limit("analysis_start", max_requests=5, window_seconds=6
 **Example**:
 
 ```python
-session_path = os.path.join(WEB_SESSIONS_DIR, f"{session_id}.json")
-if not session_path.startswith(os.path.abspath(WEB_SESSIONS_DIR)):
+session_path = os.path.join(ANALYSIS_SESSIONS_DIR, session_id, "session.json")
+if not session_path.startswith(os.path.abspath(ANALYSIS_SESSIONS_DIR)):
     raise ValueError("Invalid session path")
 ```
 
@@ -750,7 +777,7 @@ FastAPI was chosen for its native async/await and WebSocket support, which are e
 curl http://localhost:8765/health
 
 # Check session exists
-ls web_sessions/{session_id}.json
+ls analysis_sessions/{session_id}/session.json
 
 # Check browser console for CORS errors
 ```
@@ -787,18 +814,18 @@ curl -H "Authorization: Bearer $REFRESH_TOKEN" $BASE_URL/api/projects
 
 **Possible Causes**:
 1. File permissions issue
-2. `web_sessions/` directory doesn't exist
+2. `analysis_sessions/` directory doesn't exist
 
 **Debugging Steps**:
 ```bash
 # Check directory exists
-ls -la web_sessions/
+ls -la analysis_sessions/
 
 # Create if missing
-mkdir -p web_sessions
+mkdir -p analysis_sessions
 
 # Check permissions
-chmod 755 web_sessions
+chmod 755 analysis_sessions
 ```
 
 ---

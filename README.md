@@ -68,10 +68,8 @@ python run_triage.py my-project --findings <hash1>,<hash2>   # Analyze specific 
 Options:
 - `--model`: AI model to use (default: gemini-2.5-pro)
 - `--severities`: Comma-separated severities (default: HIGH,MEDIUM)
-- `--output`: Output directory (default: output)
 - `--branch`: Git branch to analyze (default: default.SecurityPipeline)
 - `--findings`: Comma-separated result hashes to analyze specific findings
-- `--keep-temp`: Keep temp directory after analysis
 - `-v, --verbose`: Enable verbose logging
 
 ## Web UI
@@ -123,23 +121,43 @@ python -m web_ui.main
 
 - **Port**: 8765 (configurable in `config.py`)
 - **Concurrent Analyses**: 1 at a time (configurable via `MAX_CONCURRENT_ANALYSES`)
-- **Session Storage**: JSON files in `web_sessions/` directory
+- **Session Storage**: JSON files in `analysis_sessions/` directory with session-specific workspaces
 - **Max Sessions**: 100 (configurable via `MAX_SESSION_HISTORY`)
+- **Session Cleanup**: Sessions persist until manually deleted via UI. Consider periodic cleanup of old sessions to manage disk space.
 - **WebSocket**: Automatic reconnection (up to 5 attempts)
 - **Security**: Input validation, rate limiting, HTML escaping, localhost-only CORS
 
 ## Output Structure
 
+### Session Data (CLI and WebUI)
+Both CLI and WebUI store analysis results in `analysis_sessions/`:
 ```
-<output-dir>/
-├── findings/
-│   ├── triage_list.csv                    # Finding IDs with severity and triage status
-│   └── findings_details.json              # Detailed finding data with dataflow
-├── codebase/                              # Cloned repository (if available)
-├── logs/                                  # Detailed agent conversation logs (JSON)
-├── findings_assessment_<project>.json     # Final triage decisions
-└── triage_report_<timestamp>.html         # Interactive HTML report
+analysis_sessions/
+└── <session_id>/                          # Unique session (timestamp-based ID)
+    ├── session.json                       # Session metadata and analysis results
+    ├── codebase/                          # Cloned repository (deleted by CLI after analysis)
+    └── findings/                          # Working data for agent
+        └── findings_details.json
 ```
+
+**Note**:
+- **CLI**: Deletes only the `codebase/` folder after analysis to save disk space. Session results persist in `session.json`.
+- **WebUI**: Keeps everything (including codebase) until manually deleted, enabling incremental analysis.
+- Both CLI and WebUI can access the same sessions through `sessions_index.json`.
+
+### Accessing CLI Results
+
+After CLI analysis completes, results are available in:
+```
+analysis_sessions/<session_id>/session.json
+```
+
+Each finding in the session includes:
+- `analysis.status`: "completed", "failed", or "pending"
+- `analysis.result`: "CONFIRMED", "NOT_EXPLOITABLE", or "REFUSED"
+- `analysis.confidence`: Confidence score (0.0 - 1.0)
+- `analysis.justification`: Detailed explanation
+- `analysis.conversation_log`: Full agent conversation
 
 ## Results Format
 

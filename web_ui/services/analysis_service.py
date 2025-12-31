@@ -11,7 +11,6 @@ from typing import Dict, List, Optional
 from pathlib import Path
 
 from config import (
-    CODEBASE_DIR, FINDINGS_JSON_FILE, FINDINGS_CSV_FILE,
     DEFAULT_OUTPUT_DIR, MAX_CONCURRENT_ANALYSES
 )
 from sast_triage.agent import SASTTriageAgent
@@ -146,6 +145,12 @@ class AnalysisService:
             if not session:
                 raise ValueError(f"Session {session_id} not found")
 
+            # Create session-specific path manager
+            from utils.path_manager import PathManager
+            path_manager = PathManager(session_id=session_id)
+            path_manager.ensure_directories()
+            logger.info(f"Using session paths: {path_manager.base_dir}")
+
             # Create progress callback that broadcasts to WebSocket
             async def progress_callback(event: dict):
                 """Async callback that broadcasts progress events to WebSocket"""
@@ -157,11 +162,15 @@ class AnalysisService:
                 except Exception as e:
                     logger.error(f"Failed to broadcast progress event: {e}")
 
-            # Clone repository to CODEBASE_DIR
+            # Clone repository to session-specific directory
             repo_url = session["metadata"].get("github_url")
             if repo_url:
-                logger.info(f"Cloning repository: {repo_url}")
-                clone_success = await asyncio.to_thread(GitHelpers.clone_repository, repo_url)
+                logger.info(f"Cloning repository {repo_url} to {path_manager.codebase_dir}")
+                clone_success = await asyncio.to_thread(
+                    GitHelpers.clone_repository,
+                    repo_url,
+                    target_dir=path_manager.codebase_dir
+                )
                 if not clone_success:
                     # Send error via WebSocket
                     await self.websocket_manager.broadcast(
@@ -176,36 +185,36 @@ class AnalysisService:
             else:
                 logger.warning("No repository URL available, analysis may be limited")
 
-            # Initialize Checkmarx client to process findings
-            checkmarx_client = CheckmarxClient(
-                session["metadata"]["checkmarx_base_url"],
-                os.getenv("REFRESH_TOKEN")
-            )
-
-            # Convert session findings to Checkmarx API format
-            raw_findings = []
+            # Create findings_details.json from session findings
+            # IMPORTANT: agent_analyzed field reflects the actual analysis status from session
+            detailed_records = []
             for finding in session["findings"]:
-                raw_findings.append({
+                # Check if this finding has been analyzed already
+                analysis_status = finding.get("analysis", {}).get("status", "pending")
+                agent_analyzed = (analysis_status == "completed")
+
+                detailed_records.append({
                     "resultHash": finding["resultHash"],
-                    "group": finding["category"],  # category → group (reverse transformation)
-                    "cweID": int(finding["cweID"]) if finding["cweID"].isdigit() else 0,
+                    "category": finding["category"],
+                    "cweID": finding["cweID"],
                     "languageName": finding["languageName"],
                     "queryName": finding["queryName"],
                     "severity": finding["severity"],
                     "state": finding["state"],
-                    "nodes": finding["dataflow"]  # dataflow → nodes (reverse transformation)
+                    "dataflow": finding["dataflow"],
+                    "agent_analyzed": agent_analyzed  # Based on session state!
                 })
 
-            # Process findings to records (creates both summary and detailed records)
-            triage_records, detailed_records = checkmarx_client.process_findings_to_records(
-                raw_findings
+            # Save to session-specific JSON file for agent tools
+            FindingsHelpers.save_findings_data(
+                detailed_records,
+                findings_dir=path_manager.findings_dir,
+                findings_json_file=path_manager.findings_json_file
             )
+            logger.info(f"Saved {len(detailed_records)} findings to {path_manager.findings_json_file} "
+                       f"({sum(1 for r in detailed_records if r['agent_analyzed'])} already analyzed)")
 
-            # Save to JSON files in output_dir
-            FindingsHelpers.save_findings_data(triage_records, detailed_records)
-            logger.info(f"Saved {len(detailed_records)} findings to JSON files")
-
-            # Initialize agent with progress callback
+            # Initialize agent with session-specific paths
             agent = SASTTriageAgent(
                 project=google_cloud_project,
                 location=google_cloud_location,
@@ -217,6 +226,7 @@ class AnalysisService:
                 checkmarx_base_url=session["metadata"].get("checkmarx_base_url"),
                 branch=session["metadata"]["branch"],
                 output_dir=DEFAULT_OUTPUT_DIR,
+                path_manager=path_manager,
                 progress_callback=progress_callback
             )
 
@@ -321,18 +331,14 @@ class AnalysisService:
                 logger.error(f"Failed to update session status: {save_error}")
 
         finally:
+            # NOTE: We do NOT cleanup codebase/findings here!
+            # They persist until the user deletes the session via delete_session().
+            # This allows analyzing more findings later without re-cloning the repo.
+
             # Remove from active analyses
             if session_id in self.active_analyses:
                 del self.active_analyses[session_id]
                 logger.info(f"Removed session {session_id} from active analyses")
-
-            # Cleanup cloned repository
-            try:
-                if os.path.exists(CODEBASE_DIR):
-                    shutil.rmtree(CODEBASE_DIR)
-                    logger.info(f"Cleaned up cloned repository: {CODEBASE_DIR}")
-            except Exception as e:
-                logger.warning(f"Failed to cleanup repository: {e}")
 
     def _calculate_statistics(self, findings: List[dict]) -> dict:
         """

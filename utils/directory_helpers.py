@@ -3,25 +3,23 @@ import shutil
 import stat
 import logging
 
-from config import TEMP_DIR
+from config import DEFAULT_OUTPUT_DIR
 
 class DirectoryHelpers:
 
     logger = logging.getLogger(__name__)
 
     @classmethod
-    def setup_directories(self, output_dir: str, keep_temp_dir: bool = False):
+    def setup_directories(self, output_dir: str = DEFAULT_OUTPUT_DIR):
         """
-        Clean and create temp directory + create output directory.
+        [DEPRECATED] This method is no longer used.
+        Session directories are managed by PathManager.
+        Output directory is no longer needed for CLI.
+
+        Args:
+            output_dir: Output directory (ignored)
         """
-        if not keep_temp_dir and os.path.isdir(TEMP_DIR):
-            self.logger.info(f"Cleaning {TEMP_DIR} directory...")
-            shutil.rmtree(TEMP_DIR, onerror=self.handle_remove_readonly)
-
-        os.makedirs(TEMP_DIR, exist_ok=keep_temp_dir)
-        os.makedirs(output_dir, exist_ok=True)
-
-        self.logger.info("Directories set up successfully")
+        pass
 
     # Handler below needed to remove .git readonly files
     @classmethod

@@ -3,7 +3,6 @@ Main SAST Triage Agent using LangChain
 """
 
 import os
-import csv
 import json
 import logging
 import inspect
@@ -16,13 +15,14 @@ from langchain_core.messages import ToolMessage
 from sast_triage.agent_models import TriageDecision
 from sast_triage.agent_tools import (
     read_file, search_in_files, list_directory, verify_analysis,
-    submit_triage_decision, parse_csv_findings, get_finding_details
+    submit_triage_decision, get_pending_findings, get_finding_details,
+    set_path_manager
 )
 from sast_triage.agent_logging import AgentLoggingManager
 from utils.report_helpers import ReportGenerator
 
 from sast_triage.prompts import TRIAGE_SYSTEM_PROMPT, TRIAGE_INPUT_PROMPT_TEMPLATE
-from config import CODEBASE_DIR, FINDINGS_JSON_FILE, FINDINGS_CSV_FILE, MAX_ANALYSIS_ITERATIONS, DEFAULT_OUTPUT_DIR
+from config import MAX_ANALYSIS_ITERATIONS, DEFAULT_OUTPUT_DIR
 
 class SASTTriageAgent:
     """Main SAST Triage Agent using LangChain with custom LLM endpoint"""
@@ -40,8 +40,9 @@ class SASTTriageAgent:
         scan_id: Optional[str] = None,
         checkmarx_base_url: Optional[str] = None,
         branch: Optional[str] = None,
-        output_dir: str = DEFAULT_OUTPUT_DIR,
-        progress_callback: Optional[callable] = None
+        output_dir: Optional[str] = None,
+        progress_callback: Optional[callable] = None,
+        path_manager: "PathManager" = None
     ):
         """
         Initialize the SAST Triage Agent.
@@ -58,7 +59,23 @@ class SASTTriageAgent:
             branch: Git branch being analyzed
             output_dir: Output directory for results
             progress_callback: Optional callback for progress updates (web UI integration)
+            path_manager: PathManager for session-specific paths (REQUIRED)
+
+        Raises:
+            ValueError: If path_manager is not provided
         """
+        # Validate path_manager is provided
+        if not path_manager:
+            raise ValueError(
+                "path_manager is required. "
+                "Both CLI and WebUI must provide PathManager."
+            )
+
+        self.path_manager = path_manager
+
+        # Set tool context BEFORE binding tools
+        set_path_manager(self.path_manager)
+
         self.project_name = project_name
         self.project_id = project_id
         self.scan_id = scan_id
@@ -97,8 +114,16 @@ class SASTTriageAgent:
         self.system_prompt = TRIAGE_SYSTEM_PROMPT
         self.human_prompt_template = TRIAGE_INPUT_PROMPT_TEMPLATE
 
-        # File to store assessment results
-        self.assessments_file = os.path.join(output_dir, f"findings_assessment_{project_name}.json")
+        # File to store assessment results (only if output_dir provided)
+        if output_dir:
+            self.output_dir = output_dir
+            self.assessments_file = os.path.join(
+                output_dir,
+                f"findings_assessment_{project_name or 'project'}.json"
+            )
+        else:
+            self.output_dir = None
+            self.assessments_file = None
 
     async def analyze_single_finding(self, result_hash: str) -> TriageDecision:
         """
@@ -343,31 +368,51 @@ class SASTTriageAgent:
             self.agent_logger.log_finding_complete(finding_log, decision)
             return decision
 
-    def update_csv_status(self, result_hash: str, csv_path: str = FINDINGS_CSV_FILE):
-        """Update the triaged status in CSV file."""
+    def mark_finding_analyzed(self, result_hash: str):
+        """
+        Mark a finding as analyzed in the JSON file.
+
+        Updates agent_analyzed field to True for the specified finding.
+        """
         try:
-            # Read CSV
-            rows = []
-            with open(csv_path, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                fieldnames = reader.fieldnames
-                for row in reader:
-                    if row['resultHash'] == result_hash:
-                        row['triaged'] = 'yes'
-                    rows.append(row)
+            json_path = self.path_manager.findings_json_file
 
-            # Write updated CSV
-            with open(csv_path, 'w', encoding='utf-8', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(rows)
+            # Read current findings
+            with open(json_path, 'r', encoding='utf-8') as f:
+                findings = json.load(f)
 
-            self.logger.debug(f"Updated CSV: marked {result_hash} as triaged")
+            # Update the specific finding
+            updated = False
+            for finding in findings:
+                if finding.get('resultHash') == result_hash:
+                    finding['agent_analyzed'] = True
+                    updated = True
+                    break
+
+            if not updated:
+                self.logger.warning(f"Finding {result_hash} not found in JSON file")
+                return
+
+            # Write back
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(findings, f, indent=4)
+
+            self.logger.debug(f"Marked finding {result_hash} as analyzed")
+
         except Exception as e:
-            self.logger.warning(f"Could not update CSV for {result_hash}: {str(e)}")
+            self.logger.error(f"Error updating finding status: {e}")
 
     def save_incremental_result(self, result: Dict):
-        """Save individual result immediately to output/findings_assessment.json."""
+        """
+        Save incremental result to output file (legacy - for backward compatibility).
+
+        NOTE: New code should update session.json directly instead.
+        This method only works if output_dir was provided during initialization.
+        """
+        if not self.assessments_file:
+            # No output_dir specified - skip saving to file
+            return
+
         try:
             # Load existing results if file exists
             existing_results = []
@@ -395,49 +440,49 @@ class SASTTriageAgent:
         except Exception as e:
             self.logger.warning(f"Could not save incremental result: {str(e)}")
 
-    def get_pending_findings(self, csv_path: str) -> List[Dict]:
-        """Get findings that haven't been triaged yet (triaged = 'no')."""
+    def get_pending_findings(self) -> List[Dict]:
+        """Get findings that haven't been analyzed yet."""
         try:
-            findings = parse_csv_findings.invoke({"file_path": csv_path})
-            if findings and 'error' not in findings[0]:
-                # Only return findings not yet triaged
-                pending = [f for f in findings if f.get('triaged', '').lower() == 'no']
-                return pending
-            return []
+            json_path = self.path_manager.findings_json_file
+
+            with open(json_path, 'r', encoding='utf-8') as f:
+                findings = json.load(f)
+
+            # Filter for unanalyzed findings
+            pending = [f for f in findings if not f.get('agent_analyzed', False)]
+
+            self.logger.info(f"Found {len(pending)} pending findings")
+            return pending
+
         except Exception as e:
-            self.logger.error(f"Error getting pending findings: {str(e)}")
+            self.logger.error(f"Error reading findings: {e}")
             return []
 
     async def process_all_findings(
         self,
-        output_dir: str = DEFAULT_OUTPUT_DIR,
-        csv_path: str = FINDINGS_CSV_FILE,
-        json_path: str = FINDINGS_JSON_FILE
+        output_dir: str = DEFAULT_OUTPUT_DIR
     ) -> Dict:
         """
-        Process all findings from CSV and generate triage report.
+        Process all findings from JSON and generate triage report.
 
         Args:
-            csv_path: Path to CSV file with findings list
-            json_path: Path to JSON file with finding details
-            output_path: Path to save the triage results
+            output_dir: Path to save the triage results
 
         Returns:
             Complete triage report
         """
 
         self.logger.info(f"Starting SAST triage analysis...")
-        self.logger.info(f"CSV: {csv_path}")
-        self.logger.info(f"JSON: {json_path}")
-        self.logger.info(f"Codebase: {CODEBASE_DIR}")
+        self.logger.info(f"Findings JSON: {self.path_manager.findings_json_file}")
+        self.logger.info(f"Codebase: {self.path_manager.codebase_dir}")
 
-        # Get only pending findings (skip already triaged)
-        findings = self.get_pending_findings(csv_path)
+        # Get only pending findings (skip already analyzed)
+        findings = self.get_pending_findings()
 
         if not findings:
-            self.logger.warning("No pending findings to triage (all marked as 'yes' in CSV)")
+            self.logger.warning("No pending findings to triage (all marked as analyzed)")
             # Load existing results if any
-            if os.path.exists(self.assessments_file):
+            if self.assessments_file and os.path.exists(self.assessments_file):
                 with open(self.assessments_file, 'r') as f:
                     return json.load(f)
             return []
@@ -456,7 +501,7 @@ class SASTTriageAgent:
         )
 
         # Load all finding details for report
-        with open(json_path, 'r') as f:
+        with open(self.path_manager.findings_json_file, 'r') as f:
             all_details = {d['resultHash']: d for d in json.load(f)}
 
         # Get total count including already triaged
@@ -466,7 +511,7 @@ class SASTTriageAgent:
         report_gen.initialize_report(total_findings=total_count)
 
         # Add already triaged findings to report if they exist
-        if os.path.exists(self.assessments_file):
+        if self.assessments_file and os.path.exists(self.assessments_file):
             with open(self.assessments_file, 'r') as f:
                 existing_results = json.load(f)
                 for idx, result in enumerate(existing_results):
@@ -496,8 +541,8 @@ class SASTTriageAgent:
                 # Save result
                 self.save_incremental_result(result_dict)
 
-                # Mark as triaged after analysis
-                self.update_csv_status(finding['resultHash'], csv_path)
+                # Mark as analyzed after analysis
+                self.mark_finding_analyzed(finding['resultHash'])
 
                 # Print summary
                 self.logger.info(f"Result: {decision.assessment_result}")
@@ -539,8 +584,8 @@ class SASTTriageAgent:
                 triage_results.append(error_result)
                 self.save_incremental_result(error_result)
 
-                # Mark as triaged even for errors (so they don't retry indefinitely)
-                self.update_csv_status(finding['resultHash'], csv_path)
+                # Mark as analyzed even for errors (so they don't retry indefinitely)
+                self.mark_finding_analyzed(finding['resultHash'])
 
                 # Add error to HTML report
                 finding_details = all_details.get(finding['resultHash'], {})
@@ -551,9 +596,12 @@ class SASTTriageAgent:
                     total=total_count
                 )
 
-        # Save results (output/findings_assessment.json)
-        with open(self.assessments_file, 'w') as f:
-            json.dump(triage_results, f, indent=2)
+        # Save results to output file (only if output_dir specified)
+        if self.assessments_file:
+            self.logger.info(f"Saving {len(triage_results)} results to {self.assessments_file}")
+            with open(self.assessments_file, 'w') as f:
+                json.dump(triage_results, f, indent=2)
+            self.logger.info(f"Results saved to {self.assessments_file}")
 
         self.logger.info(f"HTML report generated: {report_gen.report_path}")
 

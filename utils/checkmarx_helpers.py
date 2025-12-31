@@ -311,17 +311,16 @@ class CheckmarxClient:
     def process_findings_to_records(
         self,
         findings: List[Dict]
-    ) -> Tuple[List[Dict], List[Dict]]:
+    ) -> List[Dict]:
         """
-        Process raw findings into triage and detailed records.
+        Process raw findings into detailed records with agent_analyzed field.
 
         Args:
             findings: List of raw finding dictionaries from API
 
         Returns:
-            Tuple of (triage_records, detailed_records)
+            List of detailed finding records
         """
-        triage_records = []
         detailed_records = []
 
         for finding in findings:
@@ -329,12 +328,6 @@ class CheckmarxClient:
 
             # Use resultHash from Checkmarx as the result hash
             result_hash = finding.get("resultHash", "")
-
-            triage_records.append({
-                "resultHash": result_hash,
-                "severity": finding.get("severity", ""),
-                "triaged": "no"
-            })
 
             detailed_records.append({
                 "resultHash": result_hash,
@@ -344,7 +337,8 @@ class CheckmarxClient:
                 "queryName": finding.get("queryName", ""),
                 "severity": finding.get("severity", ""),
                 "state": finding.get("state", ""),
-                "dataflow": nodes
+                "dataflow": nodes,
+                "agent_analyzed": False  # NEW - replaces CSV tracking
             })
 
-        return triage_records, detailed_records
+        return detailed_records
