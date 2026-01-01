@@ -159,9 +159,9 @@ class AnalysisModal {
     renderFindingHeader(finding) {
         this.findingHeader.innerHTML = `
             <div class="flex items-start justify-between mb-3">
-                <h4 class="text-lg font-bold text-white">${this.escapeHtml(finding.queryName)}</h4>
+                <h4 class="text-lg font-bold text-white">${escapeHtml(finding.queryName)}</h4>
                 ${finding.checkmarx_url ? `
-                    <a href="${this.escapeHtml(finding.checkmarx_url)}" target="_blank" rel="noopener noreferrer"
+                    <a href="${escapeHtml(finding.checkmarx_url)}" target="_blank" rel="noopener noreferrer"
                        class="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1">
                         <i class="fas fa-external-link-alt"></i>
                         <span>View in Checkmarx</span>
@@ -171,27 +171,27 @@ class AnalysisModal {
             <div class="finding-metadata">
                 <div class="metadata-item">
                     <span class="metadata-label">CWE:</span>
-                    <span class="metadata-value">CWE-${this.escapeHtml(finding.cweID)}</span>
+                    <span class="metadata-value">CWE-${escapeHtml(finding.cweID)}</span>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Query:</span>
-                    <span class="metadata-value">${this.escapeHtml(finding.queryName)}</span>
+                    <span class="metadata-value">${escapeHtml(finding.queryName)}</span>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Category:</span>
-                    <span class="metadata-value">${this.escapeHtml(finding.category)}</span>
+                    <span class="metadata-value">${escapeHtml(finding.category)}</span>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Finding ID:</span>
-                    <span class="metadata-value font-mono text-xs">${this.escapeHtml(finding.resultHash.substring(0, 48))}${finding.resultHash.length > 48 ? '...' : ''}</span>
+                    <span class="metadata-value font-mono text-xs">${escapeHtml(finding.resultHash.substring(0, 48))}${finding.resultHash.length > 48 ? '...' : ''}</span>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">Severity:</span>
-                    <span class="font-semibold ${this.getSeverityColor(finding.severity)}">${this.escapeHtml(finding.severity)}</span>
+                    <span class="font-semibold ${this.getSeverityColor(finding.severity)}">${escapeHtml(finding.severity)}</span>
                 </div>
                 <div class="metadata-item">
                     <span class="metadata-label">State:</span>
-                    <span class="metadata-value">${this.escapeHtml(finding.state)}</span>
+                    <span class="metadata-value">${escapeHtml(finding.state)}</span>
                 </div>
             </div>
         `;
@@ -217,7 +217,7 @@ class AnalysisModal {
             <div class="assessment-grid">
                 <div class="flex items-center gap-3">
                     <span class="px-3 py-1 rounded ${this.getResultBadgeColor(analysis.result)} font-semibold">
-                        ${this.escapeHtml(analysis.result || 'PENDING')}
+                        ${escapeHtml(analysis.result || 'PENDING')}
                     </span>
                 </div>
                 <div class="flex items-center gap-4 text-sm text-gray-400">
@@ -233,7 +233,7 @@ class AnalysisModal {
                 ${analysis.justification ? `
                     <div class="justification-box">
                         <div class="text-xs text-gray-400 mb-1 font-semibold">Justification:</div>
-                        ${this.escapeHtml(analysis.justification)}
+                        ${escapeHtml(analysis.justification)}
                     </div>
                 ` : ''}
             </div>
@@ -330,7 +330,7 @@ class AnalysisModal {
                         <label class="block text-sm font-medium mb-2">Justification</label>
                         <textarea id="override-justification"
                                   class="w-full bg-gray-700 border border-gray-600 rounded px-4 py-2 h-32 resize-none"
-                                  placeholder="Provide justification for the decision...">${this.escapeHtml(prefilledJustification)}</textarea>
+                                  placeholder="Provide justification for the decision...">${escapeHtml(prefilledJustification)}</textarea>
                     </div>
                 </div>
             </div>
@@ -476,14 +476,14 @@ class AnalysisModal {
                     <i class="fas fa-robot"></i> Agent (#${index + 1})
                 </div>
                 ${contentText ? `
-                    <div class="text-sm mb-2 whitespace-pre-wrap">${this.escapeHtml(contentText)}</div>
+                    <div class="text-sm mb-2 whitespace-pre-wrap">${escapeHtml(contentText)}</div>
                 ` : ''}
                 ${hasToolCalls ? `
                     <div class="mt-2 flex flex-wrap gap-2">
                         ${entry.tool_calls.map(tc => `
                             <span class="inline-flex items-center gap-1 text-xs bg-gray-800 rounded px-2 py-1">
                                 <i class="fas fa-wrench text-blue-400"></i>
-                                <span class="font-mono text-blue-300">${this.escapeHtml(tc.name)}</span>
+                                <span class="font-mono text-blue-300">${escapeHtml(tc.name)}</span>
                             </span>
                         `).join('')}
                     </div>
@@ -551,11 +551,11 @@ class AnalysisModal {
             <div class="bg-gray-800 rounded p-3">
                 <div class="flex items-center gap-2 text-xs mb-2">
                     <i class="fas fa-file-code text-gray-400"></i>
-                    <span class="font-mono text-blue-400">${this.escapeHtml(fileName)}</span>
+                    <span class="font-mono text-blue-400">${escapeHtml(fileName)}</span>
                     ${totalLines > 0 ? `<span class="text-gray-500">(${totalLines} lines)</span>` : ''}
                 </div>
                 <div class="bg-gray-900 rounded overflow-hidden">
-                    <pre class="text-xs text-gray-300 font-mono p-3 overflow-y-auto" style="max-height: 8rem; line-height: 1.4;"><code>${this.escapeHtml(content)}</code></pre>
+                    <pre class="text-xs text-gray-300 font-mono p-3 overflow-y-auto" style="max-height: 8rem; line-height: 1.4;"><code>${escapeHtml(content)}</code></pre>
                 </div>
             </div>
         `;
@@ -581,7 +581,7 @@ class AnalysisModal {
                     <i class="fas fa-search"></i>
                     <span class="font-mono text-green-400">search_in_files</span>
                     <span class="text-gray-500">•</span>
-                    <span>Pattern: <code class="text-blue-300">${this.escapeHtml(pattern)}</code></span>
+                    <span>Pattern: <code class="text-blue-300">${escapeHtml(pattern)}</code></span>
                     <span class="text-gray-500">•</span>
                     <span>${matchCount} matches</span>
                 </div>
@@ -589,8 +589,8 @@ class AnalysisModal {
                     <div class="bg-gray-900 rounded p-2 space-y-1 max-h-48 overflow-y-auto">
                         ${results.slice(0, 10).map(match => `
                             <div class="text-xs">
-                                <span class="text-gray-400">${this.escapeHtml(match.file)}:${match.line}</span>
-                                <code class="ml-2 text-gray-300">${this.escapeHtml(match.content)}</code>
+                                <span class="text-gray-400">${escapeHtml(match.file)}:${match.line}</span>
+                                <code class="ml-2 text-gray-300">${escapeHtml(match.content)}</code>
                             </div>
                         `).join('')}
                         ${results.length > 10 ? `
@@ -638,12 +638,12 @@ class AnalysisModal {
                     ${status ? `
                         <div class="text-xs">
                             <span class="text-gray-400">Status:</span>
-                            <span class="ml-2 text-green-400">${this.escapeHtml(status)}</span>
+                            <span class="ml-2 text-green-400">${escapeHtml(status)}</span>
                         </div>
                     ` : ''}
                     ${nextStep ? `
                         <div class="text-xs text-gray-300">
-                            ${this.escapeHtml(nextStep)}
+                            ${escapeHtml(nextStep)}
                         </div>
                     ` : ''}
                 </div>
@@ -674,10 +674,10 @@ class AnalysisModal {
             <div class="bg-gray-800 rounded p-3">
                 <div class="flex items-center gap-2 text-xs text-gray-400 mb-2">
                     <i class="fas fa-tools"></i>
-                    <span class="font-mono text-green-400">${this.escapeHtml(entry.tool)}</span>
+                    <span class="font-mono text-green-400">${escapeHtml(entry.tool)}</span>
                 </div>
                 <div class="text-xs text-gray-300 font-mono whitespace-pre-wrap overflow-x-auto bg-gray-900 rounded p-2">
-                    ${this.escapeHtml(displayText)}
+                    ${escapeHtml(displayText)}
                 </div>
             </div>
         `;
@@ -708,15 +708,6 @@ class AnalysisModal {
         return colors[result] || 'bg-gray-600 text-white';
     }
 
-    /**
-     * Escape HTML to prevent XSS
-     */
-    escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = String(text);
-        return div.innerHTML;
-    }
 }
 
 // Initialize analysis modal

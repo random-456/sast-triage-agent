@@ -372,7 +372,7 @@ class App {
 
         this.elements.fetchStatus.className = `alert alert-${type}`;
         this.elements.fetchStatus.innerHTML = `
-            <i class="fas fa-${icons[type]} mr-2"></i>${this.escapeHtml(message)}
+            <i class="fas fa-${icons[type]} mr-2"></i>${escapeHtml(message)}
         `;
         this.elements.fetchStatus.classList.remove('hidden');
 
@@ -384,14 +384,6 @@ class App {
         }
     }
 
-    /**
-     * Escape HTML to prevent XSS
-     */
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
 }
 
 // Initialize app when DOM is ready

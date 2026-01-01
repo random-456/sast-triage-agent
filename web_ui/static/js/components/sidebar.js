@@ -61,7 +61,7 @@ class Sidebar {
                 <div class="session-delete" data-action="delete">
                     <i class="fas fa-times"></i>
                 </div>
-                <div class="session-name">${this.escapeHtml(session.project_name)}</div>
+                <div class="session-name">${escapeHtml(session.project_name)}</div>
                 <div class="session-meta">
                     <div>${session.branch}</div>
                     <div class="text-xxs">${dateStr}</div>
@@ -166,14 +166,6 @@ class Sidebar {
         }
     }
 
-    /**
-     * Escape HTML to prevent XSS
-     */
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
 }
 
 // Initialize sidebar
