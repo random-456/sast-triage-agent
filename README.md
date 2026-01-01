@@ -76,7 +76,7 @@ Options:
 
 A FastAPI-based web interface for interactive triage analysis with real-time progress updates via WebSockets.
 
-**📖 For detailed technical documentation, architecture, and design principles, see [Web UI Architecture](docs/WEB_UI_ARCHITECTURE.md)**
+**For detailed technical documentation, architecture, and design principles, see [Web UI Architecture](docs/WEB_UI_ARCHITECTURE.md)**
 
 ### Features
 

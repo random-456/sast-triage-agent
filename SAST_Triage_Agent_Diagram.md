@@ -104,12 +104,6 @@ graph TB
 4. **Session Persistence**: All analysis results stored in session-specific `session.json` with real-time statistics tracking
 5. **Audit Trail**: Complete conversation logs capture every tool invocation and LLM reasoning for full traceability
 
-## Business Impact
-
-- **Time Reduction**: 70-80% reduction in manual triage effort
-- **Consistency**: Same analysis standards applied to every finding
-- **Scalability**: Handles 100+ findings per scan automatically
-- **Audit Trail**: Complete documentation of analysis reasoning
 
 ## Key Features
 
@@ -118,5 +112,4 @@ graph TB
 - **Quality Assurance**: Mandatory verification checkpoint prevents premature decisions
 - **Enterprise Integration**: Works with existing Checkmarx workflows via REST API
 - **Flexible Configuration**: Supports severity filtering, branch selection, individual finding analysis
-- **Real-Time Tracking**: Session statistics updated incrementally with analysis progress
-- **Complete Audit Trail**: Full conversation logs with tool usage for compliance and debugging
+- **Complete Audit Trail**: Full conversation logs with tool usage for further analysis
