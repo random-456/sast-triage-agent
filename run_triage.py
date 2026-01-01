@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import traceback
+from datetime import datetime
 from typing import List
 
 import click
@@ -31,42 +32,62 @@ from utils.directory_helpers import DirectoryHelpers
 from utils.findings_helpers import FindingsHelpers
 from utils.generic_logging import setup_logging
 from utils.banner import display_banner
+from web_ui.services.session_storage import SessionStorage
+from utils.path_manager import PathManager
 
-from config import DEFAULT_SEVERITIES, DEFAULT_BRANCH, DEFAULT_TRIAGE_MODEL, TEMP_DIR, DEFAULT_OUTPUT_DIR, APP_NAME
+from config import DEFAULT_SEVERITIES, DEFAULT_BRANCH, DEFAULT_TRIAGE_MODEL, DEFAULT_OUTPUT_DIR, APP_NAME
 
-async def run_triage_analysis(model_name: str, output_dir: str, project_name: str = None, project_id: str = None,
-                              scan_id: str = None, checkmarx_base_url: str = None,
-                              branch: str = None) -> int:
+async def run_triage_analysis(
+    model_name: str,
+    session_id: str,
+    path_manager: PathManager,
+    session_storage: SessionStorage,
+    project_name: str = None,
+    project_id: str = None,
+    scan_id: str = None,
+    checkmarx_base_url: str = None,
+    branch: str = None
+) -> int:
     """
-    Run the triage analysis on the fetched data.
-    
+    Run triage analysis on all pending findings in the session.
+    Updates session.json with results after each finding.
+
     Args:
-        project_name: Project name for reporting
-        project_id: Project identifier for reporting
-        scan_id: Scan identifier for reporting
-        checkmarx_base_url: Checkmarx base URL for report links
-        branch: Git branch being analyzed
-    
+        model_name: AI model to use
+        session_id: Session identifier
+        path_manager: PathManager for session-specific paths
+        session_storage: SessionStorage for updating session.json
+        project_name: Checkmarx project name
+        project_id: Checkmarx project ID
+        scan_id: Checkmarx scan ID
+        checkmarx_base_url: Checkmarx API base URL
+        branch: Git branch name
+
     Returns:
         Exit code (0 for success, 1 for failure)
     """
-    
     logger = logging.getLogger("run_triage_analysis")
-    
+
     try:
-        # Get Vertex AI configuration
+        # Load session
+        session = session_storage.load_session(session_id)
+        logger.info(f"Loaded session {session_id}")
+        logger.info(f"Session has {len(session['findings'])} findings")
+
+        # Initialize agent (NO output_dir parameter)
         vertex_project = os.getenv("PROJECT_ID")
-        vertex_location = os.getenv("DEFAULT_LOCATION")
-        
+        vertex_location = os.getenv("DEFAULT_LOCATION", "us-central1")
+
         if not vertex_project:
             logger.error("PROJECT_ID environment variable is required for Vertex AI")
             return 1
-        
+
         logger.info(f"Using Vertex AI project: {vertex_project}")
         logger.info(f"Using location: {vertex_location}")
         logger.info(f"Using model: {model_name}")
-        
-        # Initialize and run the agent
+        logger.info(f"Session ID: {session_id}")
+        logger.info(f"Codebase: {path_manager.codebase_dir}")
+
         agent = SASTTriageAgent(
             project=vertex_project,
             location=vertex_location,
@@ -76,18 +97,89 @@ async def run_triage_analysis(model_name: str, output_dir: str, project_name: st
             scan_id=scan_id,
             checkmarx_base_url=checkmarx_base_url,
             branch=branch,
-            output_dir=output_dir
+            path_manager=path_manager
+            # NOTE: No output_dir parameter!
         )
-        
-        results = await agent.process_all_findings(output_dir)
-        
-        logger.info("Analysis complete!")
-        
-        return 0
-    
+
+        logger.info("Starting analysis of pending findings...")
+
+        # Track statistics
+        completed_count = 0
+        failed_count = 0
+
+        # Analyze each finding in session
+        for finding_data in session["findings"]:
+            finding_hash = finding_data["resultHash"]
+
+            # Skip if already analyzed
+            if finding_data.get("analysis", {}).get("status") == "completed":
+                logger.info(f"Skipping {finding_hash[:8]} - already analyzed")
+                completed_count += 1
+                continue
+
+            # Mark as in_progress
+            finding_data["analysis"]["status"] = "in_progress"
+            finding_data["analysis"]["started_at"] = datetime.now().isoformat()
+            session_storage.save_session(session)
+            logger.info(f"Analyzing {finding_hash[:8]}...")
+
+            try:
+                # Run analysis
+                decision = await agent.analyze_single_finding(finding_hash)
+
+                # Update with results
+                finding_data["analysis"]["status"] = "completed"
+                finding_data["analysis"]["completed_at"] = datetime.now().isoformat()
+                finding_data["analysis"]["result"] = decision.assessment_result
+                finding_data["analysis"]["confidence"] = decision.assessment_confidence
+                finding_data["analysis"]["justification"] = decision.assessment_justification
+
+                # Calculate duration
+                start_time = datetime.fromisoformat(finding_data["analysis"]["started_at"])
+                end_time = datetime.fromisoformat(finding_data["analysis"]["completed_at"])
+                finding_data["analysis"]["duration_seconds"] = (end_time - start_time).total_seconds()
+
+                # Get conversation log
+                finding_log = agent.agent_logger.get_finding_log(finding_hash)
+                if finding_log:
+                    finding_data["analysis"]["conversation_log"] = finding_log.get("conversation", [])
+                    finding_data["analysis"]["iterations_used"] = finding_log.get("iteration_count", 0)
+
+                completed_count += 1
+                logger.info(f"✓ {finding_hash[:8]}: {decision.assessment_result} ({decision.assessment_confidence:.2f})")
+
+            except Exception as e:
+                # Mark as failed
+                finding_data["analysis"]["status"] = "failed"
+                finding_data["analysis"]["completed_at"] = datetime.now().isoformat()
+                finding_data["analysis"]["last_action"] = f"Error: {str(e)}"
+
+                failed_count += 1
+                logger.error(f"✗ {finding_hash[:8]}: Failed - {str(e)}")
+
+            # Save session after each finding
+            session_storage.save_session(session)
+
+        # Update session status and statistics
+        session["status"] = "completed"
+        session["statistics"] = {
+            "total_findings": len(session["findings"]),
+            "completed": completed_count,
+            "failed": failed_count,
+            "pending": len(session["findings"]) - completed_count - failed_count,
+            "confirmed": sum(1 for f in session["findings"] if f.get("analysis", {}).get("result") == "CONFIRMED"),
+            "not_exploitable": sum(1 for f in session["findings"] if f.get("analysis", {}).get("result") == "NOT_EXPLOITABLE"),
+            "refused": sum(1 for f in session["findings"] if f.get("analysis", {}).get("result") == "REFUSED")
+        }
+        session_storage.save_session(session)
+
+        logger.info(f"Analysis complete: {completed_count} completed, {failed_count} failed")
+        logger.info(f"Session results saved to: analysis_sessions/{session_id}/session.json")
+
+        return 0 if failed_count == 0 else 1
+
     except Exception as e:
-        logger.error(f"Error during analysis: {e}")
-        traceback.print_exc()
+        logger.error(f"Analysis failed: {e}", exc_info=True)
         return 1
 
 
@@ -97,8 +189,7 @@ async def run_triage_analysis(model_name: str, output_dir: str, project_name: st
 @click.option("--findings", "finding_hashes", type=CommaList(), help="Comma-separated hash of a single finding to analyze.")
 @click.option("--severities", default=",".join(DEFAULT_SEVERITIES), help="Comma-separated list of severities")
 @click.option("--branch", default=DEFAULT_BRANCH,help="Git branch to analyze")
-@click.option("--output", "output_dir", default=DEFAULT_OUTPUT_DIR, help="Output directory")
-@click.option("--keep-temp", is_flag=True, help=f"Whether to keep {TEMP_DIR} or not")
+@click.option("--output", "output_dir", default=DEFAULT_OUTPUT_DIR, help="[DEPRECATED - not used] Output directory for legacy reports")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
 def run_triage(
     project_name: str,
@@ -106,7 +197,6 @@ def run_triage(
     severities: str,
     branch: str,
     output_dir: str,
-    keep_temp: bool,
     finding_hashes: List,
     verbose: bool
 ) -> None:
@@ -147,9 +237,6 @@ def run_triage(
     logger.info(f"Target branch: {target_branch}")
     
     try:
-        # Setup temp and output directories
-        DirectoryHelpers.setup_directories(output_dir, keep_temp)
-        
         # Initialize Checkmarx client
         logger.info("Initializing CheckmarxClient")
         client = CheckmarxClient(base_url, refresh_token)
@@ -181,25 +268,117 @@ def run_triage(
                 logger.error(f"Could not find all the findings with provided hashes in the {original_count} findings fetched for the project.")
                 sys.exit(1)
         
-        logger.info("Found matching findings.")
-        
-        # Process findings
-        triage_records, detailed_records = client.process_findings_to_records(findings)
-        
-        # Save findings data
-        FindingsHelpers.save_findings_data(triage_records, detailed_records)
-        
-        # Clone repository if URL available
+        logger.info(f"Found {len(findings)} matching findings")
+
+        # Create session for CLI analysis
+        session_storage = SessionStorage()
+        session_id = session_storage.generate_session_id()
+        logger.info(f"Session ID: {session_id}")
+
+        # Create PathManager
+        path_manager = PathManager(session_id=session_id)
+        path_manager.ensure_directories()
+        logger.info(f"Session directory: {path_manager.base_dir}")
+
+        # Convert to session findings format
+        session_findings = []
+        for finding in findings:
+            session_findings.append({
+                "resultHash": finding.get("resultHash", ""),
+                "category": finding.get("group", ""),
+                "cweID": str(finding.get("cweID", "")),
+                "languageName": finding.get("languageName", ""),
+                "queryName": finding.get("queryName", ""),
+                "severity": finding.get("severity", ""),
+                "state": finding.get("state", ""),
+                "dataflow": finding.get("nodes", []),
+                "analysis": {
+                    "status": "pending",
+                    "result": None,
+                    "confidence": None,
+                    "justification": None,
+                    "started_at": None,
+                    "completed_at": None,
+                    "duration_seconds": None,
+                    "conversation_log": [],
+                    "iterations_used": 0
+                }
+            })
+
+        # Create session
+        session_storage.create_session(
+            project_name=project_name,
+            project_id=project_id,
+            scan_id=scan_id,
+            branch=target_branch,
+            github_url=repo_url or "",
+            checkmarx_base_url=base_url,
+            findings=session_findings,
+            severity_filters=severity_list,
+            status_filters=[],
+            model_name=model_name
+        )
+
+        # Mark as CLI source
+        session = session_storage.load_session(session_id)
+        session["metadata"]["source"] = "cli"
+        session_storage.save_session(session)
+        logger.info(f"Created CLI session with {len(session_findings)} findings")
+
+        # Process findings into detailed records with agent_analyzed field
+        detailed_records = client.process_findings_to_records(findings)
+
+        # Save findings data (JSON only) to session-specific directory
+        FindingsHelpers.save_findings_data(
+            detailed_records,
+            findings_dir=path_manager.findings_dir,
+            findings_json_file=path_manager.findings_json_file
+        )
+        logger.info(f"Saved findings to {path_manager.findings_json_file}")
+
+        # Clone repository if URL available to session-specific directory
         if repo_url:
-            clone_success = GitHelpers.clone_repository(repo_url)
+            clone_success = GitHelpers.clone_repository(
+                repo_url,
+                target_dir=path_manager.codebase_dir
+            )
             if not clone_success:
-                logger.warning("Repository cloning failed, continuing with analysis...")
+                logger.error(f"Failed to clone repository to {path_manager.codebase_dir}")
+                sys.exit(1)
+            logger.info(f"Cloned repository to {path_manager.codebase_dir}")
         else:
             logger.warning("No repository URL found, continuing without codebase.")
-        
+
         # Run triage analysis
-        exit_code = asyncio.run(run_triage_analysis(model_name, output_dir, project_name, project_id, scan_id, base_url, target_branch))
-        
+        try:
+            exit_code = asyncio.run(
+                run_triage_analysis(
+                    model_name,
+                    session_id,
+                    path_manager,
+                    session_storage,
+                    project_name,
+                    project_id,
+                    scan_id,
+                    base_url,
+                    target_branch
+                )
+            )
+
+            logger.info("Analysis complete!")
+            logger.info(f"Session results: analysis_sessions/{session_id}/session.json")
+
+        finally:
+            # Cleanup only codebase (keep session results)
+            logger.info(f"Cleaning up codebase for session {session_id}...")
+            try:
+                path_manager.cleanup_codebase()
+                logger.info("Codebase cleaned up successfully")
+                logger.info(f"Session preserved at: analysis_sessions/{session_id}/")
+            except Exception as e:
+                logger.warning(f"Failed to cleanup session: {e}")
+                # Don't fail - results are already saved
+
         sys.exit(exit_code)
     
     except Exception as e:

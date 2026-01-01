@@ -5,10 +5,11 @@ import re
 import html
 from typing import List
 
-# Validation patterns
+from utils.validation import SESSION_ID_PATTERN, validate_session_id as _validate_session_id
+
+# Validation patterns (SESSION_ID_PATTERN imported from utils.validation)
 PROJECT_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9._-]+$')
 BRANCH_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9._/-]+$')
-SESSION_ID_PATTERN = re.compile(r'^\d{8}_\d{6}_[a-zA-Z0-9]{6}$')
 FINDING_HASH_PATTERN = re.compile(r'^[a-zA-Z0-9+/=_-]+$')  # Base64 chars: +, /, =
 
 # Whitelists
@@ -66,7 +67,9 @@ class SecurityValidator:
     @staticmethod
     def validate_session_id(session_id: str) -> str:
         """
-        Validate session ID format.
+        Validate session ID format to prevent path traversal attacks.
+
+        Wrapper around utils.validation.validate_session_id for consistency.
 
         Args:
             session_id: Session ID to validate
@@ -77,9 +80,7 @@ class SecurityValidator:
         Raises:
             ValueError: If validation fails
         """
-        if not SESSION_ID_PATTERN.match(session_id):
-            raise ValueError("Invalid session ID format")
-        return session_id
+        return _validate_session_id(session_id)
 
     @staticmethod
     def validate_severities(severities: List[str]) -> List[str]:

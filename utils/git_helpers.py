@@ -4,7 +4,6 @@ import os
 import subprocess
 import logging
 
-from config import CODEBASE_DIR
 
 class GitHelpers:
 
@@ -14,7 +13,7 @@ class GitHelpers:
     def clone_repository(
         self,
         repo_url: str,
-        target_dir: str = CODEBASE_DIR,
+        target_dir: str,
         quiet: bool = True
     ) -> bool:
         """
@@ -22,7 +21,7 @@ class GitHelpers:
 
         Args:
             repo_url: The URL of the git repository
-            target_dir: The target directory for cloning
+            target_dir: The target directory for cloning (REQUIRED - use PathManager)
             quiet: Whether to suppress git output
 
         Returns:
@@ -36,8 +35,36 @@ class GitHelpers:
 
         # Check if directory already exists and has content
         if os.path.isdir(target_dir) and any(os.listdir(target_dir)):
-            self.logger.warning(f"Directory {target_dir} already exists and is not empty. Assuming repository is already cloned.")
-            return True
+            # Verify it's the CORRECT repository by checking remote URL
+            try:
+                result = subprocess.run(
+                    ["git", "-C", target_dir, "remote", "get-url", "origin"],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                existing_url = result.stdout.strip()
+
+                # Normalize URLs for comparison (remove .git suffix, trailing slashes, case-insensitive)
+                def normalize_url(url: str) -> str:
+                    return url.rstrip('/').removesuffix('.git').lower()
+
+                if normalize_url(existing_url) == normalize_url(repo_url):
+                    self.logger.info(f"Repository {repo_url} already cloned at {target_dir}")
+                    return True
+                else:
+                    self.logger.error(
+                        f"Directory {target_dir} contains WRONG repository!\n"
+                        f"  Found: {existing_url}\n"
+                        f"  Expected: {repo_url}"
+                    )
+                    return False
+
+            except subprocess.CalledProcessError:
+                self.logger.error(
+                    f"Directory {target_dir} exists but is not a valid git repository"
+                )
+                return False
 
         self.logger.info(f"Cloning repository from {repo_url}...")
 

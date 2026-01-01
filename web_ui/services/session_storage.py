@@ -18,13 +18,13 @@ if sys.platform == "win32":
 else:
     import fcntl
 
-from config import WEB_SESSIONS_DIR, MAX_SESSION_HISTORY
+from config import ANALYSIS_SESSIONS_DIR, MAX_SESSION_HISTORY
 from web_ui.models.session_models import SessionData, SessionMetadata, FindingData
 from web_ui.middleware.security import SecurityValidator
 
 logger = logging.getLogger(__name__)
 
-INDEX_FILE = os.path.join(WEB_SESSIONS_DIR, "sessions_index.json")
+INDEX_FILE = os.path.join(ANALYSIS_SESSIONS_DIR, "sessions_index.json")
 
 
 class SessionStorage:
@@ -35,7 +35,7 @@ class SessionStorage:
 
     def _ensure_directory(self):
         """Ensure sessions directory exists"""
-        os.makedirs(WEB_SESSIONS_DIR, exist_ok=True)
+        os.makedirs(ANALYSIS_SESSIONS_DIR, exist_ok=True)
         if not os.path.exists(INDEX_FILE):
             self._save_index({"sessions": [], "last_updated": datetime.now().isoformat()})
 
@@ -133,7 +133,7 @@ class SessionStorage:
             session_id: Session ID
 
         Returns:
-            Absolute file path
+            Absolute file path to session.json inside session folder
 
         Raises:
             ValueError: If session ID is invalid or path traversal detected
@@ -141,8 +141,9 @@ class SessionStorage:
         # Validate session ID
         SecurityValidator.validate_session_id(session_id)
 
-        base_dir = os.path.abspath(WEB_SESSIONS_DIR)
-        file_path = os.path.join(base_dir, f"{session_id}.json")
+        base_dir = os.path.abspath(ANALYSIS_SESSIONS_DIR)
+        # NEW: session.json now lives inside session folder
+        file_path = os.path.join(base_dir, session_id, "session.json")
 
         # Path traversal check
         if not file_path.startswith(base_dir):
@@ -250,8 +251,11 @@ class SessionStorage:
         session_data["updated_at"] = datetime.now().isoformat()
 
         try:
-            # Write to temporary file first
+            # Create session folder if it doesn't exist
             dir_path = os.path.dirname(file_path)
+            os.makedirs(dir_path, exist_ok=True)
+
+            # Write to temporary file first
             temp_fd, temp_path = tempfile.mkstemp(
                 dir=dir_path,
                 prefix=f".{session_id}_",
@@ -305,25 +309,39 @@ class SessionStorage:
 
     def delete_session(self, session_id: str) -> bool:
         """
-        Delete a session with file locking to prevent race conditions.
+        Delete entire session folder with all its contents.
 
         Args:
             session_id: Session ID
 
         Returns:
             True if deleted successfully, False otherwise
+
+        Raises:
+            ValueError: If session_id format is invalid
         """
-        file_path = self._get_session_file_path(session_id)
+        # Validate session ID format to prevent path traversal attacks
+        SecurityValidator.validate_session_id(session_id)
+
+        session_folder = os.path.join(ANALYSIS_SESSIONS_DIR, session_id)
 
         try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-
             # Remove from index with locking
             with self._lock_index_file():
                 index = self._load_index()
                 index["sessions"] = [s for s in index["sessions"] if s["session_id"] != session_id]
                 self._save_index(index)
+
+            # Delete entire session folder
+            if os.path.exists(session_folder):
+                import shutil
+                from utils.directory_helpers import DirectoryHelpers
+
+                shutil.rmtree(
+                    session_folder,
+                    onerror=DirectoryHelpers.handle_remove_readonly
+                )
+                logger.info(f"Deleted session folder: {session_folder}")
 
             logger.info(f"Deleted session {session_id}")
             return True

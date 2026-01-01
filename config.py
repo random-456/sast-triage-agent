@@ -6,16 +6,14 @@ import os
 APP_NAME = "SAST Triage Agent"
 
 # Path Configuration
-TEMP_DIR = "temp"
 ASSETS_DIR = "assets"
 DEFAULT_OUTPUT_DIR = "output"
-
-CODEBASE_DIR = os.path.join(TEMP_DIR, "codebase")
-FINDINGS_DIR = os.path.join(TEMP_DIR, "findings")
+ANALYSIS_SESSIONS_DIR = "analysis_sessions"
 
 CERTIFICATES_CRT_FILE = os.path.join(ASSETS_DIR, "airbus-ca.crt")
-FINDINGS_CSV_FILE = os.path.join(FINDINGS_DIR, "triage_list.csv")
-FINDINGS_JSON_FILE = os.path.join(FINDINGS_DIR, "findings_details.json")
+
+# Note: TEMP_DIR, CODEBASE_DIR, FINDINGS_DIR, FINDINGS_JSON_FILE removed
+# All paths now session-specific via PathManager
 
 # Vertex Configuration
 DEFAULT_TRIAGE_MODEL = "gemini-2.5-pro"
@@ -40,5 +38,6 @@ BENCHMARK_DATASETS_DIR = os.path.join("benchmark", "datasets")
 WEB_UI_HOST = "127.0.0.1"
 WEB_UI_PORT = 8765
 MAX_CONCURRENT_ANALYSES = 1
-WEB_SESSIONS_DIR = "web_sessions"
 MAX_SESSION_HISTORY = 100
+
+# Note: WEB_SESSIONS_DIR renamed to ANALYSIS_SESSIONS_DIR (defined above)

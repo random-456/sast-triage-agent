@@ -75,15 +75,15 @@ class FindingsTable {
             <tr class="${rowClass}" data-result-hash="${finding.resultHash}">
                 ${checkboxCell}
                 <td class="p-3">
-                    <div class="font-medium">${this.escapeHtml(finding.queryName)}</div>
+                    <div class="font-medium">${escapeHtml(finding.queryName)}</div>
                     ${analysis.status ? this.renderAnalysisStatus(analysis) : ''}
                     ${analysis.justification ? this.renderJustification(analysis.justification) : ''}
                 </td>
                 <td class="p-3">${finding.cweID || '-'}</td>
                 <td class="p-3">${this.renderSeverityBadge(finding.severity)}</td>
                 <td class="p-3">${this.renderStateBadge(finding.state)}</td>
-                <td class="p-3 text-xs">${this.escapeHtml(finding.category)}</td>
-                <td class="p-3 text-xs">${this.escapeHtml(finding.languageName)}</td>
+                <td class="p-3 text-xs">${escapeHtml(finding.category)}</td>
+                <td class="p-3 text-xs">${escapeHtml(finding.languageName)}</td>
                 <td class="p-3">
                     ${analysis.status === 'completed' ? `
                         <button class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium py-1 px-3 rounded"
@@ -122,7 +122,7 @@ class FindingsTable {
             return `
                 <div class="analysis-status text-gray-400 mt-1">
                     <i class="fas fa-spinner spinner"></i>
-                    <span class="text-xs">${this.escapeHtml(analysis.last_action || 'Analyzing...')}</span>
+                    <span class="text-xs">${escapeHtml(analysis.last_action || 'Analyzing...')}</span>
                 </div>
             `;
         } else if (analysis.status === 'completed') {
@@ -154,8 +154,8 @@ class FindingsTable {
     renderJustification(justification) {
         return `
             <div class="justification-text justification-collapsed mt-1"
-                 data-full-text="${this.escapeHtml(justification)}">
-                ${this.escapeHtml(justification)}
+                 data-full-text="${escapeHtml(justification)}">
+                ${escapeHtml(justification)}
             </div>
         `;
     }
@@ -270,15 +270,6 @@ class FindingsTable {
         this.updateCheckboxes();
     }
 
-    /**
-     * Escape HTML to prevent XSS
-     */
-    escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
 }
 
 // Initialize findings table
