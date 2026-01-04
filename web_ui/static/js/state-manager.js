@@ -10,7 +10,8 @@ class StateManager {
             currentSession: null,
             sessions: [],
             findings: [],
-            selectedFindings: [],
+            selectedFindings: [], // Checkboxes for bulk analysis
+            selectedFinding: null, // Currently viewed finding in detail panel
             analysisRunning: false,
             settings: {
                 modelName: 'gemini-2.5-pro',
@@ -127,6 +128,21 @@ class StateManager {
      */
     deselectAllFindings() {
         this.setState({ selectedFindings: [] });
+    }
+
+    /**
+     * Set selected finding (for detail panel)
+     * @param {string|null} resultHash - Finding hash or null to clear
+     */
+    setSelectedFinding(resultHash) {
+        this.setState({ selectedFinding: resultHash });
+    }
+
+    /**
+     * Clear selected finding
+     */
+    clearSelectedFinding() {
+        this.setState({ selectedFinding: null });
     }
 
     /**

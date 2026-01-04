@@ -31,7 +31,10 @@ class App {
     setupEventListeners() {
         // Sidebar toggle
         this.elements.sidebarToggle?.addEventListener('click', () => {
-            stateManager.toggleSidebar();
+            const layout = document.getElementById('app-layout');
+            layout.classList.toggle('sidebar-collapsed');
+            const isCollapsed = layout.classList.contains('sidebar-collapsed');
+            stateManager.updateSettings({ sidebarVisible: !isCollapsed });
         });
 
         // Settings button
@@ -117,10 +120,13 @@ class App {
      * Update sidebar visibility
      */
     updateSidebarVisibility(visible) {
-        if (visible) {
-            this.elements.sidebar?.classList.remove('collapsed');
-        } else {
-            this.elements.sidebar?.classList.add('collapsed');
+        const layout = document.getElementById('app-layout');
+        if (layout) {
+            if (visible) {
+                layout.classList.remove('sidebar-collapsed');
+            } else {
+                layout.classList.add('sidebar-collapsed');
+            }
         }
     }
 
@@ -244,18 +250,52 @@ class App {
      * Handle session loaded
      */
     handleSessionLoaded(session) {
-        // Update header
+        // Update project name
         document.getElementById('findings-project-name').textContent = session.metadata.project_name;
-        document.getElementById('findings-branch').textContent = session.metadata.branch;
-        document.getElementById('findings-count').textContent = session.findings.length;
 
+        // Format and display retrieval date
+        const retrievalEl = document.getElementById('findings-retrieval');
+        if (session.created_at) {
+            const date = new Date(session.created_at);
+            const formatted = date.toLocaleString('de-DE', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            retrievalEl.textContent = `Retrieval: ${formatted}`;
+        }
+
+        // Display filter settings
+        const filtersEl = document.getElementById('findings-filters');
+        const severityFilters = session.metadata.severity_filters || [];
+        const statusFilters = session.metadata.status_filters || [];
+        const filterParts = [];
+        if (severityFilters.length > 0) {
+            filterParts.push(`Severity: ${severityFilters.join(', ')}`);
+        }
+        if (statusFilters.length > 0) {
+            filterParts.push(`State: ${statusFilters.join(', ')}`);
+        }
+        filtersEl.textContent = filterParts.length > 0 ? filterParts.join(' | ') : '';
+
+        // Update branch
+        document.getElementById('findings-branch').textContent = session.metadata.branch;
+
+        // Update GitHub link with URL as text
         const githubLink = document.getElementById('findings-github-link');
         if (session.metadata.github_url) {
             githubLink.href = session.metadata.github_url;
+            githubLink.textContent = session.metadata.github_url;
             githubLink.style.display = '';
         } else {
             githubLink.style.display = 'none';
         }
+
+        // Update findings count
+        document.getElementById('findings-count-badge').textContent = `${session.findings.length} findings`;
 
         // Render findings table
         findingsTable.render(session.findings);

@@ -40,13 +40,21 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         Server -> Client:
             - {"type": "connected", "data": {...}}
             - {"type": "analysis_started", "data": {...}}
-            - {"type": "analysis_progress", "data": {...}}
-            - {"type": "tool_execution", "data": {...}}
+            - {"type": "agent_message", "data": {...}} - LLM response with tool calls (NEW)
+            - {"type": "tool_result", "data": {...}} - Tool execution result (NEW)
+            - {"type": "analysis_progress", "data": {...}} - Legacy progress summary
+            - {"type": "tool_execution", "data": {...}} - Legacy tool input only
             - {"type": "analysis_complete", "data": {...}}
             - {"type": "analysis_failed", "data": {...}}
+            - {"type": "batch_progress", "data": {...}}
 
         Client -> Server:
             - {"type": "ping", "data": {}} - Keep-alive ping
+
+        Notes:
+            - agent_message and tool_result events enable real-time conversation rendering
+            - analysis_progress and tool_execution are kept for backwards compatibility
+            - New UIs should use agent_message/tool_result for full conversation display
     """
     # Validate session ID
     try:

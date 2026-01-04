@@ -6,27 +6,33 @@
     <title>SAST Triage Agent</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/custom.css?v=11">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/custom.css?v=18">
 </head>
-<body class="bg-gray-900 text-gray-100 h-screen overflow-hidden">
+<body class="h-screen overflow-hidden">
+    <!-- App Container with inset margins -->
+    <div class="app-container">
     <!-- Top Navigation Bar -->
-    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
-        <div class="flex items-center space-x-4">
-            <button id="sidebar-toggle" class="text-gray-400 hover:text-white">
-                <i class="fas fa-bars"></i>
-            </button>
-            <h1 class="text-xl font-bold">SAST Triage Agent</h1>
+    <div class="top-bar">
+        <button id="sidebar-toggle" class="toggle-btn">
+            <i class="fas fa-bars"></i>
+        </button>
+        <div class="app-title">
+            <div class="logo-icon">
+                <i class="fa-solid fa-shield"></i>
+            </div>
+            SAST Triage Agent
         </div>
-        <div class="flex items-center space-x-4">
-            <button id="settings-btn" class="text-gray-400 hover:text-white">
+        <div class="top-bar-actions">
+            <button id="settings-btn" class="settings-btn">
                 <i class="fas fa-cog"></i>
             </button>
         </div>
-    </nav>
+    </div>
 
-    <div class="flex h-[calc(100vh-57px)]">
+    <div class="layout" id="app-layout">
         <!-- Left Sidebar: Session History -->
-        <aside id="sidebar" class="w-64 bg-gray-800 border-r border-gray-700 overflow-y-auto transition-all duration-300">
+        <aside id="sidebar" class="sidebar">
             <div class="p-4">
                 <button id="btn-new-analysis" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded mb-4">
                     <i class="fas fa-plus mr-2"></i>New Analysis
@@ -42,7 +48,7 @@
         </aside>
 
         <!-- Main Content Area -->
-        <main class="flex-1 overflow-hidden flex flex-col">
+        <main class="main">
             <!-- Screen 1: Project Input -->
             <div id="screen-project-input" class="flex-1 overflow-y-auto p-8">
                 <div class="max-w-4xl mx-auto">
@@ -131,26 +137,24 @@
 
             <!-- Screen 2: Findings Display -->
             <div id="screen-findings-display" class="hidden flex-1 flex flex-col overflow-hidden">
-                <!-- Header with GitHub URL -->
-                <div class="bg-gray-800 border-b border-gray-700 px-6 py-4">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h2 class="text-xl font-bold" id="findings-project-name"></h2>
-                            <div class="flex items-center space-x-4 text-sm text-gray-400 mt-1">
-                                <span id="findings-branch"></span>
-                                <a id="findings-github-link" href="#" target="_blank" class="hover:text-blue-400">
-                                    <i class="fas fa-external-link-alt mr-1"></i>GitHub
-                                </a>
-                            </div>
+                <!-- Header with Project Info -->
+                <div class="topbar">
+                    <div class="project" id="findings-project-name"></div>
+                    <div class="meta">
+                        <div class="meta-row" id="findings-retrieval"></div>
+                        <div class="meta-row" id="findings-filters"></div>
+                        <div class="meta-row">
+                            <i class="fa-solid fa-code-branch"></i>
+                            <span id="findings-branch"></span>
+                            <span class="meta-separator"></span>
+                            <a id="findings-github-link" href="#" target="_blank" class="meta-link"></a>
                         </div>
-                        <div class="text-sm text-gray-400">
-                            <span id="findings-count">0</span> findings
-                        </div>
+                        <div class="count" id="findings-count-badge">0 findings</div>
                     </div>
                 </div>
 
                 <!-- Findings Table -->
-                <div class="flex-1 overflow-auto p-6">
+                <div class="table-wrapper">
                     <table class="w-full">
                         <thead class="bg-gray-800 sticky top-0">
                             <tr class="text-left text-sm text-gray-400">
@@ -163,7 +167,6 @@
                                 <th class="p-3">State</th>
                                 <th class="p-3">Category</th>
                                 <th class="p-3">Language</th>
-                                <th class="p-3">Analysis Details</th>
                             </tr>
                         </thead>
                         <tbody id="findings-table-body" class="text-sm">
@@ -173,16 +176,29 @@
                 </div>
 
                 <!-- Action Bar -->
-                <div class="bg-gray-800 border-t border-gray-700 px-6 py-4 flex items-center justify-end">
+                <div class="bottom-bar">
                     <button id="btn-run-triage"
                             class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            style="margin-left: auto;"
                             disabled>
                         <i class="fas fa-play mr-2"></i>Run Analysis
                     </button>
                 </div>
             </div>
         </main>
+
+        <!-- Right Detail Panel -->
+        <aside id="detail-panel" class="detail-panel empty">
+            <!-- Empty state (default) -->
+            <div class="empty-state">
+                <i class="fas fa-chart-pie empty-state-icon"></i>
+                <div class="empty-state-text">
+                    Select a finding to view details and analysis
+                </div>
+            </div>
+        </aside>
     </div>
+    </div><!-- End app-container -->
 
     <!-- Modals -->
 
@@ -196,7 +212,7 @@
             <div class="modal-body">
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium mb-2">AI Model</label>
+                        <label class="block text-sm font-medium mb-2">Agent Model</label>
                         <select id="settings-model" class="w-full bg-gray-700 border border-gray-600 rounded px-4 py-2">
                             <option value="gemini-2.5-pro">gemini-2.5-pro</option>
                         </select>
@@ -211,68 +227,13 @@
         </div>
     </div>
 
-    <!-- Enhanced Analysis Modal with Tabs -->
-    <div id="analysis-modal" class="modal-overlay hidden">
-        <div class="modal-content modal-xlarge">
-            <div class="modal-header">
-                <h3 class="text-lg font-semibold">Finding Details</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <!-- Finding Header Section -->
-                <div id="finding-header-section" class="bg-gray-800 rounded-lg p-4 mb-4">
-                    <!-- Finding details will be populated here -->
-                </div>
-
-                <!-- AI Assessment Section -->
-                <div id="ai-assessment-section" class="bg-gray-800 rounded-lg p-4 mb-4">
-                    <!-- AI assessment will be populated here -->
-                </div>
-
-                <!-- Tab Navigation -->
-                <div class="border-b border-gray-700 mb-4">
-                    <div class="flex space-x-4">
-                        <button id="tab-analysis" class="tab-button tab-active px-4 py-2 font-medium border-b-2 border-blue-500 text-blue-400">
-                            <i class="fas fa-list-ul mr-2"></i>Analysis Steps
-                        </button>
-                        <button id="tab-writeback" class="tab-button px-4 py-2 font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-300">
-                            <i class="fas fa-upload mr-2"></i>Write-back
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Tab Content Container -->
-                <div id="tab-content-container">
-                    <!-- Tab 1: Analysis Steps -->
-                    <div id="tab-content-analysis" class="tab-content">
-                        <div id="analysis-conversation-log" class="space-y-3">
-                            <!-- Conversation log will be populated here -->
-                        </div>
-                    </div>
-
-                    <!-- Tab 2: Write-back -->
-                    <div id="tab-content-writeback" class="tab-content hidden">
-                        <div id="writeback-form-content" class="space-y-4">
-                            <!-- Write-back form will be populated here -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div id="modal-footer-writeback" class="modal-footer hidden">
-                <button id="writeback-save-btn" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">
-                    Save Decision
-                </button>
-            </div>
-        </div>
-    </div>
-
     <!-- Scripts -->
     <script src="/static/js/utils.js?v=1"></script>
-    <script src="/static/js/state-manager.js?v=10"></script>
-    <script src="/static/js/websocket-client.js?v=10"></script>
+    <script src="/static/js/state-manager.js?v=12"></script>
+    <script src="/static/js/websocket-client.js?v=23"></script>
     <script src="/static/js/components/sidebar.js?v=10"></script>
-    <script src="/static/js/components/findings-table.js?v=10"></script>
-    <script src="/static/js/components/analysis-modal.js?v=17"></script>
-    <script src="/static/js/app.js?v=10"></script>
+    <script src="/static/js/components/findings-table.js?v=1"></script>
+    <script src="/static/js/components/detail-panel.js?v=1"></script>
+    <script src="/static/js/app.js?v=13"></script>
 </body>
 </html>

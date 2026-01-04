@@ -108,7 +108,14 @@ class AgentLoggingManager:
         # Save incrementally
         self.save_log()
 
-    def log_tool_result(self, finding_log: Dict, tool_name: str, tool_args: Dict, result: Any):
+    def log_tool_result(
+        self,
+        finding_log: Dict,
+        tool_name: str,
+        tool_args: Dict,
+        result: Any,
+        formatted_content: Dict = None
+    ):
         """
         Log a tool execution result.
 
@@ -116,14 +123,15 @@ class AgentLoggingManager:
             finding_log: The finding log dictionary to append to
             tool_name: Name of the tool that was executed
             tool_args: Arguments passed to the tool
-            result: The result returned by the tool (will be truncated if too long)
+            result: The raw result returned by the tool
+            formatted_content: Pre-formatted content dict for UI consistency
         """
         log_entry = {
             "type": "tool_result",
             "timestamp": datetime.datetime.now().isoformat(),
             "tool": tool_name,
             "args": tool_args,
-            "result": str(result)[:MAX_LOG_RESULT_LENGTH]  # Truncate very long results for logging
+            "content": formatted_content if formatted_content else str(result)[:MAX_LOG_RESULT_LENGTH]
         }
 
         finding_log["conversation"].append(log_entry)

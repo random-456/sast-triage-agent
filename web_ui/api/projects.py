@@ -13,6 +13,7 @@ from web_ui.models.response_models import (
 )
 from web_ui.services.session_storage import SessionStorage
 from web_ui.services.checkmarx_service import CheckmarxService
+from web_ui.middleware.security import SecurityValidator
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,7 @@ async def search_project(name: str):
         Project information
     """
     try:
+        SecurityValidator.validate_project_name(name)
         project = checkmarx_service.search_project(name)
         if not project:
             raise HTTPException(
@@ -203,6 +205,7 @@ async def get_session_findings(session_id: str):
     Returns:
         Session findings
     """
+    SecurityValidator.validate_session_id(session_id)
     session_data = session_storage.load_session(session_id)
     if not session_data:
         raise HTTPException(
