@@ -24,7 +24,7 @@ from config import CERTIFICATES_CRT_FILE
 os.environ['REQUESTS_CA_BUNDLE'] = CERTIFICATES_CRT_FILE
 os.environ['GRPC_DEFAULT_SSL_ROOTS_FILE_PATH'] = CERTIFICATES_CRT_FILE
 
-from sast_triage_agent import SASTTriageAgent
+from sast_triage import SASTTriageAgent
 from utils.checkmarx_helpers import CheckmarxClient
 from utils.git_helpers import GitHelpers
 from utils.click_helpers import CommaList
