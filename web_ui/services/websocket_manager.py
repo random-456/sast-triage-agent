@@ -11,6 +11,9 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# Maximum WebSocket connections allowed per session
+MAX_CONNECTIONS_PER_SESSION = 3
+
 
 class WebSocketManager:
     """
@@ -23,14 +26,26 @@ class WebSocketManager:
         # session_id -> list of WebSocket connections
         self.connections: Dict[str, List[WebSocket]] = {}
 
-    async def connect(self, session_id: str, websocket: WebSocket):
+    async def connect(self, session_id: str, websocket: WebSocket) -> bool:
         """
         Accept and register a new WebSocket connection for a session.
 
         Args:
             session_id: The session identifier
             websocket: The WebSocket connection to register
+
+        Returns:
+            True if connection was accepted, False if limit exceeded
         """
+        # Check connection limit before accepting
+        current_count = self.get_connection_count(session_id)
+        if current_count >= MAX_CONNECTIONS_PER_SESSION:
+            logger.warning(
+                f"Connection limit ({MAX_CONNECTIONS_PER_SESSION}) reached for session {session_id}"
+            )
+            await websocket.close(code=1008, reason="Connection limit exceeded")
+            return False
+
         await websocket.accept()
 
         if session_id not in self.connections:
@@ -47,6 +62,7 @@ class WebSocketManager:
                 "timestamp": datetime.now().isoformat()
             }
         })
+        return True
 
     def disconnect(self, session_id: str, websocket: WebSocket):
         """

@@ -125,6 +125,62 @@ class SASTTriageAgent:
             self.output_dir = None
             self.assessments_file = None
 
+    def _format_tool_result_for_websocket(self, tool_name: str, tool_result) -> Dict:
+        """
+        Format tool result for WebSocket transmission.
+        Limits size to avoid WebSocket message size limits.
+
+        Args:
+            tool_name: Name of the tool that was executed
+            tool_result: Raw result from tool execution
+
+        Returns:
+            Formatted dict with type, content, and truncation flag
+        """
+        from typing import Any
+
+        # Convert result to string
+        result_str = str(tool_result)
+
+        # Format based on tool type with appropriate size limits
+        if tool_name == "read_file":
+            return {
+                "type": "file_content",
+                "content": result_str[:5000],  # 5KB limit
+                "truncated": len(result_str) > 5000
+            }
+        elif tool_name == "search_in_files":
+            return {
+                "type": "search_results",
+                "content": result_str[:5000],
+                "truncated": len(result_str) > 5000
+            }
+        elif tool_name == "list_directory":
+            return {
+                "type": "directory_listing",
+                "content": result_str[:3000],
+                "truncated": len(result_str) > 3000
+            }
+        elif tool_name == "verify_analysis":
+            return {
+                "type": "verification",
+                "content": result_str[:2000],
+                "truncated": len(result_str) > 2000
+            }
+        elif tool_name == "submit_triage_decision":
+            return {
+                "type": "decision",
+                "content": result_str[:1000],
+                "truncated": len(result_str) > 1000
+            }
+        else:
+            # Generic fallback
+            return {
+                "type": "generic",
+                "content": result_str[:3000],
+                "truncated": len(result_str) > 3000
+            }
+
     async def analyze_single_finding(self, result_hash: str) -> TriageDecision:
         """
         Analyze a single finding and return triage decision.
@@ -232,6 +288,29 @@ class SASTTriageAgent:
                     else:
                         self.progress_callback(event)
 
+                    # Emit full agent message for real-time conversation rendering
+                    tool_calls = None
+                    if response.tool_calls:
+                        tool_calls = [
+                            {
+                                "name": tc.get("name"),
+                                "args": tc.get("args", {})
+                            }
+                            for tc in response.tool_calls
+                        ]
+
+                    agent_message_event = {
+                        "event": "agent_message",
+                        "finding_hash": result_hash,
+                        "content": response.content if hasattr(response, 'content') and response.content else "",
+                        "tool_calls": tool_calls,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    if inspect.iscoroutinefunction(self.progress_callback):
+                        await self.progress_callback(agent_message_event)
+                    else:
+                        self.progress_callback(agent_message_event)
+
                 # If LLM wants to use tools
                 if response.tool_calls:
                     for tool_call in response.tool_calls:
@@ -313,8 +392,29 @@ class SASTTriageAgent:
                             if tool_result is None:
                                 tool_result = {"error": f"Tool {tool_name} not found"}
 
-                        # Log tool result
-                        self.agent_logger.log_tool_result(finding_log, tool_name, tool_args, tool_result)
+                        # Format result ONCE for both logging and WebSocket
+                        formatted_content = self._format_tool_result_for_websocket(tool_name, tool_result)
+
+                        # Log tool result with formatted content
+                        self.agent_logger.log_tool_result(
+                            finding_log, tool_name, tool_args, tool_result,
+                            formatted_content=formatted_content
+                        )
+
+                        # Emit tool result event for web UI real-time updates
+                        if self.progress_callback:
+                            tool_result_event = {
+                                "event": "tool_result",
+                                "finding_hash": result_hash,
+                                "tool": tool_name,
+                                "args": tool_args,
+                                "content": formatted_content,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            if inspect.iscoroutinefunction(self.progress_callback):
+                                await self.progress_callback(tool_result_event)
+                            else:
+                                self.progress_callback(tool_result_event)
 
                         # Add tool result to conversation
                         tool_message = ToolMessage(

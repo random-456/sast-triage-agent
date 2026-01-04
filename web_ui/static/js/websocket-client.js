@@ -18,18 +18,20 @@ class WebSocketClient {
      * Connect to WebSocket server
      */
     connect(sessionId) {
+        // Close existing connection to prevent duplicate messages
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.close();
+        }
+
         this.sessionId = sessionId;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}`;
 
-        console.log(`Connecting to WebSocket: ${wsUrl}`);
-
         try {
             this.ws = new WebSocket(wsUrl);
 
             this.ws.onopen = () => {
-                console.log('WebSocket connected');
                 this.reconnectAttempts = 0;
                 this.startPingInterval();
 
@@ -53,7 +55,6 @@ class WebSocketClient {
             };
 
             this.ws.onclose = () => {
-                console.log('WebSocket disconnected');
                 this.stopPingInterval();
 
                 // Dispatch disconnection event
@@ -74,11 +75,8 @@ class WebSocketClient {
      * Handle incoming WebSocket message
      */
     handleMessage(message) {
-        console.log('WebSocket message received:', message.type);
-
         switch (message.type) {
             case 'connected':
-                console.log('WebSocket connection confirmed');
                 break;
 
             case 'pong':
@@ -89,12 +87,16 @@ class WebSocketClient {
                 this.handleAnalysisStarted(message.data);
                 break;
 
-            case 'analysis_progress':
-                this.handleAnalysisProgress(message.data);
+            case 'agent_message':
+                this.handleAgentMessage(message.data);
                 break;
 
-            case 'tool_execution':
-                this.handleToolExecution(message.data);
+            case 'tool_result':
+                this.handleToolResult(message.data);
+                break;
+
+            case 'analysis_progress':
+                this.handleAnalysisProgress(message.data);
                 break;
 
             case 'analysis_complete':
@@ -110,7 +112,7 @@ class WebSocketClient {
                 break;
 
             default:
-                console.warn('Unknown WebSocket message type:', message.type);
+                break;
         }
     }
 
@@ -118,8 +120,6 @@ class WebSocketClient {
      * Handle analysis started event
      */
     handleAnalysisStarted(data) {
-        console.log(`Analysis started for finding: ${data.finding_hash}`);
-
         // Track this pending analysis
         this.pendingAnalyses.add(data.finding_hash);
 
@@ -144,11 +144,49 @@ class WebSocketClient {
     }
 
     /**
+     * Handle agent message event (LLM response)
+     */
+    handleAgentMessage(data) {
+        // Dispatch event for detail panel to render message bubble
+        // DO NOT update table - analysis_progress already handles that
+        window.dispatchEvent(new CustomEvent('analysis-conversation-update', {
+            detail: {
+                type: 'agent_message',
+                finding_hash: data.finding_hash,
+                entry: {
+                    type: 'assistant',
+                    content: data.content,
+                    tool_calls: data.tool_calls,
+                    timestamp: data.timestamp
+                }
+            }
+        }));
+    }
+
+    /**
+     * Handle tool result event
+     */
+    handleToolResult(data) {
+        // Dispatch event for detail panel to render tool result bubble
+        window.dispatchEvent(new CustomEvent('analysis-conversation-update', {
+            detail: {
+                type: 'tool_result',
+                finding_hash: data.finding_hash,
+                entry: {
+                    type: 'tool_result',
+                    tool: data.tool,
+                    args: data.args,
+                    content: data.content,
+                    timestamp: data.timestamp
+                }
+            }
+        }));
+    }
+
+    /**
      * Handle analysis progress event
      */
     handleAnalysisProgress(data) {
-        console.log(`Analysis progress: ${data.finding_hash} - ${data.last_action}`);
-
         // Update finding with latest action
         const state = stateManager.getState();
         const finding = state.findings.find(f => f.resultHash === data.finding_hash);
@@ -161,25 +199,22 @@ class WebSocketClient {
 
             // Update table row
             findingsTable.updateFindingRow(finding);
+
+            // Dispatch live update event for detail panel
+            window.dispatchEvent(new CustomEvent('analysis-live-update', {
+                detail: {
+                    type: 'progress',
+                    finding_hash: data.finding_hash,
+                    data: data
+                }
+            }));
         }
-    }
-
-    /**
-     * Handle tool execution event
-     */
-    handleToolExecution(data) {
-        console.log(`Tool executed: ${data.tool_name} for ${data.finding_hash}`);
-
-        // Optional: Could be used to show detailed tool execution in modal
-        // For now, this is just logged
     }
 
     /**
      * Handle analysis complete event
      */
     handleAnalysisComplete(data) {
-        console.log(`Analysis complete for finding: ${data.finding_hash}`);
-
         // Remove from pending analyses
         this.pendingAnalyses.delete(data.finding_hash);
 
@@ -194,6 +229,12 @@ class WebSocketClient {
             finding.analysis.confidence = data.confidence;
             finding.analysis.justification = data.justification;
             finding.analysis.duration_seconds = data.duration_seconds;
+
+            // Save conversation_log if provided
+            if (data.conversation_log) {
+                finding.analysis.conversation_log = data.conversation_log;
+            }
+
             stateManager.setState({ findings: state.findings });
 
             // Deselect finding if it can no longer be re-analyzed (CONFIRMED or NOT_EXPLOITABLE)
@@ -203,6 +244,15 @@ class WebSocketClient {
 
             // Update table row
             findingsTable.updateFindingRow(finding);
+
+            // Dispatch completion event for detail panel
+            window.dispatchEvent(new CustomEvent('analysis-live-update', {
+                detail: {
+                    type: 'complete',
+                    finding_hash: data.finding_hash,
+                    data: data
+                }
+            }));
         }
 
         // Check if all analyses are complete
@@ -213,8 +263,6 @@ class WebSocketClient {
      * Handle analysis failed event
      */
     handleAnalysisFailed(data) {
-        console.error(`Analysis failed for finding: ${data.finding_hash}`);
-
         // Remove from pending analyses
         this.pendingAnalyses.delete(data.finding_hash);
 
@@ -243,10 +291,7 @@ class WebSocketClient {
      * Handle batch progress event
      */
     handleBatchProgress(data) {
-        console.log(`Batch progress: ${data.completed}/${data.total}`);
-
-        // Optional: Could show overall progress in header
-        // For now, individual finding updates are sufficient
+        // Batch progress tracking - individual finding updates are sufficient
     }
 
     /**
@@ -254,8 +299,6 @@ class WebSocketClient {
      */
     async checkAllAnalysesComplete() {
         if (this.pendingAnalyses.size === 0) {
-            console.log('All analyses complete - reloading session from server');
-
             // Clear analysis running flag
             stateManager.setAnalysisRunning(false);
 
@@ -286,8 +329,6 @@ class WebSocketClient {
             // Update state with fresh session data
             stateManager.setCurrentSession(session);
             stateManager.setFindings(session.findings);
-
-            console.log('Session reloaded successfully');
 
             // Trigger table re-render
             findingsTable.render(session.findings);
@@ -326,12 +367,10 @@ class WebSocketClient {
      */
     attemptReconnect() {
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.error('Max reconnection attempts reached');
             return;
         }
 
         this.reconnectAttempts++;
-        console.log(`Attempting reconnection (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
 
         setTimeout(() => {
             if (this.sessionId) {

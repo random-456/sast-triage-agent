@@ -35,7 +35,7 @@ class FindingsTable {
         if (!findings || findings.length === 0) {
             this.tbody.innerHTML = `
                 <tr>
-                    <td colspan="8" class="p-8 text-center text-gray-500">
+                    <td colspan="7" class="p-8 text-center text-gray-500">
                         No findings to display
                     </td>
                 </tr>
@@ -76,6 +76,9 @@ class FindingsTable {
                 ${checkboxCell}
                 <td class="p-3">
                     <div class="font-medium">${escapeHtml(finding.queryName)}</div>
+                    <div class="text-xxs text-gray-500 font-mono mt-1">
+                        ${finding.resultHash.substring(0, 50)}...
+                    </div>
                     ${analysis.status ? this.renderAnalysisStatus(analysis) : ''}
                     ${analysis.justification ? this.renderJustification(analysis.justification) : ''}
                 </td>
@@ -84,15 +87,6 @@ class FindingsTable {
                 <td class="p-3">${this.renderStateBadge(finding.state)}</td>
                 <td class="p-3 text-xs">${escapeHtml(finding.category)}</td>
                 <td class="p-3 text-xs">${escapeHtml(finding.languageName)}</td>
-                <td class="p-3">
-                    ${analysis.status === 'completed' ? `
-                        <button class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium py-1 px-3 rounded"
-                                data-action="view-details"
-                                data-result-hash="${finding.resultHash}">
-                            Review
-                        </button>
-                    ` : '-'}
-                </td>
             </tr>
         `;
     }
@@ -184,16 +178,30 @@ class FindingsTable {
             checkbox.addEventListener('change', (e) => {
                 const resultHash = e.target.dataset.resultHash;
                 stateManager.toggleFindingSelection(resultHash);
-                this.updateRowSelection(resultHash);
+                this.updateCheckboxRowSelection(resultHash);
             });
         });
 
-        // View details buttons
-        const detailButtons = this.tbody.querySelectorAll('[data-action="view-details"]');
-        detailButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const resultHash = e.target.closest('[data-action="view-details"]').dataset.resultHash;
-                window.dispatchEvent(new CustomEvent('view-finding-details', { detail: { resultHash } }));
+        // Row click for detail panel selection
+        const rows = this.tbody.querySelectorAll('.finding-row');
+        rows.forEach(row => {
+            row.addEventListener('click', (e) => {
+                // Ignore if clicking checkbox
+                if (e.target.classList.contains('finding-checkbox') ||
+                    e.target.type === 'checkbox' ||
+                    e.target.closest('.finding-checkbox')) {
+                    return;
+                }
+
+                const resultHash = row.dataset.resultHash;
+
+                // Update visual selection
+                this.updateDetailPanelRowSelection(resultHash);
+
+                // Dispatch event for detail panel
+                window.dispatchEvent(new CustomEvent('finding-selected', {
+                    detail: { resultHash }
+                }));
             });
         });
     }
@@ -225,9 +233,9 @@ class FindingsTable {
     }
 
     /**
-     * Update row selection visual state
+     * Update row selection visual state for checkboxes (bulk selection)
      */
-    updateRowSelection(resultHash) {
+    updateCheckboxRowSelection(resultHash) {
         const row = this.tbody.querySelector(`[data-result-hash="${resultHash}"]`);
         if (!row) return;
 
@@ -238,6 +246,22 @@ class FindingsTable {
             row.classList.add('selected');
         } else {
             row.classList.remove('selected');
+        }
+    }
+
+    /**
+     * Update row selection visual state for detail panel (viewing selection)
+     */
+    updateDetailPanelRowSelection(resultHash) {
+        // Remove all selected classes
+        this.tbody.querySelectorAll('.finding-row').forEach(r => {
+            r.classList.remove('selected');
+        });
+
+        // Add selected class to current row
+        const row = this.tbody.querySelector(`[data-result-hash="${resultHash}"]`);
+        if (row) {
+            row.classList.add('selected');
         }
     }
 
@@ -260,6 +284,12 @@ class FindingsTable {
         // Preserve checkbox state
         const newCheckbox = newRow.querySelector('.finding-checkbox');
         if (newCheckbox) newCheckbox.checked = isChecked;
+
+        // Preserve detail panel selection
+        const state = stateManager.getState();
+        if (state.selectedFinding === finding.resultHash) {
+            newRow.classList.add('selected');
+        }
 
         row.replaceWith(newRow);
 

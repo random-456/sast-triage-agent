@@ -124,8 +124,22 @@ python -m web_ui.main
 - **Session Storage**: JSON files in `analysis_sessions/` directory with session-specific workspaces
 - **Max Sessions**: 100 (configurable via `MAX_SESSION_HISTORY`)
 - **Session Cleanup**: Sessions persist until manually deleted via UI. Consider periodic cleanup of old sessions to manage disk space.
-- **WebSocket**: Automatic reconnection (up to 5 attempts)
+- **WebSocket**: Automatic reconnection (up to 5 attempts), max 3 connections per session
 - **Security**: Input validation, rate limiting, HTML escaping, localhost-only CORS
+
+### Security Considerations
+
+The Web UI is designed as a **local POC** running on localhost. For production deployment, additional security measures are required:
+
+| Feature | POC Status | Production Requirement |
+|---------|------------|----------------------|
+| Authentication | None | Add JWT/OAuth authentication |
+| HTTPS | HTTP only | Enable TLS/SSL |
+| CSRF Protection | None | Add CSRF tokens to API calls |
+| CORS | Localhost only | Configure for production domain |
+| Rate Limiting | API endpoints only | Extend to all endpoints |
+
+**Note on CORS**: CORS is browser-enforced only. It prevents cross-origin requests from browsers but does NOT protect against direct API calls (curl, scripts). For a localhost POC this is acceptable; for production, authentication is required.
 
 ## Output Structure
 

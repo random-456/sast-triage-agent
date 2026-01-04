@@ -31,7 +31,10 @@ class App {
     setupEventListeners() {
         // Sidebar toggle
         this.elements.sidebarToggle?.addEventListener('click', () => {
-            stateManager.toggleSidebar();
+            const layout = document.getElementById('app-layout');
+            layout.classList.toggle('sidebar-collapsed');
+            const isCollapsed = layout.classList.contains('sidebar-collapsed');
+            stateManager.updateSettings({ sidebarVisible: !isCollapsed });
         });
 
         // Settings button
@@ -117,10 +120,13 @@ class App {
      * Update sidebar visibility
      */
     updateSidebarVisibility(visible) {
-        if (visible) {
-            this.elements.sidebar?.classList.remove('collapsed');
-        } else {
-            this.elements.sidebar?.classList.add('collapsed');
+        const layout = document.getElementById('app-layout');
+        if (layout) {
+            if (visible) {
+                layout.classList.remove('sidebar-collapsed');
+            } else {
+                layout.classList.add('sidebar-collapsed');
+            }
         }
     }
 
@@ -247,7 +253,7 @@ class App {
         // Update header
         document.getElementById('findings-project-name').textContent = session.metadata.project_name;
         document.getElementById('findings-branch').textContent = session.metadata.branch;
-        document.getElementById('findings-count').textContent = session.findings.length;
+        document.getElementById('findings-count-badge').textContent = `${session.findings.length} findings`;
 
         const githubLink = document.getElementById('findings-github-link');
         if (session.metadata.github_url) {
