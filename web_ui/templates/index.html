@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/custom.css?v=17">
+    <link rel="stylesheet" href="/static/css/custom.css?v=18">
 </head>
 <body class="h-screen overflow-hidden">
     <!-- App Container with inset margins -->
@@ -141,14 +141,14 @@
                 <div class="topbar">
                     <div class="project" id="findings-project-name"></div>
                     <div class="meta">
-                        <div class="meta-item">
-                            <i class="fa-solid fa-diagram-project"></i>
+                        <div class="meta-row" id="findings-retrieval"></div>
+                        <div class="meta-row" id="findings-filters"></div>
+                        <div class="meta-row">
+                            <i class="fa-solid fa-code-branch"></i>
                             <span id="findings-branch"></span>
+                            <span class="meta-separator"></span>
+                            <a id="findings-github-link" href="#" target="_blank" class="meta-link"></a>
                         </div>
-                        <a id="findings-github-link" href="#" target="_blank" class="meta-link">
-                            <i class="fa-brands fa-github"></i>
-                            GitHub
-                        </a>
                         <div class="count" id="findings-count-badge">0 findings</div>
                     </div>
                 </div>

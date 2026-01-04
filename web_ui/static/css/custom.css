@@ -5,7 +5,7 @@
 
 /* Design System */
 :root {
-    /* Warmer Dark Mode - Notion-inspired */
+    /* Dark Mode Theme */
     --bg-app: #191919;
     --bg-surface: #202020;
     --bg-elevated: #2a2a2a;
@@ -21,7 +21,7 @@
     --text-3: #8a8a8a;
     --text-4: #6a6a6a;
 
-    /* Colorful Severity - Notion-style tags */
+    /* Severity Colors */
     --severity-high: #ff6b6b;
     --severity-high-bg: rgba(255, 107, 107, 0.15);
     --severity-medium: #ffa94d;
@@ -286,9 +286,41 @@ select:focus {
 
 .meta {
     display: flex;
-    align-items: center;
-    gap: var(--s5);
+    flex-direction: column;
+    gap: var(--s2);
     font-size: 13px;
+    color: var(--text-tertiary);
+}
+
+.meta-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+}
+
+.meta-row i {
+    width: 14px;
+    text-align: center;
+}
+
+.meta-separator {
+    margin: 0 var(--s2);
+    color: var(--border-light);
+}
+
+.meta-separator::before {
+    content: "\2022";
+}
+
+.meta-link {
+    color: var(--text-tertiary);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.meta-link:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
 }
 
 .table-wrapper {
@@ -673,19 +705,6 @@ select:focus {
 
 .finding-row.selected {
     background-color: rgba(59, 130, 246, 0.1);
-}
-
-/* Result Background Colors */
-.finding-row.result-CONFIRMED {
-    background-color: rgba(239, 68, 68, 0.1);
-}
-
-.finding-row.result-NOT_EXPLOITABLE {
-    background-color: rgba(16, 185, 129, 0.1);
-}
-
-.finding-row.result-REFUSED {
-    background-color: rgba(107, 114, 128, 0.1);
 }
 
 /* Progress/Analysis Status */

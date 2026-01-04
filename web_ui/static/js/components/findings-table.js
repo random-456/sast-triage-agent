@@ -55,10 +55,9 @@ class FindingsTable {
         const analysis = finding.analysis || {};
         const isSelected = stateManager.getState().selectedFindings.includes(finding.resultHash);
 
-        // Determine row class based on analysis result
+        // Determine row class based on selection state
         let rowClass = 'finding-row';
         if (isSelected) rowClass += ' selected';
-        if (analysis.result) rowClass += ` result-${analysis.result}`;
 
         // Conditionally render checkbox only if finding can be analyzed
         const checkboxCell = this.isFindingAnalyzable(finding) ? `

@@ -250,18 +250,52 @@ class App {
      * Handle session loaded
      */
     handleSessionLoaded(session) {
-        // Update header
+        // Update project name
         document.getElementById('findings-project-name').textContent = session.metadata.project_name;
-        document.getElementById('findings-branch').textContent = session.metadata.branch;
-        document.getElementById('findings-count-badge').textContent = `${session.findings.length} findings`;
 
+        // Format and display retrieval date
+        const retrievalEl = document.getElementById('findings-retrieval');
+        if (session.created_at) {
+            const date = new Date(session.created_at);
+            const formatted = date.toLocaleString('de-DE', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            retrievalEl.textContent = `Retrieval: ${formatted}`;
+        }
+
+        // Display filter settings
+        const filtersEl = document.getElementById('findings-filters');
+        const severityFilters = session.metadata.severity_filters || [];
+        const statusFilters = session.metadata.status_filters || [];
+        const filterParts = [];
+        if (severityFilters.length > 0) {
+            filterParts.push(`Severity: ${severityFilters.join(', ')}`);
+        }
+        if (statusFilters.length > 0) {
+            filterParts.push(`State: ${statusFilters.join(', ')}`);
+        }
+        filtersEl.textContent = filterParts.length > 0 ? filterParts.join(' | ') : '';
+
+        // Update branch
+        document.getElementById('findings-branch').textContent = session.metadata.branch;
+
+        // Update GitHub link with URL as text
         const githubLink = document.getElementById('findings-github-link');
         if (session.metadata.github_url) {
             githubLink.href = session.metadata.github_url;
+            githubLink.textContent = session.metadata.github_url;
             githubLink.style.display = '';
         } else {
             githubLink.style.display = 'none';
         }
+
+        // Update findings count
+        document.getElementById('findings-count-badge').textContent = `${session.findings.length} findings`;
 
         // Render findings table
         findingsTable.render(session.findings);
