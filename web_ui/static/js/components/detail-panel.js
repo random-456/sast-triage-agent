@@ -250,7 +250,16 @@ class DetailPanel {
      */
     renderConversation(conversationLog) {
         return conversationLog
-            .filter(entry => entry.type === 'assistant' || entry.type === 'tool_result')
+            .filter(entry => {
+                // Filter tool results
+                if (entry.type === 'tool_result') return true;
+                // Filter assistant messages - skip if content is empty
+                if (entry.type === 'assistant') {
+                    const content = entry.content || '';
+                    return content.trim().length > 0;
+                }
+                return false;
+            })
             .map(entry => {
                 if (entry.type === 'assistant') {
                     return this.renderAgentMessage(entry);
@@ -783,7 +792,18 @@ class DetailPanel {
 
             // Incrementally append only NEW conversation entries
             if (conversationLog && finding.analysis.conversation_log) {
-                const entries = finding.analysis.conversation_log;
+                const allEntries = finding.analysis.conversation_log;
+
+                // Filter entries to only renderable ones (non-empty assistant + tool_result)
+                const entries = allEntries.filter(entry => {
+                    if (entry.type === 'tool_result') return true;
+                    if (entry.type === 'assistant') {
+                        const content = entry.content || '';
+                        return content.trim().length > 0;
+                    }
+                    return false;
+                });
+
                 const currentCount = conversationLog.children.length;
                 const newCount = entries.length;
 

@@ -431,6 +431,12 @@ class SASTTriageAgent:
                                     else:
                                         self.progress_callback(tool_result_event)
 
+                                # Log tool result so it appears in saved conversation_log
+                                self.agent_logger.log_tool_result(
+                                    finding_log, tool_name, tool_args, None,
+                                    formatted_content=formatted_content
+                                )
+
                                 # Log the decision
                                 self.agent_logger.log_finding_complete(finding_log, decision)
 
