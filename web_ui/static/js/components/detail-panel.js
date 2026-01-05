@@ -170,7 +170,7 @@ class DetailPanel {
         tags.innerHTML = `
             <span class="badge badge-${finding.severity}">${finding.severity}</span>
             <span class="state-badge state-${finding.state}">${stateFormatted}</span>
-            <span class="badge badge-INFO">CWE-${finding.cweID || 'N/A'}</span>
+            <span class="cwe-label">CWE-${finding.cweID || 'N/A'}</span>
         `;
     }
 
