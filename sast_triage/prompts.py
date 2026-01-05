@@ -47,6 +47,12 @@ When submitting `submit_triage_decision`:
 - **is_exploitable:** true/false
 - **confidence:** 0.0 to 1.0 (1.0 = absolute certainty).
 - **justification:** Start with "The finding is [CONFIRMED/NOT EXPLOITABLE] because..." followed by a clear explanation of the reason. It should be as brief as possible but at the same time provide all relevant details to understand the justification.
+
+### 6. COMMUNICATION STYLE
+- **ALWAYS** include a brief explanation (1-3 sentences) before making tool calls.
+- Explain WHAT you're doing and WHY in each response.
+- Keep explanations concise and focused on the security analysis.
+- Do not start with pleasantries like "Okay" or "Sure" - get straight to the analysis.
 """
 
 ###################################################################################################
