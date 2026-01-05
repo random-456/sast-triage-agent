@@ -125,60 +125,123 @@ class SASTTriageAgent:
             self.output_dir = None
             self.assessments_file = None
 
-    def _format_tool_result_for_websocket(self, tool_name: str, tool_result) -> Dict:
+    def _extract_text_content(self, content) -> str:
+        """
+        Extract text from LLM response content.
+        Handles both string content and multimodal content blocks.
+
+        Args:
+            content: LLM response content (string or list of content blocks)
+
+        Returns:
+            Extracted text as string
+        """
+        if isinstance(content, str):
+            return content
+        elif isinstance(content, list):
+            # Handle multimodal content blocks
+            text_parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text" and "text" in block:
+                        text_parts.append(block["text"])
+                elif isinstance(block, str):
+                    text_parts.append(block)
+            return " ".join(text_parts) if text_parts else ""
+        else:
+            return str(content) if content else ""
+
+    def _format_tool_result_for_websocket(self, tool_name: str, tool_result, tool_args: Dict = None) -> Dict:
         """
         Format tool result for WebSocket transmission.
-        Limits size to avoid WebSocket message size limits.
+        Preserves structured data for frontend rendering.
 
         Args:
             tool_name: Name of the tool that was executed
             tool_result: Raw result from tool execution
+            tool_args: Arguments passed to the tool (for context)
 
         Returns:
-            Formatted dict with type, content, and truncation flag
+            Formatted dict with type and structured content
         """
-        from typing import Any
+        # Handle error results
+        if isinstance(tool_result, dict) and "error" in tool_result:
+            return {
+                "type": "error",
+                "error": tool_result["error"]
+            }
 
-        # Convert result to string
-        result_str = str(tool_result)
-
-        # Format based on tool type with appropriate size limits
+        # Format based on tool type with structured data
         if tool_name == "read_file":
-            return {
-                "type": "file_content",
-                "content": result_str[:5000],  # 5KB limit
-                "truncated": len(result_str) > 5000
-            }
+            if isinstance(tool_result, dict):
+                return {
+                    "type": "file_content",
+                    "file": tool_result.get("file", tool_args.get("file_path", "unknown") if tool_args else "unknown"),
+                    "total_lines": tool_result.get("total_lines", 0)
+                }
+            return {"type": "file_content", "file": "unknown", "total_lines": 0}
+
         elif tool_name == "search_in_files":
-            return {
-                "type": "search_results",
-                "content": result_str[:5000],
-                "truncated": len(result_str) > 5000
-            }
+            if isinstance(tool_result, dict):
+                results = tool_result.get("results", [])
+                return {
+                    "type": "search_results",
+                    "pattern": tool_result.get("pattern", ""),
+                    "file_extension": tool_result.get("file_extension", ""),
+                    "matches_found": tool_result.get("matches_found", len(results)),
+                    "results": results[:20]  # Limit to first 20 matches
+                }
+            return {"type": "search_results", "pattern": "", "matches_found": 0, "results": []}
+
         elif tool_name == "list_directory":
-            return {
-                "type": "directory_listing",
-                "content": result_str[:3000],
-                "truncated": len(result_str) > 3000
-            }
+            if isinstance(tool_result, dict):
+                items = tool_result.get("items", [])
+                return {
+                    "type": "directory_listing",
+                    "directory": tool_result.get("directory", "."),
+                    "total_items": tool_result.get("total_items", len(items)),
+                    "items": items[:50]  # Limit to first 50 items
+                }
+            return {"type": "directory_listing", "directory": ".", "total_items": 0, "items": []}
+
         elif tool_name == "verify_analysis":
+            # Include the args for display since they contain the summary
             return {
                 "type": "verification",
-                "content": result_str[:2000],
-                "truncated": len(result_str) > 2000
+                "status": "verified",
+                "investigation_summary": tool_args.get("investigation_summary", "") if tool_args else "",
+                "key_evidence": tool_args.get("key_evidence", "") if tool_args else "",
+                "preliminary_assessment": tool_args.get("preliminary_assessment", "") if tool_args else "",
+                "potential_gaps": tool_args.get("potential_gaps", "") if tool_args else ""
             }
+
         elif tool_name == "submit_triage_decision":
-            return {
-                "type": "decision",
-                "content": result_str[:1000],
-                "truncated": len(result_str) > 1000
-            }
+            if isinstance(tool_result, dict):
+                return {
+                    "type": "decision",
+                    "status": tool_result.get("status", "submitted"),
+                    "assessment_result": tool_result.get("assessment_result", ""),
+                    "confidence": tool_result.get("confidence", 0)
+                }
+            return {"type": "decision", "status": "submitted"}
+
+        elif tool_name == "get_finding_details":
+            if isinstance(tool_result, dict):
+                return {
+                    "type": "finding_details",
+                    "result_hash": tool_result.get("resultHash", ""),
+                    "query_name": tool_result.get("queryName", ""),
+                    "severity": tool_result.get("severity", "")
+                }
+            return {"type": "finding_details"}
+
         else:
-            # Generic fallback
+            # Generic fallback - stringify but limit size
+            result_str = str(tool_result)
             return {
                 "type": "generic",
-                "content": result_str[:3000],
-                "truncated": len(result_str) > 3000
+                "content": result_str[:2000],
+                "truncated": len(result_str) > 2000
             }
 
     async def analyze_single_finding(self, result_hash: str) -> TriageDecision:
@@ -302,7 +365,7 @@ class SASTTriageAgent:
                     agent_message_event = {
                         "event": "agent_message",
                         "finding_hash": result_hash,
-                        "content": response.content if hasattr(response, 'content') and response.content else "",
+                        "content": self._extract_text_content(response.content) if hasattr(response, 'content') else "",
                         "tool_calls": tool_calls,
                         "timestamp": datetime.now().isoformat()
                     }
@@ -343,6 +406,30 @@ class SASTTriageAgent:
                                     assessment_confidence=tool_args.get("confidence", 0.5),
                                     assessment_justification=tool_args.get("justification", "")
                                 )
+
+                                # Format result for WebSocket
+                                formatted_content = {
+                                    "type": "decision",
+                                    "status": "submitted",
+                                    "assessment_result": decision.assessment_result,
+                                    "confidence": decision.assessment_confidence,
+                                    "justification": decision.assessment_justification
+                                }
+
+                                # Emit tool_result event for web UI so the bubble appears
+                                if self.progress_callback:
+                                    tool_result_event = {
+                                        "event": "tool_result",
+                                        "finding_hash": result_hash,
+                                        "tool": tool_name,
+                                        "args": tool_args,
+                                        "content": formatted_content,
+                                        "timestamp": datetime.now().isoformat()
+                                    }
+                                    if inspect.iscoroutinefunction(self.progress_callback):
+                                        await self.progress_callback(tool_result_event)
+                                    else:
+                                        self.progress_callback(tool_result_event)
 
                                 # Log the decision
                                 self.agent_logger.log_finding_complete(finding_log, decision)
@@ -393,7 +480,7 @@ class SASTTriageAgent:
                                 tool_result = {"error": f"Tool {tool_name} not found"}
 
                         # Format result ONCE for both logging and WebSocket
-                        formatted_content = self._format_tool_result_for_websocket(tool_name, tool_result)
+                        formatted_content = self._format_tool_result_for_websocket(tool_name, tool_result, tool_args)
 
                         # Log tool result with formatted content
                         self.agent_logger.log_tool_result(

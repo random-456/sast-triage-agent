@@ -266,23 +266,19 @@ class DetailPanel {
 
     /**
      * Render agent message bubble
+     * Agent bubble shows ONLY reasoning text - no tool badges
      * @param {Object} entry - Log entry
      * @returns {string} HTML string
      */
     renderAgentMessage(entry) {
-        const toolCallsHTML = entry.tool_calls ? entry.tool_calls.map(tc =>
-            `<span class="tool-badge"><i class="fas fa-wrench"></i> ${escapeHtml(tc.name)}</span>`
-        ).join('') : '';
-
         return `
             <div class="message-agent">
                 <div class="message-header">
                     <i class="fas fa-robot"></i> Agent
                 </div>
                 <div class="message-content">
-                    ${escapeHtml(entry.content)}
+                    ${escapeHtml(entry.content || '')}
                 </div>
-                ${toolCallsHTML ? `<div class="mt-2">${toolCallsHTML}</div>` : ''}
             </div>
         `;
     }
@@ -310,93 +306,215 @@ class DetailPanel {
 
     /**
      * Format tool result based on tool type
+     * Routes to specific formatters that show args + result
      * @param {Object} entry - Tool result entry
      * @returns {string} Formatted HTML
      */
     formatToolResult(entry) {
         const tool = entry.tool;
         const content = entry.content;
+        const args = entry.args || {};
 
         // Handle missing content
         if (!content) {
             return '<div class="text-xs text-gray-400">No result data</div>';
         }
 
-        // Specialized formatting for known tools
-        if (tool === 'read_file') {
-            return this.formatReadFileResult(content);
-        } else if (tool === 'search_in_files') {
-            return this.formatSearchResult(content);
-        } else if (tool === 'verify_analysis') {
-            return this.formatVerifyResult(content);
+        // Handle error results
+        if (content.type === 'error') {
+            return this.formatErrorResult(content);
+        }
+
+        // Route to specific formatters
+        switch (tool) {
+            case 'read_file':
+                return this.formatReadFileResult(content, args);
+            case 'search_in_files':
+                return this.formatSearchResult(content, args);
+            case 'list_directory':
+                return this.formatListDirectoryResult(content, args);
+            case 'verify_analysis':
+                return this.formatVerifyResult(content, args);
+            case 'submit_triage_decision':
+                return this.formatDecisionResult(content, args);
+            default:
+                return this.formatDefaultResult(content);
+        }
+    }
+
+    /**
+     * Format read_file tool result - Show file path (clickable) + line count
+     * @param {Object} content - Tool result with file and total_lines
+     * @param {Object} args - Tool arguments with file_path
+     * @returns {string} HTML
+     */
+    formatReadFileResult(content, args) {
+        const file = content.file || (args && args.file_path) || 'unknown';
+        const totalLines = content.total_lines || 0;
+
+        // Get repo URL from session metadata for clickable link
+        const state = stateManager.getState();
+        const repoUrl = state.currentSession?.metadata?.github_url;
+
+        let fileDisplay;
+        if (repoUrl) {
+            const cleanFile = file.replace(/^\//, '');
+            const fileUrl = `${repoUrl}/blob/main/${cleanFile}`;
+            fileDisplay = `<a href="${fileUrl}" target="_blank" rel="noopener" class="tool-file-link">${escapeHtml(file)}</a>`;
         } else {
-            // Default formatting
-            return this.formatDefaultResult(content);
+            fileDisplay = `<span class="tool-file-path">${escapeHtml(file)}</span>`;
         }
-    }
-
-    /**
-     * Format read_file tool result
-     * @param {Object|string} content - Tool result
-     * @returns {string} HTML
-     */
-    formatReadFileResult(content) {
-        if (typeof content === 'string') {
-            return `<pre class="tool-code">${escapeHtml(content.substring(0, 500))}</pre>`;
-        }
-
-        const filepath = content.filepath || 'unknown file';
-        const codeSnippet = content.content ? content.content.substring(0, 500) : '';
-        const totalLines = content.total_lines || '?';
 
         return `
-            <div class="text-xs mb-2"><i class="fas fa-file-code"></i> ${escapeHtml(filepath)}</div>
-            <pre class="tool-code">${escapeHtml(codeSnippet)}</pre>
-            <div class="text-xs mt-2 text-gray-500">${totalLines} lines total</div>
-        `;
-    }
-
-    /**
-     * Format search_in_files result
-     * @param {Object|string} content - Tool result
-     * @returns {string} HTML
-     */
-    formatSearchResult(content) {
-        if (typeof content === 'string') {
-            return escapeHtml(content);
-        }
-
-        const pattern = content.pattern || '';
-        const matches = content.matches || [];
-        const displayMatches = matches.slice(0, 10);
-        const hasMore = matches.length > 10;
-
-        return `
-            <div class="text-xs mb-2">Pattern: <code>${escapeHtml(pattern)}</code></div>
-            <div class="text-xs mb-2">${matches.length} matches found</div>
-            <div class="tool-code">
-                ${displayMatches.map(m => `${escapeHtml(m.file)}:${m.line}`).join('<br>')}
-                ${hasMore ? `<br>...and ${matches.length - 10} more` : ''}
+            <div class="tool-read-file">
+                <div class="tool-input">
+                    <i class="fas fa-file-code"></i>
+                    ${fileDisplay}
+                </div>
+                <div class="tool-output">
+                    <i class="fas fa-check text-green-400"></i>
+                    <span>${totalLines} lines read</span>
+                </div>
             </div>
         `;
     }
 
     /**
-     * Format verify_analysis result
-     * @param {Object|string} content - Tool result
+     * Format search_in_files result - Show pattern + extension + matches
+     * @param {Object} content - Tool result with pattern, file_extension, matches_found, results
+     * @param {Object} args - Tool arguments
      * @returns {string} HTML
      */
-    formatVerifyResult(content) {
-        if (typeof content === 'string') {
-            return escapeHtml(content);
-        }
+    formatSearchResult(content, args) {
+        const pattern = content.pattern || (args && args.pattern) || '';
+        const fileExt = content.file_extension || (args && args.file_extension) || '*';
+        const matchesFound = content.matches_found || 0;
+        const results = content.results || [];
 
-        const status = content.status || 'unknown';
-        const nextStep = content.next_step || 'N/A';
+        // Show first few matches
+        const matchList = results.slice(0, 5).map(r =>
+            `<div class="search-match"><code>${escapeHtml(r.file)}:${r.line}</code></div>`
+        ).join('');
+
+        const moreText = results.length > 5
+            ? `<div class="search-more">+${results.length - 5} more matches</div>`
+            : '';
 
         return `
-            <div class="mb-2"><strong>Status:</strong> ${escapeHtml(status)}</div>
-            <div><strong>Next Step:</strong> ${escapeHtml(nextStep)}</div>
+            <div class="tool-search">
+                <div class="tool-input">
+                    <span class="search-label">Pattern:</span> <code>${escapeHtml(pattern)}</code>
+                    <span class="search-sep">|</span>
+                    <span class="search-label">Files:</span> <code>*.${escapeHtml(fileExt)}</code>
+                </div>
+                <div class="tool-output">
+                    <div class="search-count">${matchesFound} matches found</div>
+                    ${matchList ? `<div class="search-results">${matchList}${moreText}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Format verify_analysis result - Show investigation summary, evidence, assessment, gaps
+     * @param {Object} content - Tool result with verification details
+     * @param {Object} args - Tool arguments (contains the actual useful info)
+     * @returns {string} HTML
+     */
+    formatVerifyResult(content, args) {
+        // The useful info is in the content (passed from backend which gets it from args)
+        const summary = content.investigation_summary || (args && args.investigation_summary) || '';
+        const evidence = content.key_evidence || (args && args.key_evidence) || '';
+        const assessment = content.preliminary_assessment || (args && args.preliminary_assessment) || '';
+        const gaps = content.potential_gaps || (args && args.potential_gaps) || '';
+
+        return `
+            <div class="tool-verify">
+                <div class="verify-header">
+                    <i class="fas fa-clipboard-check text-green-400"></i>
+                    <span>Analysis Verified</span>
+                </div>
+                <div class="verify-details">
+                    ${summary ? `<div class="verify-row"><span class="verify-label">Summary:</span> ${escapeHtml(summary.substring(0, 150))}${summary.length > 150 ? '...' : ''}</div>` : ''}
+                    ${evidence ? `<div class="verify-row"><span class="verify-label">Evidence:</span> ${escapeHtml(evidence.substring(0, 150))}${evidence.length > 150 ? '...' : ''}</div>` : ''}
+                    ${assessment ? `<div class="verify-row"><span class="verify-label">Assessment:</span> <strong>${escapeHtml(assessment)}</strong></div>` : ''}
+                    ${gaps ? `<div class="verify-row"><span class="verify-label">Gaps:</span> ${escapeHtml(gaps.substring(0, 100))}${gaps.length > 100 ? '...' : ''}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Format list_directory result - Show path + items
+     * @param {Object} content - Tool result with directory, total_items, items
+     * @param {Object} args - Tool arguments
+     * @returns {string} HTML
+     */
+    formatListDirectoryResult(content, args) {
+        const directory = content.directory || (args && args.directory_path) || '.';
+        const items = content.items || [];
+        const totalItems = content.total_items || items.length;
+
+        const itemList = items.slice(0, 8).map(item => {
+            const icon = item.type === 'directory' ? 'fa-folder text-yellow-400' : 'fa-file text-gray-400';
+            return `<span class="dir-item"><i class="fas ${icon}"></i> ${escapeHtml(item.name)}</span>`;
+        }).join('');
+
+        const moreText = items.length > 8 ? `<span class="dir-more">+${items.length - 8} more</span>` : '';
+
+        return `
+            <div class="tool-directory">
+                <div class="tool-input">
+                    <i class="fas fa-folder-open"></i>
+                    <span>${escapeHtml(directory)}</span>
+                </div>
+                <div class="tool-output">
+                    <div class="dir-count">${totalItems} items</div>
+                    <div class="dir-items">${itemList}${moreText}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Format submit_triage_decision result - Show decision, confidence %, justification
+     * @param {Object} content - Tool result with assessment_result, confidence
+     * @param {Object} args - Tool arguments with is_exploitable, confidence, justification
+     * @returns {string} HTML
+     */
+    formatDecisionResult(content, args) {
+        // Get from content (tool result) or args (what agent passed)
+        const isExploitable = args && args.is_exploitable;
+        const decision = content.assessment_result || (isExploitable ? 'CONFIRMED' : 'NOT_EXPLOITABLE');
+        const confidence = content.confidence || (args && args.confidence) || 0;
+        const justification = content.justification || (args && args.justification) || '';
+
+        const confidencePercent = Math.round(confidence * 100);
+        const decisionClass = decision === 'CONFIRMED' ? 'text-red-400' : 'text-green-400';
+
+        return `
+            <div class="tool-decision">
+                <div class="decision-header">
+                    <i class="fas fa-gavel"></i>
+                    <span class="decision-result ${decisionClass}">${escapeHtml(decision)}</span>
+                    <span class="decision-confidence">(${confidencePercent}% confidence)</span>
+                </div>
+                ${justification ? `<div class="decision-justification">${escapeHtml(justification.substring(0, 300))}${justification.length > 300 ? '...' : ''}</div>` : ''}
+            </div>
+        `;
+    }
+
+    /**
+     * Format error result - Handle errors gracefully
+     * @param {Object} content - Error content with error message
+     * @returns {string} HTML
+     */
+    formatErrorResult(content) {
+        return `
+            <div class="tool-error">
+                <i class="fas fa-exclamation-triangle text-red-400"></i>
+                <span>${escapeHtml(content.error || 'Unknown error')}</span>
+            </div>
         `;
     }
 
