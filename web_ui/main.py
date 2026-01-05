@@ -14,5 +14,6 @@ if __name__ == "__main__":
         host=WEB_UI_HOST,
         port=WEB_UI_PORT,
         reload=True,  # Enable auto-reload for development
+        reload_excludes=["analysis_sessions/*", "logs/*"],  # Don't restart on cloned repos
         log_level="info"
     )
