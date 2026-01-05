@@ -159,18 +159,19 @@ class DetailPanel {
 
         title.textContent = finding.queryName;
 
-        // Show finding ID in small text
-        const shortHash = finding.resultHash.substring(0, 50);
-        subtitle.textContent = `${shortHash}...`;
+        // Show category and CWE under title
+        const category = finding.category || 'Unknown';
+        subtitle.innerHTML = `
+            <span class="detail-category">${category}</span>
+            <span class="cwe-label">CWE-${finding.cweID || 'N/A'}</span>
+        `;
 
-        // Render tags
-        const severityClass = finding.severity.toLowerCase();
+        // Render severity and state badges
         const stateFormatted = finding.state.replace(/_/g, ' ');
 
         tags.innerHTML = `
             <span class="badge badge-${finding.severity}">${finding.severity}</span>
             <span class="state-badge state-${finding.state}">${stateFormatted}</span>
-            <span class="cwe-label">CWE-${finding.cweID || 'N/A'}</span>
         `;
     }
 

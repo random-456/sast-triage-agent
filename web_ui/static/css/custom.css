@@ -830,11 +830,18 @@ select:focus {
     color: #93c5fd;
 }
 
+/* Category text in detail header */
+.detail-category {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin-right: 0.75rem;
+}
+
 /* CWE Label - subtle text style */
 .cwe-label {
     display: inline-block;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.7rem;
     font-weight: 500;
     color: var(--text-secondary);
     border: 1px solid var(--border-color);
