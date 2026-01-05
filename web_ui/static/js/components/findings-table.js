@@ -76,7 +76,7 @@ class FindingsTable {
                 <td class="p-3">
                     <div class="font-medium">${escapeHtml(finding.queryName)}</div>
                     <div class="text-xxs text-gray-500 font-mono mt-1">
-                        ${finding.resultHash.substring(0, 50)}...
+                        ${finding.resultHash.substring(0, 50)}${finding.resultHash.length > 50 ? '...' : ''}
                     </div>
                     ${analysis.status ? this.renderAnalysisStatus(analysis) : ''}
                     ${analysis.justification ? this.renderJustification(analysis.justification) : ''}
