@@ -134,7 +134,8 @@ class WebSocketClient {
             finding.analysis = {
                 status: 'in_progress',
                 started_at: data.timestamp,
-                last_action: 'Starting analysis...'
+                last_action: 'Starting analysis...',
+                conversation_log: []  // Initialize empty conversation log for live updates
             };
             stateManager.setState({ findings: state.findings });
 
@@ -147,40 +148,59 @@ class WebSocketClient {
      * Handle agent message event (LLM response)
      */
     handleAgentMessage(data) {
-        // Dispatch event for detail panel to render message bubble
-        // DO NOT update table - analysis_progress already handles that
-        window.dispatchEvent(new CustomEvent('analysis-conversation-update', {
-            detail: {
-                type: 'agent_message',
-                finding_hash: data.finding_hash,
-                entry: {
-                    type: 'assistant',
-                    content: data.content,
-                    tool_calls: data.tool_calls,
-                    timestamp: data.timestamp
-                }
+        // Add entry to state (single source of truth - no event dispatch)
+        const state = stateManager.getState();
+        const finding = state.findings.find(f => f.resultHash === data.finding_hash);
+
+        if (finding) {
+            // Ensure analysis and conversation_log exist
+            if (!finding.analysis) {
+                finding.analysis = { conversation_log: [] };
             }
-        }));
+            if (!finding.analysis.conversation_log) {
+                finding.analysis.conversation_log = [];
+            }
+
+            // Append new entry
+            finding.analysis.conversation_log.push({
+                type: 'assistant',
+                content: data.content,
+                tool_calls: data.tool_calls,
+                timestamp: data.timestamp
+            });
+
+            stateManager.setState({ findings: state.findings });
+        }
     }
 
     /**
      * Handle tool result event
      */
     handleToolResult(data) {
-        // Dispatch event for detail panel to render tool result bubble
-        window.dispatchEvent(new CustomEvent('analysis-conversation-update', {
-            detail: {
-                type: 'tool_result',
-                finding_hash: data.finding_hash,
-                entry: {
-                    type: 'tool_result',
-                    tool: data.tool,
-                    args: data.args,
-                    content: data.content,
-                    timestamp: data.timestamp
-                }
+        // Add entry to state (single source of truth - no event dispatch)
+        const state = stateManager.getState();
+        const finding = state.findings.find(f => f.resultHash === data.finding_hash);
+
+        if (finding) {
+            // Ensure analysis and conversation_log exist
+            if (!finding.analysis) {
+                finding.analysis = { conversation_log: [] };
             }
-        }));
+            if (!finding.analysis.conversation_log) {
+                finding.analysis.conversation_log = [];
+            }
+
+            // Append new entry
+            finding.analysis.conversation_log.push({
+                type: 'tool_result',
+                tool: data.tool,
+                args: data.args,
+                content: data.content,
+                timestamp: data.timestamp
+            });
+
+            stateManager.setState({ findings: state.findings });
+        }
     }
 
     /**

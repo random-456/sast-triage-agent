@@ -22,10 +22,8 @@ class DetailPanel {
             this.showFinding(e.detail.resultHash);
         });
 
-        // Listen for real-time conversation updates (new event)
-        window.addEventListener('analysis-conversation-update', (e) => {
-            this.appendConversationEntry(e.detail);
-        });
+        // NOTE: Removed 'analysis-conversation-update' event listener
+        // Conversation is now updated via state (single source of truth)
 
         // Listen for live analysis updates (completion handling)
         window.addEventListener('analysis-live-update', (e) => {
@@ -33,14 +31,13 @@ class DetailPanel {
         });
 
         // Listen for state changes (finding updates)
-        // Store unsubscribe function for potential cleanup
+        // This is the SINGLE SOURCE OF TRUTH for conversation updates
         this.unsubscribeState = stateManager.subscribe(() => {
-            // Re-render if current finding was updated
             if (this.currentFindingHash) {
                 const state = stateManager.getState();
                 const finding = state.findings.find(f => f.resultHash === this.currentFindingHash);
                 if (finding) {
-                    this.refreshCurrentFinding();
+                    this.refreshCurrentFinding(finding);
                 }
             }
         });
@@ -762,23 +759,53 @@ class DetailPanel {
 
     /**
      * Refresh current finding (called on state change)
+     * Uses incremental updates to avoid re-rendering entire conversation
+     * @param {Object} finding - Finding object from state
      */
-    refreshCurrentFinding() {
-        if (!this.currentFindingHash) return;
+    refreshCurrentFinding(finding) {
+        if (!this.currentFindingHash || !finding) return;
 
-        const state = stateManager.getState();
-        const finding = state.findings.find(f => f.resultHash === this.currentFindingHash);
+        // Always refresh result section
+        this.renderResult(finding);
 
-        if (finding) {
-            // Always refresh result section
-            this.renderResult(finding);
+        // Handle conversation updates
+        if (finding.analysis) {
+            let conversationLog = document.getElementById('conversation-log');
 
-            // If analysis just started, ensure conversation-log div exists
-            if (finding.analysis?.status === 'in_progress') {
-                const conversationLog = document.getElementById('conversation-log');
-                if (!conversationLog) {
-                    // Create the empty conversation container
-                    this.renderAnalysisTab(finding);
+            // If conversation container doesn't exist, create it
+            if (!conversationLog) {
+                const tabDiv = document.getElementById('tab-analysis');
+                if (tabDiv) {
+                    tabDiv.innerHTML = `<div class="conversation-log" id="conversation-log"></div>`;
+                    conversationLog = document.getElementById('conversation-log');
+                }
+            }
+
+            // Incrementally append only NEW conversation entries
+            if (conversationLog && finding.analysis.conversation_log) {
+                const entries = finding.analysis.conversation_log;
+                const currentCount = conversationLog.children.length;
+                const newCount = entries.length;
+
+                // Only render entries we haven't rendered yet
+                for (let i = currentCount; i < newCount; i++) {
+                    const entry = entries[i];
+                    let entryHTML = '';
+
+                    if (entry.type === 'assistant') {
+                        entryHTML = this.renderAgentMessage(entry);
+                    } else if (entry.type === 'tool_result') {
+                        entryHTML = this.renderToolMessage(entry);
+                    }
+
+                    if (entryHTML) {
+                        conversationLog.insertAdjacentHTML('beforeend', entryHTML);
+                    }
+                }
+
+                // Auto-scroll to bottom if new entries were added
+                if (newCount > currentCount) {
+                    conversationLog.scrollTop = conversationLog.scrollHeight;
                 }
             }
         }
