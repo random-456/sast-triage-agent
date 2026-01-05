@@ -159,11 +159,15 @@ class DetailPanel {
 
         title.textContent = finding.queryName;
 
-        // Show category and CWE under title
+        // Show category, CWE, and finding ID under title
         const category = finding.category || 'Unknown';
+        const hashDisplay = finding.resultHash.substring(0, 50) + (finding.resultHash.length > 50 ? '...' : '');
         subtitle.innerHTML = `
-            <span class="detail-category">${category}</span>
-            <span class="cwe-label">CWE-${finding.cweID || 'N/A'}</span>
+            <div class="detail-meta-row">
+                <span class="detail-category">${category}</span>
+                <span class="cwe-label">CWE-${finding.cweID || 'N/A'}</span>
+            </div>
+            <div class="detail-finding-id">${hashDisplay}</div>
         `;
 
         // Render severity and state badges
