@@ -51,7 +51,7 @@ When submitting `submit_triage_decision`:
 - **justification:** Start with "The finding is [CONFIRMED/NOT EXPLOITABLE] because..." and explicitly reference the Source, Sink, and why the Sanitization fails (or succeeds).
 """
 
-##############################################################################################################
+############################################################################################################
 
 TRIAGE_INPUT_PROMPT_TEMPLATE = """
 Perform a strict validation of the following SAST finding.

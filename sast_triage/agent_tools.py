@@ -163,16 +163,16 @@ def search_in_files(pattern: str, file_extension: str) -> Dict:
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
-                for i, line in enumerate(lines):
-                    if pattern_re.search(line):
-                        rel_path = os.path.relpath(file_path, CODEBASE_DIR)
-                        results.append({
-                            'file': rel_path,
-                            'line': i + 1,
-                            'content': line.strip()
-                        })
-                        if len(results) >= max_results:
-                            break
+                    for i, line in enumerate(lines):
+                        if pattern_re.search(line):
+                            rel_path = os.path.relpath(file_path, CODEBASE_DIR)
+                            results.append({
+                                'file': rel_path,
+                                'line': i + 1,
+                                'content': line.strip()
+                            })
+                            if len(results) >= max_results:
+                                break
                 if len(results) >= max_results:
                     break
             except:

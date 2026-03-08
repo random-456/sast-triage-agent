@@ -374,15 +374,15 @@ class SASTTriageAgent:
         if os.path.exists(self.assessments_file):
             with open(self.assessments_file, 'r') as f:
                 existing_results = json.load(f)
-            for idx, result in enumerate(existing_results):
-                result_hash = result.get('resultHash')
-                if result_hash in all_details:
-                    report_gen.add_finding(
-                        finding_details=all_details[result_hash],
-                        assessment=result,
-                        current=idx + 1,
-                        total=total_count
-                    )
+                for idx, result in enumerate(existing_results):
+                    result_hash = result.get('resultHash')
+                    if result_hash in all_details:
+                        report_gen.add_finding(
+                            finding_details=all_details[result_hash],
+                            assessment=result,
+                            current=idx + 1,
+                            total=total_count
+                        )
 
         # Analyze each pending finding
         triage_results = []

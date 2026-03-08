@@ -35,9 +35,10 @@ from utils.banner import display_banner
 from config import DEFAULT_SEVERITIES, DEFAULT_BRANCH, DEFAULT_TRIAGE_MODEL, TEMP_DIR, DEFAULT_OUTPUT_DIR, APP_NAME
 
 
+
 async def run_triage_analysis(model_name: str, output_dir: str, project_name: str = None, project_id: str = None,
-                               scan_id: str = None, checkmarx_base_url: str = None,
-                               branch: str = None) -> int:
+                             scan_id: str = None, checkmarx_base_url: str = None,
+                             branch: str = None) -> int:
     """
     Run the triage analysis on the fetched data.
 
@@ -129,8 +130,8 @@ def run_triage(
     if not all([base_url, refresh_token]):
         logger.error("Missing required environment variables")
         logger.error("""Please ensure the following are set in your .env file:\n
-                - BASE_URL: Checkmarx One instance URL\n
-                - REFRESH_TOKEN: Your refresh token""")
+                       - BASE_URL: Checkmarx One instance URL\n
+                       - REFRESH_TOKEN: Your refresh token""")
         sys.exit(1)
 
     # Parse severities and branch
@@ -182,7 +183,7 @@ def run_triage(
                 logger.error(f"Could not find all the findings with provided hashes in the {original_count} findings fetched for the project.")
                 sys.exit(1)
 
-        logger.info("Found matching findings.")
+            logger.info("Found matching findings.")
 
         # Process findings
         triage_records, detailed_records = client.process_findings_to_records(findings)
