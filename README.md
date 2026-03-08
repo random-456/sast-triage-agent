@@ -53,12 +53,12 @@ Options:
 ```
 <output-dir>/
 ├── findings/
-│   ├── triage_list.csv           # Finding IDs with severity and triage status
-│   └── findings_details.json     # Detailed finding data with dataflow
-├── codebase/                     # Cloned repository (if available)
-├── findings_assessment.json      # Final triage decisions
-├── triage_report.html            # Interactive HTML report with findings
-└── triage_agent.log              # Execution log
+│   ├── triage_list.csv         # Finding IDs with severity and triage status
+│   └── findings_details.json   # Detailed finding data with dataflow
+├── codebase/                   # Cloned repository (if available)
+├── findings_assessment.json    # Final triage decisions
+├── triage_report.html          # Interactive HTML report with findings
+└── triage_agent.log            # Execution log
 ```
 
 ## Results Format
