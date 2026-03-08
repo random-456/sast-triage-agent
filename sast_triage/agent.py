@@ -18,8 +18,6 @@ from sast_triage.agent_tools import (
     parse_csv_findings, get_finding_details
 )
 from sast_triage.agent_logging import AgentLoggingManager
-from utils.report_helpers import ReportGenerator
-
 from sast_triage.prompts import TRIAGE_SYSTEM_PROMPT, TRIAGE_INPUT_PROMPT_TEMPLATE
 from config import CODEBASE_DIR, FINDINGS_JSON_FILE, FINDINGS_CSV_FILE, MAX_ANALYSIS_ITERATIONS, DEFAULT_OUTPUT_DIR
 
@@ -349,44 +347,8 @@ class SASTTriageAgent:
 
         self.logger.info(f"Found {len(findings)} pending findings to triage")
 
-        # Initialize report generator
-        report_gen = ReportGenerator(
-            output_dir=output_dir,
-            project_name=self.project_name or "Unknown",
-            project_id=self.project_id or "Unknown",
-            scan_id=self.scan_id,
-            base_url=self.checkmarx_base_url,
-            branch=self.branch,
-            model_name=self.model_name
-        )
-
-        # Load all finding details for report
-        with open(json_path, 'r') as f:
-            all_details = {d['resultHash']: d for d in json.load(f)}
-
-        # Get total count including already triaged
-        total_count = len(all_details)
-
-        # Initialize report with total count
-        report_gen.initialize_report(total_findings=total_count)
-
-        # Add already triaged findings to report if they exist
-        if os.path.exists(self.assessments_file):
-            with open(self.assessments_file, 'r') as f:
-                existing_results = json.load(f)
-                for idx, result in enumerate(existing_results):
-                    result_hash = result.get('resultHash')
-                    if result_hash in all_details:
-                        report_gen.add_finding(
-                            finding_details=all_details[result_hash],
-                            assessment=result,
-                            current=idx + 1,
-                            total=total_count
-                        )
-
         # Analyze each pending finding
         triage_results = []
-        existing_count = total_count - len(findings)
         for i, finding in enumerate(findings):
             self.logger.info(f"Analyzing finding {i+1}/{len(findings)}: {finding['resultHash']}")
 
@@ -409,15 +371,6 @@ class SASTTriageAgent:
                 self.logger.info(f"Confidence: {decision.assessment_confidence:.2f}")
                 self.logger.info(f"Justification: {decision.assessment_justification[:100]}...")
 
-                # Add to HTML report
-                finding_details = all_details.get(finding['resultHash'], {})
-                report_gen.add_finding(
-                    finding_details=finding_details,
-                    assessment=result_dict,
-                    current=existing_count + i + 1,
-                    total=total_count
-                )
-
             except Exception as e:
                 self.logger.error(f"Error analyzing {finding['resultHash']}: {str(e)}")
                 # Save error result
@@ -433,20 +386,9 @@ class SASTTriageAgent:
                 # Mark as triaged even for errors (so they don't retry indefinitely)
                 self.update_csv_status(finding['resultHash'], csv_path)
 
-                # Add error to HTML report
-                finding_details = all_details.get(finding['resultHash'], {})
-                report_gen.add_finding(
-                    finding_details=finding_details,
-                    assessment=error_result,
-                    current=existing_count + i + 1,
-                    total=total_count
-                )
-
         # Save results (output/findings_assessment.json)
         with open(self.assessments_file, 'w') as f:
             json.dump(triage_results, f, indent=2)
-
-        self.logger.info(f"HTML report generated: {report_gen.report_path}")
 
         # Generate summary for display
         summary = {

@@ -35,11 +35,11 @@ DEFAULT_MODEL=gemini-2.5-flash
 python run_triage.py PROJECT_NAME [OPTIONS]
 
 # Examples:
-python run_triage.py my-project                                    # Analyze project with default settings
-python run_triage.py my-project --severities HIGH                  # Only HIGH severity findings
-python run_triage.py my-project --output-dir ./analysis            # Custom output directory
-python run_triage.py my-project --branch main                      # Analyze specific branch
-python run_triage.py my-project --finding <cx_result_hash>         # Analyze a single finding by its result hash
+python run_triage.py my-project                                     # Analyze project with default settings
+python run_triage.py my-project --severities HIGH                   # Only HIGH severity findings
+python run_triage.py my-project --output-dir ./analysis             # Custom output directory
+python run_triage.py my-project --branch main                       # Analyze specific branch
+python run_triage.py my-project --finding <cx_result_hash>          # Analyze a single finding by its result hash
 ```
 
 Options:
@@ -53,12 +53,12 @@ Options:
 ```
 <output-dir>/
 ├── findings/
-│   ├── triage_list.csv          # Finding IDs with severity and triage status
-│   └── findings_details.json    # Detailed finding data with dataflow
-├── codebase/                    # Cloned repository (if available)
-├── findings_assessment.json     # Final triage decisions
-├── triage_report.html           # Interactive HTML report with findings
-└── triage_agent.log             # Execution log
+│   ├── triage_list.csv           # Finding IDs with severity and triage status
+│   └── findings_details.json     # Detailed finding data with dataflow
+├── codebase/                     # Cloned repository (if available)
+├── findings_assessment.json      # Final triage decisions
+├── triage_report.html            # Interactive HTML report with findings
+└── triage_agent.log              # Execution log
 ```
 
 ## Results Format
@@ -126,8 +126,8 @@ A ready-to-use dataset can be found in **benchmark/datasets**. Each project to u
 Usage: run_benchmark.py [OPTIONS]
 
 Options:
-- `--model TEXT`    AI Model used for analysis
-- `--output TEXT`   Output directory
-- `-v, --verbose`   Enable verbose output
-- `--help`          Show this message and exit.
+  --model TEXT   AI Model used for analysis
+  --output TEXT  Output directory
+  -v, --verbose  Enable verbose output
+  --help         Show this message and exit.
 ```
