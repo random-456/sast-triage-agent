@@ -201,6 +201,7 @@ def generate_diff(
     rel_path: str,
     context_lines: int,
     max_file_size_kb: int,
+    ignore_trailing_whitespace: bool = False,
 ) -> DiffResult:
     """Generate a unified diff for a single modified file."""
     ref_file = ref_path / rel_path
@@ -243,6 +244,10 @@ def generate_diff(
     ref_lines = ref_content.splitlines(keepends=True)
     tgt_lines = tgt_content.splitlines(keepends=True)
 
+    if ignore_trailing_whitespace:
+        ref_lines = [line.rstrip() + "\n" for line in ref_lines]
+        tgt_lines = [line.rstrip() + "\n" for line in tgt_lines]
+
     diff = list(difflib.unified_diff(
         ref_lines,
         tgt_lines,
@@ -273,6 +278,7 @@ def compare_directories(
     ignore_patterns: Set[str],
     context_lines: int,
     max_file_size_kb: int,
+    ignore_trailing_whitespace: bool = False,
 ) -> ComparisonResult:
     """Compare two directory trees and return structured results."""
     result = ComparisonResult(
@@ -354,7 +360,8 @@ def compare_directories(
     for rel_path in common:
         try:
             diff_result = generate_diff(
-                ref_path, tgt_path, rel_path, context_lines, max_file_size_kb
+                ref_path, tgt_path, rel_path, context_lines, max_file_size_kb,
+                ignore_trailing_whitespace,
             )
             if diff_result.status == "unchanged":
                 result.unchanged.append(rel_path)
@@ -1110,6 +1117,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=DEFAULT_MAX_FILE_SIZE_KB,
         help=f"Skip diff for files larger than this (KB, default: {DEFAULT_MAX_FILE_SIZE_KB})",
     )
+    parser.add_argument(
+        "--ignore-trailing-whitespace",
+        action="store_true",
+        default=False,
+        help="Ignore trailing whitespace differences when comparing files",
+    )
     return parser.parse_args(argv)
 
 
@@ -1140,6 +1153,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         ignore_patterns=ignore_patterns,
         context_lines=args.context_lines,
         max_file_size_kb=args.max_file_size,
+        ignore_trailing_whitespace=args.ignore_trailing_whitespace,
     )
 
     print(f"\nResults:")
