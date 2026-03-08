@@ -1,12 +1,10 @@
-CLAUDE.md
-.claude
-
 # Environment and configuration
 .env
 *.local
 
 # Python
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *$py.class
 *.so
@@ -71,5 +69,5 @@ htmlcov/
 .coverage.*
 
 # Output and temp files
-output
-temp
+output/
+temp/

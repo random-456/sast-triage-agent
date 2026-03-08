@@ -9,12 +9,13 @@ import logging
 from typing import Dict, List, Optional
 
 from langchain_google_vertexai import ChatVertexAI
+from langchain_google_vertexai.model_garden import ChatAnthropicVertex
 from langchain_core.messages import ToolMessage
 
 from sast_triage.agent_models import TriageDecision
 from sast_triage.agent_tools import (
-    read_file, search_in_files, list_directory, verify_analysis,
-    submit_triage_decision, parse_csv_findings, get_finding_details
+    read_file, search_in_files, list_directory, verify_analysis, submit_triage_decision,
+    parse_csv_findings, get_finding_details
 )
 from sast_triage.agent_logging import AgentLoggingManager
 from utils.report_helpers import ReportGenerator
@@ -42,10 +43,10 @@ class SASTTriageAgent:
     ):
         """
         Initialize the SAST Triage Agent.
-        
+
         Args:
             project: Google Cloud Project ID for Vertex AI
-            location: Vertex AI location (default: europa-west4)
+            location: Vertex AI location (default: europe-west4)
             model_name: Vertex AI model name
             temperature: Model temperature for consistency
             project_name: Project name for reporting
@@ -59,13 +60,26 @@ class SASTTriageAgent:
         self.scan_id = scan_id
         self.checkmarx_base_url = checkmarx_base_url
         self.branch = branch
-        self.llm = ChatVertexAI(
-            project=project,
-            location=location,
-            model_name=model_name,
-            temperature=temperature,
-            max_retries=3
-        )
+
+        # Initialize the appropriate LLM backend
+        if "claude" in model_name.lower():
+            self.logger.info(f"Initializing Claude on Vertex: {model_name}")
+            self.llm = ChatAnthropicVertex(
+                project=project,
+                location=location,
+                model_name=model_name,
+                temperature=temperature,
+                max_retries=3
+            )
+        else:
+            self.logger.info(f"Initializing Gemini/Vertex: {model_name}")
+            self.llm = ChatVertexAI(
+                project=project,
+                location=location,
+                model_name=model_name,
+                temperature=temperature,
+                max_retries=3
+            )
 
         self.tools = [
             read_file,  # Read entire files
@@ -100,7 +114,7 @@ class SASTTriageAgent:
             result_hash: The finding ID to analyze
             severity: Original severity from Checkmarx (unused, kept for compatibility)
             update_csv: Whether to update CSV status (unused, kept for compatibility)
-        
+
         Returns:
             TriageDecision with analysis results
         """
@@ -204,7 +218,6 @@ class SASTTriageAgent:
                             tool_call_id=tool_call["id"]
                         )
                         messages.append(tool_message)
-
                 else:
                     # No tool calls - force tool usage immediately
                     prompt = "You must use a tool. Either continue investigating with read_file/search_in_files/list_directory, or submit your final decision with submit_triage_decision."
@@ -236,7 +249,7 @@ class SASTTriageAgent:
             self.agent_logger.log_finding_complete(finding_log, decision)
             return decision
 
-    def update_csv_status(self, result_hash: str, csv_path: str = FINDINGS_CSV_FILE):
+    def update_csv_status(self, result_hash: str, csv_path: str = FINDINGS_JSON_FILE):
         """Update the triaged status in CSV file."""
         try:
             # Read CSV
@@ -318,7 +331,6 @@ class SASTTriageAgent:
         Returns:
             Complete triage report
         """
-
         self.logger.info(f"Starting SAST triage analysis...")
         self.logger.info(f"CSV: {csv_path}")
         self.logger.info(f"JSON: {json_path}")
@@ -362,15 +374,15 @@ class SASTTriageAgent:
         if os.path.exists(self.assessments_file):
             with open(self.assessments_file, 'r') as f:
                 existing_results = json.load(f)
-                for idx, result in enumerate(existing_results):
-                    result_hash = result.get('resultHash')
-                    if result_hash in all_details:
-                        report_gen.add_finding(
-                            finding_details=all_details[result_hash],
-                            assessment=result,
-                            current=idx + 1,
-                            total=total_count
-                        )
+            for idx, result in enumerate(existing_results):
+                result_hash = result.get('resultHash')
+                if result_hash in all_details:
+                    report_gen.add_finding(
+                        finding_details=all_details[result_hash],
+                        assessment=result,
+                        current=idx + 1,
+                        total=total_count
+                    )
 
         # Analyze each pending finding
         triage_results = []

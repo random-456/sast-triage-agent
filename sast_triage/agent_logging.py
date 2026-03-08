@@ -34,7 +34,7 @@ class AgentLoggingManager:
 
         # Create timestamped log file
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = log_dir / f"triage_{timestamp}.json"
+        self.log_file = log_dir / f"sast_triage_{timestamp}.json"
 
         # Initialize log structure
         self.session_log = {

@@ -101,6 +101,11 @@ class CheckmarxClient:
                 self.logger.warning(f"No project found with name: {project_name}")
                 return None
 
+            exact_match_project = next((p for p in projects if p.get('name') == project_name), None)
+
+            if exact_match_project:
+                projects = [exact_match_project]
+
             if len(projects) > 1:
                 self.logger.warning(f"Multiple projects found with name '{project_name}', using the first one")
                 for i, project in enumerate(projects):
@@ -150,7 +155,6 @@ class CheckmarxClient:
             else:
                 self.logger.warning("Repository URL not found in project details.")
                 return None
-
         except requests.exceptions.HTTPError as e:
             self.logger.error(f"Could not fetch project details: {e}")
             return None

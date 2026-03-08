@@ -163,16 +163,16 @@ def search_in_files(pattern: str, file_extension: str) -> Dict:
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
-                    for i, line in enumerate(lines):
-                        if pattern_re.search(line):
-                            rel_path = os.path.relpath(file_path, CODEBASE_DIR)
-                            results.append({
-                                'file': rel_path,
-                                'line': i + 1,
-                                'content': line.strip()
-                            })
-                            if len(results) >= max_results:
-                                break
+                for i, line in enumerate(lines):
+                    if pattern_re.search(line):
+                        rel_path = os.path.relpath(file_path, CODEBASE_DIR)
+                        results.append({
+                            'file': rel_path,
+                            'line': i + 1,
+                            'content': line.strip()
+                        })
+                        if len(results) >= max_results:
+                            break
                 if len(results) >= max_results:
                     break
             except:
@@ -267,27 +267,35 @@ def verify_analysis(
     investigation_summary: str,
     key_evidence: str,
     preliminary_assessment: str,
-    potential_gaps: str
+    potential_gaps: str,
+    is_analysis_complete: bool
 ) -> Dict:
     """
     Verification checkpoint before final decision. Step back and review your analysis.
-
-    Articulate your investigation to ensure you haven't overlooked anything.
-    This is routine quality assurance, not because something is wrong with your analysis.
 
     Args:
         investigation_summary: Brief summary of what you investigated
         key_evidence: The main evidence supporting your assessment
         preliminary_assessment: Your current assessment (CONFIRMED or NOT_EXPLOITABLE)
-        potential_gaps: Areas you're uncertain about (or "none" if complete)
-
-    Returns:
-        Verification acknowledgment - proceed to submit when satisfied
+        potential_gaps: Areas you're uncertain about.
+        is_analysis_complete: Set to True ONLY if potential_gaps is 'none' and you are ready to submit. Set False if you need to investigate further.
     """
-    return {
-        "status": "verification_complete",
-        "next_step": (
-            "If you identified gaps, continue investigation. "
-            "Otherwise, proceed to submit_triage_decision with your final assessment."
-        )
-    }
+
+    # CASE 1: The Agent signals it is done (True)
+    if is_analysis_complete:
+        return {
+            "status": "verification_complete",
+            "feedback": "Analysis verified as complete. You are authorized to proceed to submit_triage_decision."
+        }
+
+    # CASE 2: The Agent signals it is NOT done (False)
+    else:
+        # We explicitly block the agent and echo the gaps back
+        return {
+            "status": "verification_failed",
+            "feedback": (
+                f"STOP. You marked analysis as incomplete. "
+                f"Recorded gaps: '{potential_gaps}'. "
+                f"You must use read_file or search_in_files to resolve these gaps before submitting."
+            )
+        }
