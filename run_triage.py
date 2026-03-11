@@ -24,6 +24,7 @@ os.environ['REQUESTS_CA_BUNDLE'] = CERTIFICATES_CRT_FILE
 os.environ['GRPC_DEFAULT_SSL_ROOTS_FILE_PATH'] = CERTIFICATES_CRT_FILE
 
 from sast_triage.agent import SASTTriageAgent
+from sast_triage.preprocessing.obfuscation import obfuscate_codebase
 from utils.checkmarx_helpers import CheckmarxClient
 from utils.git_helpers import GitHelpers
 from utils.click_helpers import CommaList
@@ -32,7 +33,15 @@ from utils.findings_helpers import FindingsHelpers
 from utils.generic_logging import setup_logging
 from utils.banner import display_banner
 
-from config import DEFAULT_SEVERITIES, DEFAULT_BRANCH, DEFAULT_TRIAGE_MODEL, TEMP_DIR, DEFAULT_OUTPUT_DIR, APP_NAME
+from config import (
+    CODEBASE_DIR,
+    DEFAULT_SEVERITIES,
+    DEFAULT_BRANCH,
+    DEFAULT_TRIAGE_MODEL,
+    TEMP_DIR,
+    DEFAULT_OUTPUT_DIR,
+    APP_NAME,
+)
 
 
 
@@ -196,6 +205,14 @@ def run_triage(
             clone_success = GitHelpers.clone_repository(repo_url)
             if not clone_success:
                 logger.warning("Repository cloning failed, continuing with analysis...")
+            else:
+                # Mandatory: obfuscate sensitive elements
+                logger.info("Obfuscating sensitive elements in codebase...")
+                obfuscation_report = obfuscate_codebase(CODEBASE_DIR)
+                logger.info(
+                    f"Obfuscation complete: {obfuscation_report.total_replacements} "
+                    f"replacements in {obfuscation_report.total_files_modified} files"
+                )
         else:
             logger.warning("No repository URL found, continuing without codebase.")
 
