@@ -2,14 +2,11 @@
 
 import csv
 import os
-from unittest.mock import patch, MagicMock
 
 import pytest
-import requests
 
 from sast_triage.preprocessing.secret_masking import (
     MASK_PLACEHOLDER,
-    MaskingReport,
     _build_secret_preview,
     load_gitleaks_csv,
     mask_secrets,
@@ -201,40 +198,6 @@ class TestPathTraversalBlocked:
         assert report.total_secrets_masked == 0
         assert len(report.skipped_entries) == 1
         assert report.skipped_entries[0]["reason"] == "path traversal"
-
-
-class TestUrlFetch:
-    @patch("sast_triage.preprocessing.secret_masking.requests.get")
-    def test_url_csv_parsed_correctly(
-        self, mock_get: MagicMock, tmp_path: str,
-    ) -> None:
-        """Mock HTTPS response is parsed as valid CSV."""
-        csv_content = (
-            "Description,StartLine,EndLine,StartColumn,EndColumn,"
-            "Match,Secret,File,SymlinkFile,Commit,Entropy,Author,"
-            "Email,Date,Message,Tags,RuleID,Fingerprint,ActualLine,label\n"
-            "test,1,1,1,5,match,secr,test.txt,,commit,1.0,author,"
-            "email,date,msg,tags,rule,fp,line,TP\n"
-        )
-        mock_response = MagicMock()
-        mock_response.text = csv_content
-        mock_response.content = csv_content.encode("utf-8")
-        mock_response.raise_for_status = MagicMock()
-        mock_get.return_value = mock_response
-
-        rows = load_gitleaks_csv("https://example.com/report.csv")
-
-        assert len(rows) == 1
-        assert rows[0]["File"] == "test.txt"
-        assert rows[0]["StartLine"] == "1"
-        mock_get.assert_called_once()
-
-
-class TestHttpRejected:
-    def test_plain_http_raises_value_error(self) -> None:
-        """Plain HTTP URL raises ValueError."""
-        with pytest.raises(ValueError, match="Only HTTPS URLs"):
-            load_gitleaks_csv("http://example.com/report.csv")
 
 
 class TestNoneInput:

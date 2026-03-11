@@ -12,8 +12,6 @@ import logging
 import os
 from dataclasses import dataclass, field
 
-import requests
-
 logger = logging.getLogger(__name__)
 
 MASK_PLACEHOLDER = "__MASKED_SECRET__"
@@ -21,8 +19,6 @@ MASK_PLACEHOLDER = "__MASKED_SECRET__"
 _REQUIRED_CSV_COLUMNS = {"File", "StartLine", "EndLine", "StartColumn", "EndColumn"}
 
 _MAX_CSV_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
-
-_URL_FETCH_TIMEOUT_SECONDS = 30
 
 
 @dataclass
@@ -42,8 +38,7 @@ class MaskingEntry:
 class MaskingReport:
     """Summary of all masking actions."""
 
-    source: str
-    csv_path_or_url: str
+    csv_path: str
     total_entries_in_csv: int = 0
     total_secrets_masked: int = 0
     files_modified: int = 0
@@ -102,72 +97,35 @@ def _validate_csv_rows(rows: list[dict]) -> None:
                 )
 
 
-def _fetch_csv_from_url(url: str) -> str:
+def load_gitleaks_csv(csv_path: str) -> list[dict]:
     """
-    Fetch CSV content from an HTTPS URL.
+    Load and validate a Gitleaks CSV from a local file.
 
     Args:
-        url: HTTPS URL to fetch
-
-    Returns:
-        CSV content as string
-
-    Raises:
-        ValueError: If URL is not HTTPS or response is too large
-        requests.RequestException: If the HTTP request fails
-    """
-    if not url.startswith("https://"):
-        raise ValueError(
-            "Only HTTPS URLs are supported. "
-            "For HTTP sources, download the CSV locally first."
-        )
-
-    response = requests.get(url, timeout=_URL_FETCH_TIMEOUT_SECONDS)
-    response.raise_for_status()
-
-    content_length = len(response.content)
-    if content_length > _MAX_CSV_SIZE_BYTES:
-        raise ValueError(
-            f"CSV response too large: {content_length} bytes "
-            f"(max {_MAX_CSV_SIZE_BYTES} bytes)"
-        )
-
-    return response.text
-
-
-def load_gitleaks_csv(source: str) -> list[dict]:
-    """
-    Load and validate a Gitleaks CSV from a local path or URL.
-
-    Args:
-        source: Local file path or HTTPS URL to the CSV
+        csv_path: Local file path to the CSV
 
     Returns:
         List of parsed CSV row dictionaries
 
     Raises:
-        ValueError: If CSV structure is invalid
-        FileNotFoundError: If local file doesn't exist
-        requests.RequestException: If URL fetch fails
+        ValueError: If CSV structure is invalid or file is too large
+        FileNotFoundError: If file doesn't exist
     """
-    if source.startswith("https://") or source.startswith("http://"):
-        csv_text = _fetch_csv_from_url(source)
-    else:
-        abs_path = os.path.abspath(source)
-        if not os.path.isfile(abs_path):
-            raise FileNotFoundError(
-                f"Gitleaks CSV file not found: {abs_path}"
-            )
+    abs_path = os.path.abspath(csv_path)
+    if not os.path.isfile(abs_path):
+        raise FileNotFoundError(
+            f"Gitleaks CSV file not found: {abs_path}"
+        )
 
-        file_size = os.path.getsize(abs_path)
-        if file_size > _MAX_CSV_SIZE_BYTES:
-            raise ValueError(
-                f"CSV file too large: {file_size} bytes "
-                f"(max {_MAX_CSV_SIZE_BYTES} bytes)"
-            )
+    file_size = os.path.getsize(abs_path)
+    if file_size > _MAX_CSV_SIZE_BYTES:
+        raise ValueError(
+            f"CSV file too large: {file_size} bytes "
+            f"(max {_MAX_CSV_SIZE_BYTES} bytes)"
+        )
 
-        with open(abs_path, "r", encoding="utf-8") as f:
-            csv_text = f.read()
+    with open(abs_path, "r", encoding="utf-8") as f:
+        csv_text = f.read()
 
     reader = csv.DictReader(io.StringIO(csv_text))
     rows = list(reader)
@@ -253,7 +211,7 @@ def mask_secrets(codebase_dir: str, gitleaks_csv_path: str) -> MaskingReport:
 
     Args:
         codebase_dir: Path to the cloned (and already obfuscated) codebase
-        gitleaks_csv_path: Local path or URL to the Gitleaks CSV
+        gitleaks_csv_path: Local file path to the Gitleaks CSV
 
     Returns:
         MaskingReport with details of all masking actions
@@ -266,11 +224,7 @@ def mask_secrets(codebase_dir: str, gitleaks_csv_path: str) -> MaskingReport:
     if not os.path.isdir(abs_codebase):
         raise ValueError(f"Codebase directory does not exist: {abs_codebase}")
 
-    is_url = gitleaks_csv_path.startswith(("http://", "https://"))
-    report = MaskingReport(
-        source="url" if is_url else "local",
-        csv_path_or_url=gitleaks_csv_path,
-    )
+    report = MaskingReport(csv_path=gitleaks_csv_path)
 
     rows = load_gitleaks_csv(gitleaks_csv_path)
     report.total_entries_in_csv = len(rows)

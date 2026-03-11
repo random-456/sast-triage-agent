@@ -113,7 +113,7 @@ async def run_triage_analysis(model_name: str, output_dir: str, project_name: st
 @click.option(
     "--gitleaks-report",
     required=True,
-    help="Path or URL to Gitleaks CSV report, or 'none' if no report exists",
+    help="Local path to Gitleaks CSV report, or 'none' if no report exists",
 )
 @click.option("--keep-temp", is_flag=True, help=f"Whether to keep {TEMP_DIR} or not")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
