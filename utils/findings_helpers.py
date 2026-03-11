@@ -20,7 +20,7 @@ class FindingsHelpers:
         self.logger.info(f"Saving {len(triage_records)} records to {FINDINGS_CSV_FILE}...")
 
         with open(FINDINGS_CSV_FILE, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=["resultHash", "severity", "triaged"])
+            writer = csv.DictWriter(f, fieldnames=["resultHash", "severity", "state", "triaged"])
             writer.writeheader()
             writer.writerows(triage_records)
 
