@@ -1,5 +1,6 @@
-"""Tests for Checkmarx One API client."""
+"""Tests for Checkmarx One API client and findings data pipeline."""
 
+import csv
 import json
 import os
 import tempfile
@@ -7,6 +8,7 @@ import unittest
 from unittest.mock import Mock, patch, MagicMock
 
 from utils.checkmarx_helpers import CheckmarxClient
+from utils.findings_helpers import FindingsHelpers
 
 
 class TestCheckmarxClient(unittest.TestCase):
@@ -210,6 +212,48 @@ class TestCheckmarxClient(unittest.TestCase):
         self.assertEqual(detailed_records[0]["cweID"], 89)
         self.assertEqual(detailed_records[0]["description"], "SQL injection in login.py")
         self.assertEqual(len(detailed_records[0]["dataflow"]), 2)
+
+
+class TestFindingsHelpers(unittest.TestCase):
+    """Test FindingsHelpers CSV/JSON output."""
+
+    def test_csv_includes_state_column(self):
+        """Verify saved CSV includes the state column."""
+        triage_records = [
+            {
+                "resultHash": "hash-001",
+                "severity": "HIGH",
+                "state": "TO_VERIFY",
+                "triaged": "no",
+            },
+            {
+                "resultHash": "hash-002",
+                "severity": "LOW",
+                "state": "CONFIRMED",
+                "triaged": "no",
+            },
+        ]
+        detailed_records = [
+            {"resultHash": "hash-001", "description": "desc1"},
+            {"resultHash": "hash-002", "description": "desc2"},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, "triage_list.csv")
+            json_path = os.path.join(tmpdir, "findings_details.json")
+
+            with patch("utils.findings_helpers.FINDINGS_DIR", tmpdir), \
+                 patch("utils.findings_helpers.FINDINGS_CSV_FILE", csv_path), \
+                 patch("utils.findings_helpers.FINDINGS_JSON_FILE", json_path):
+                FindingsHelpers.save_findings_data(triage_records, detailed_records)
+
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+
+            self.assertIn("state", reader.fieldnames)
+            self.assertEqual(rows[0]["state"], "TO_VERIFY")
+            self.assertEqual(rows[1]["state"], "CONFIRMED")
 
 
 if __name__ == "__main__":
