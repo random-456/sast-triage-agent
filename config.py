@@ -32,6 +32,14 @@ CHECKMARX_REALM = "abcorg"  # Checkmarx realm/tenant name
 CHECKMARX_API_LIMIT = 1000  # Max findings per API request
 DEFAULT_SEVERITIES = ["HIGH", "MEDIUM"]  # Default severities to fetch
 DEFAULT_BRANCH = "default.SecurityPipeline"  # Default branch for scans
+CHECKMARX_STATES = [
+    "TO_VERIFY",
+    "NOT_EXPLOITABLE",
+    "PROPOSED_NOT_EXPLOITABLE",
+    "CONFIRMED",
+    "URGENT",
+]
+DEFAULT_STATES = ["TO_VERIFY"]
 
 # Benchmark Configuration
 BENCHMARK_DATASETS_DIR = os.path.join("benchmark", "datasets")
