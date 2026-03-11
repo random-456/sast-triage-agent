@@ -315,6 +315,25 @@ def execute_triage(
         sys.exit(1)
 
 
+def _validate_gitleaks_report(
+    ctx: click.Context, param: click.Parameter, value: str
+) -> str:
+    """
+    Click callback that validates --gitleaks-report early.
+
+    Accepts 'none' (case-insensitive) or a path to an existing file.
+    """
+    if value is None:
+        return value
+    if value.lower() == "none":
+        return value
+    if not os.path.isfile(value):
+        raise click.BadParameter(
+            f"File not found: {os.path.abspath(value)}"
+        )
+    return value
+
+
 @click.group()
 def cli():
     """SAST Triage Agent - Automated triage of Checkmarx SAST findings."""
@@ -355,7 +374,10 @@ def cli():
 @click.option(
     "--gitleaks-report",
     required=True,
-    help="Local path to Gitleaks CSV report, or 'none' if no report exists",
+    callback=_validate_gitleaks_report,
+    is_eager=False,
+    expose_value=True,
+    help="Local path to Gitleaks CSV report, or 'none' to skip",
 )
 @click.option(
     "--output",

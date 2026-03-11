@@ -5,6 +5,7 @@ Provides guided prompts to collect configuration and display preprocessing
 summaries before running triage analysis.
 """
 
+import os
 import sys
 from typing import Optional
 
@@ -106,11 +107,18 @@ def prompt_project_config() -> dict:
         sys.exit(0)
 
     gitleaks_report = questionary.text(
-        "Gitleaks CSV report path (or 'none'):",
-        default="none",
+        "Gitleaks CSV report path (or 'none' to skip):",
+        validate=lambda val: (
+            len(val.strip()) > 0 or "A path or 'none' is required"
+        ),
     ).ask()
     if gitleaks_report is None:
         sys.exit(0)
+    gitleaks_report = gitleaks_report.strip()
+
+    if gitleaks_report.lower() != "none" and not os.path.isfile(gitleaks_report):
+        click.echo(f"Error: File not found: {os.path.abspath(gitleaks_report)}")
+        sys.exit(1)
 
     output_dir = questionary.text(
         "Output directory:",

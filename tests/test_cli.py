@@ -128,6 +128,37 @@ class TestStateFilterLogic:
         assert len(result) == 0
 
 
+class TestGitleaksValidation:
+    def test_nonexistent_file_rejected(self, runner: CliRunner) -> None:
+        """A non-existent gitleaks report path is rejected early."""
+        result = runner.invoke(
+            cli,
+            ["run", "my-project", "--gitleaks-report", "/no/such/file.csv"],
+        )
+        assert result.exit_code != 0
+        assert "File not found" in result.output
+
+    def test_none_is_accepted(self, runner: CliRunner) -> None:
+        """'none' is accepted as a valid gitleaks report value."""
+        # This will fail later (missing env vars), but should pass validation
+        result = runner.invoke(
+            cli,
+            ["run", "my-project", "--gitleaks-report", "none"],
+        )
+        # Should not fail with "File not found"
+        assert "File not found" not in result.output
+
+    def test_existing_file_accepted(self, runner: CliRunner, tmp_path) -> None:
+        """An existing file path passes validation."""
+        csv_file = tmp_path / "report.csv"
+        csv_file.write_text("File,StartLine,EndLine,StartColumn,EndColumn\n")
+        result = runner.invoke(
+            cli,
+            ["run", "my-project", "--gitleaks-report", str(csv_file)],
+        )
+        assert "File not found" not in result.output
+
+
 class TestDefaultValues:
     def test_state_default_is_to_verify(self, runner: CliRunner) -> None:
         """Default --states value is TO_VERIFY."""
