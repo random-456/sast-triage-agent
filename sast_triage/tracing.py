@@ -6,6 +6,7 @@ import os
 logger = logging.getLogger(__name__)
 
 _phoenix_initialized = False
+_phoenix_session = None
 
 
 def is_tracing_enabled() -> bool:
@@ -25,7 +26,7 @@ def initialize_tracing() -> None:
     Safe to call even if Phoenix is not installed — will log a
     warning and continue.
     """
-    global _phoenix_initialized
+    global _phoenix_initialized, _phoenix_session
     if _phoenix_initialized:
         return
 
@@ -35,7 +36,7 @@ def initialize_tracing() -> None:
             LangChainInstrumentor,
         )
 
-        px.launch_app()
+        _phoenix_session = px.launch_app()
         logger.info(
             "Phoenix tracing server started at http://localhost:6006"
         )
@@ -53,3 +54,43 @@ def initialize_tracing() -> None:
         )
     except Exception as e:
         logger.warning(f"Failed to initialize Phoenix tracing: {e}")
+
+
+def shutdown_tracing() -> None:
+    """Shut down Phoenix cleanly to release the database file."""
+    global _phoenix_initialized, _phoenix_session
+    if not _phoenix_initialized:
+        return
+
+    try:
+        import phoenix as px
+
+        px.close_app()
+        logger.info("Phoenix tracing server stopped")
+    except Exception as e:
+        logger.debug(f"Phoenix shutdown: {e}")
+    finally:
+        _phoenix_session = None
+        _phoenix_initialized = False
+
+
+def wait_for_trace_review() -> None:
+    """
+    Block until the user is done reviewing traces, then shut down.
+
+    Only blocks when Phoenix was actually initialized. Prints a
+    message directing the user to the Phoenix UI.
+    """
+    if not _phoenix_initialized:
+        return
+
+    print(
+        "\nPhoenix tracing UI is available at http://localhost:6006"
+        "\nPress Enter to stop Phoenix and exit..."
+    )
+    try:
+        input()
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+    shutdown_tracing()

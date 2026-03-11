@@ -29,7 +29,11 @@ os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = CERTIFICATES_CRT_FILE
 from sast_triage.agent import SASTTriageAgent
 from sast_triage.preprocessing.obfuscation import obfuscate_codebase
 from sast_triage.preprocessing.secret_masking import mask_secrets
-from sast_triage.tracing import initialize_tracing, is_tracing_enabled
+from sast_triage.tracing import (
+    initialize_tracing,
+    is_tracing_enabled,
+    wait_for_trace_review,
+)
 from utils.checkmarx_helpers import CheckmarxClient
 from utils.click_helpers import CommaList
 from utils.directory_helpers import DirectoryHelpers
@@ -309,6 +313,8 @@ def execute_triage(
                 branch,
             )
         )
+
+        wait_for_trace_review()
         sys.exit(exit_code)
 
     except Exception as e:
