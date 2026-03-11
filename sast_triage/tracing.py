@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 _phoenix_initialized = False
 _phoenix_session = None
+_tracer_provider = None
 
 
 def is_tracing_enabled() -> bool:
@@ -26,12 +27,13 @@ def initialize_tracing() -> None:
     Safe to call even if Phoenix is not installed — will log a
     warning and continue.
     """
-    global _phoenix_initialized, _phoenix_session
+    global _phoenix_initialized, _phoenix_session, _tracer_provider
     if _phoenix_initialized:
         return
 
     try:
         import phoenix as px
+        from phoenix.otel import register
         from openinference.instrumentation.langchain import (
             LangChainInstrumentor,
         )
@@ -41,7 +43,12 @@ def initialize_tracing() -> None:
             "Phoenix tracing server started at http://localhost:6006"
         )
 
-        LangChainInstrumentor().instrument()
+        _tracer_provider = register(project_name="sast-triage")
+        logger.info("OpenTelemetry tracer provider registered")
+
+        LangChainInstrumentor().instrument(
+            tracer_provider=_tracer_provider,
+        )
         logger.info("LangChain instrumentation enabled")
 
         _phoenix_initialized = True
@@ -58,11 +65,15 @@ def initialize_tracing() -> None:
 
 def shutdown_tracing() -> None:
     """Shut down Phoenix cleanly to release the database file."""
-    global _phoenix_initialized, _phoenix_session
+    global _phoenix_initialized, _phoenix_session, _tracer_provider
     if not _phoenix_initialized:
         return
 
     try:
+        if _tracer_provider is not None:
+            _tracer_provider.shutdown()
+            logger.info("Tracer provider flushed and shut down")
+
         import phoenix as px
 
         px.close_app()
@@ -70,6 +81,7 @@ def shutdown_tracing() -> None:
     except Exception as e:
         logger.debug(f"Phoenix shutdown: {e}")
     finally:
+        _tracer_provider = None
         _phoenix_session = None
         _phoenix_initialized = False
 

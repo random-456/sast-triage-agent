@@ -84,11 +84,14 @@ class TestInitializeTracing:
         mock_px.launch_app.side_effect = RuntimeError("port in use")
         mock_instrumentor = MagicMock()
 
+        mock_otel = MagicMock()
+
         with (
             patch.dict(
                 "sys.modules",
                 {
                     "phoenix": mock_px,
+                    "phoenix.otel": mock_otel,
                     "openinference": MagicMock(),
                     "openinference.instrumentation": MagicMock(),
                     "openinference.instrumentation.langchain": mock_instrumentor,
@@ -102,6 +105,47 @@ class TestInitializeTracing:
         assert tracing_module._phoenix_initialized is False
 
 
+    def test_successful_initialization_calls_register(self) -> None:
+        """initialize_tracing calls register() and passes provider to instrument()."""
+        import sast_triage.tracing as tracing_module
+
+        tracing_module._phoenix_initialized = False
+
+        mock_px = MagicMock()
+        mock_provider = MagicMock()
+        mock_otel = MagicMock()
+        mock_otel.register.return_value = mock_provider
+        mock_instrumentor_cls = MagicMock()
+        mock_instrumentor_mod = MagicMock()
+        mock_instrumentor_mod.LangChainInstrumentor = mock_instrumentor_cls
+
+        try:
+            with patch.dict(
+                "sys.modules",
+                {
+                    "phoenix": mock_px,
+                    "phoenix.otel": mock_otel,
+                    "openinference": MagicMock(),
+                    "openinference.instrumentation": MagicMock(),
+                    "openinference.instrumentation.langchain": mock_instrumentor_mod,
+                },
+            ):
+                initialize_tracing()
+
+            mock_otel.register.assert_called_once_with(
+                project_name="sast-triage",
+            )
+            mock_instrumentor_cls().instrument.assert_called_once_with(
+                tracer_provider=mock_provider,
+            )
+            assert tracing_module._phoenix_initialized is True
+            assert tracing_module._tracer_provider is mock_provider
+        finally:
+            tracing_module._phoenix_initialized = False
+            tracing_module._tracer_provider = None
+            tracing_module._phoenix_session = None
+
+
 class TestShutdownTracing:
     def test_noop_when_not_initialized(self) -> None:
         """shutdown_tracing is safe to call when nothing was started."""
@@ -113,26 +157,41 @@ class TestShutdownTracing:
         assert tracing_module._phoenix_initialized is False
 
     def test_calls_close_app(self) -> None:
-        """shutdown_tracing calls px.close_app() and resets state."""
+        """shutdown_tracing flushes tracer, calls close_app, resets state."""
         import sast_triage.tracing as tracing_module
 
+        mock_provider = MagicMock()
         tracing_module._phoenix_initialized = True
         tracing_module._phoenix_session = MagicMock()
+        tracing_module._tracer_provider = mock_provider
 
+        call_order = []
+        mock_provider.shutdown.side_effect = (
+            lambda: call_order.append("provider_shutdown")
+        )
         mock_px = MagicMock()
+        mock_px.close_app.side_effect = (
+            lambda: call_order.append("close_app")
+        )
+
         with patch.dict("sys.modules", {"phoenix": mock_px}):
             shutdown_tracing()
 
+        mock_provider.shutdown.assert_called_once()
         mock_px.close_app.assert_called_once()
+        assert call_order == ["provider_shutdown", "close_app"]
         assert tracing_module._phoenix_initialized is False
         assert tracing_module._phoenix_session is None
+        assert tracing_module._tracer_provider is None
 
     def test_resets_state_even_on_error(self) -> None:
         """shutdown_tracing resets state even if close_app raises."""
         import sast_triage.tracing as tracing_module
 
+        mock_provider = MagicMock()
         tracing_module._phoenix_initialized = True
         tracing_module._phoenix_session = MagicMock()
+        tracing_module._tracer_provider = mock_provider
 
         mock_px = MagicMock()
         mock_px.close_app.side_effect = RuntimeError("boom")
@@ -141,6 +200,7 @@ class TestShutdownTracing:
 
         assert tracing_module._phoenix_initialized is False
         assert tracing_module._phoenix_session is None
+        assert tracing_module._tracer_provider is None
 
 
 class TestWaitForTraceReview:
