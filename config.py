@@ -23,7 +23,7 @@ DEFAULT_JUSTIFICATION_COMPARISON_MODEL = "gemini-2.5-flash"
 
 # Analysis Configuration
 MAX_ANALYSIS_ITERATIONS = 30  # Maximum iterations for LLM analysis per finding
-MAX_SEARCH_RESULTS = 5000  # Safety cap for search results (~500k tokens)
+MAX_SEARCH_RESULTS = 50  # Safety cap for search results
 MAX_LOG_RESULT_LENGTH = 5000  # Maximum length for logging tool results
 
 # Checkmarx API Configuration

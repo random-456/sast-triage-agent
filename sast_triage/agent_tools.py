@@ -139,50 +139,57 @@ def read_file(file_path: str) -> Dict:
 
 
 @tool
-def search_in_files(pattern: str, file_extension: str) -> Dict:
+def search_in_files(pattern: str, file_extensions: str = "*") -> Dict:
     """
     Search for a pattern in files within the codebase.
 
     Args:
         pattern: String or regex to search for
-        file_extension: File extension to search (e.g. "py", "js", "ts")
+        file_extensions: Comma-separated file extensions (e.g. "py,js,ts") or "*" for all files
 
     Returns:
         Search results with file paths and matching lines
     """
     try:
+        if file_extensions == "*":
+            search_path = os.path.join(CODEBASE_DIR, "**", "*")
+            files = glob.glob(search_path, recursive=True)
+            files = [f for f in files if os.path.isfile(f)]
+        else:
+            files = []
+            for ext in file_extensions.split(","):
+                ext = ext.strip().lstrip(".")
+                search_path = os.path.join(CODEBASE_DIR, "**", f"*.{ext}")
+                files.extend(glob.glob(search_path, recursive=True))
+
         results = []
-        file_pattern = f"*.{file_extension}"
-        search_path = os.path.join(CODEBASE_DIR, "**", file_pattern)
-        files = glob.glob(search_path, recursive=True)
-
         pattern_re = re.compile(pattern, re.IGNORECASE)
-        max_results = MAX_SEARCH_RESULTS  # Safety cap
+        max_results = MAX_SEARCH_RESULTS
 
-        for file_path in files:  # Search ALL files, no limit
+        for file_path in files:
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     lines = f.readlines()
                     for i, line in enumerate(lines):
                         if pattern_re.search(line):
                             rel_path = os.path.relpath(file_path, CODEBASE_DIR)
                             results.append({
-                                'file': rel_path,
-                                'line': i + 1,
-                                'content': line.strip()
+                                "file": rel_path,
+                                "line": i + 1,
+                                "content": line.strip(),
                             })
                             if len(results) >= max_results:
                                 break
                 if len(results) >= max_results:
                     break
-            except:
+            except (UnicodeDecodeError, PermissionError):
                 continue
 
         return {
-            'pattern': pattern,
-            'file_extension': file_extension,
-            'matches_found': len(results),
-            'results': results
+            "pattern": pattern,
+            "file_extensions": file_extensions,
+            "matches_found": len(results),
+            "results": results,
         }
     except Exception as e:
         return {"error": f"Search failed: {str(e)}"}

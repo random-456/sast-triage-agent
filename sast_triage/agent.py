@@ -247,7 +247,7 @@ class SASTTriageAgent:
             self.agent_logger.log_finding_complete(finding_log, decision)
             return decision
 
-    def update_csv_status(self, result_hash: str, csv_path: str = FINDINGS_JSON_FILE):
+    def update_csv_status(self, result_hash: str, csv_path: str = FINDINGS_CSV_FILE):
         """Update the triaged status in CSV file."""
         try:
             # Read CSV

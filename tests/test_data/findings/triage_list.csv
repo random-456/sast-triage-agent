@@ -1,3 +1,3 @@
-resultHash,severity,triaged
-hash-001,HIGH,no
-hash-002,MEDIUM,no
+resultHash,severity,state,triaged
+hash-001,HIGH,TO_VERIFY,no
+hash-002,MEDIUM,TO_VERIFY,no
