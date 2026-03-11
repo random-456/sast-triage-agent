@@ -31,22 +31,38 @@ DEFAULT_MODEL=gemini-2.5-flash
 
 ## Usage
 
+The CLI provides two sub-commands: `run` (non-interactive) and `interactive` (guided prompts).
+
+### Non-interactive mode
+
 ```bash
-python run_triage.py PROJECT_NAME [OPTIONS]
+python run_triage.py run PROJECT_NAME --gitleaks-report <path|none> [OPTIONS]
 
 # Examples:
-python run_triage.py my-project                                     # Analyze project with default settings
-python run_triage.py my-project --severities HIGH                   # Only HIGH severity findings
-python run_triage.py my-project --output-dir ./analysis             # Custom output directory
-python run_triage.py my-project --branch main                       # Analyze specific branch
-python run_triage.py my-project --finding <cx_result_hash>          # Analyze a single finding by its result hash
+python run_triage.py run my-project --gitleaks-report none                          # Default settings
+python run_triage.py run my-project --gitleaks-report report.csv --severities HIGH  # Only HIGH severity
+python run_triage.py run my-project --gitleaks-report none --states TO_VERIFY,CONFIRMED
+python run_triage.py run my-project --gitleaks-report none --branch main            # Specific branch
+python run_triage.py run my-project --gitleaks-report none --findings <hash1>,<hash2>
 ```
 
 Options:
 - `--severities`: Comma-separated severities (default: HIGH,MEDIUM)
-- `--output-dir`: Output directory (default: current directory)
+- `--states`: Comma-separated Checkmarx states (default: TO_VERIFY)
+- `--output`: Output directory (default: output)
 - `--branch`: Git branch to analyze (default: default.SecurityPipeline)
-- `--finding`: The Checkmarx result hash of a single finding to analyze
+- `--findings`: Comma-separated result hashes (bypasses severity and state filters)
+- `--gitleaks-report`: Path to Gitleaks CSV report, or 'none' (required)
+- `--keep-temp`: Preserve the temp directory after execution
+- `-v, --verbose`: Enable verbose output
+
+### Interactive mode
+
+```bash
+python run_triage.py interactive [-v]
+```
+
+Guided prompts will collect project name, branch, scope, states, severities, model, Gitleaks path, and output directory. A configuration summary is displayed before execution, and preprocessing results are shown for confirmation.
 
 ## Output Structure
 
