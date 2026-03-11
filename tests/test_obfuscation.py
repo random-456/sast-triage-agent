@@ -53,6 +53,17 @@ class TestIpv6Obfuscation:
         assert "__IPV6__" in content
         assert report.replacements_by_type.get("IPV6", 0) >= 1
 
+    def test_port_number_not_matched(self, tmp_path: str) -> None:
+        """Port numbers like :3000 are not false-positive matched as IPv6."""
+        original = "server running on http://localhost:3000\n"
+        _write_file(tmp_path, "app.log", original)
+        report = obfuscate_codebase(str(tmp_path))
+
+        content = _read_file(os.path.join(tmp_path, "app.log"))
+        assert ":3000" in content
+        assert "__IPV6__" not in content
+        assert report.replacements_by_type.get("IPV6", 0) == 0
+
 
 class TestMacObfuscation:
     def test_mac_replaced(self, tmp_path: str) -> None:

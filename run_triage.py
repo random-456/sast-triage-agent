@@ -219,11 +219,6 @@ def run_triage(
                         for k, v in obfuscation_report.replacements_by_type.items()
                     )
                     logger.info(f"Obfuscation breakdown: {breakdown}")
-                for entry in obfuscation_report.entries:
-                    logger.debug(
-                        f"  {entry.file}:{entry.line} "
-                        f"[{entry.pattern_type}] {entry.original}"
-                    )
         else:
             logger.warning("No repository URL found, continuing without codebase.")
 
