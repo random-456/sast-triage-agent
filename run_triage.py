@@ -25,6 +25,7 @@ os.environ['GRPC_DEFAULT_SSL_ROOTS_FILE_PATH'] = CERTIFICATES_CRT_FILE
 
 from sast_triage.agent import SASTTriageAgent
 from sast_triage.preprocessing.obfuscation import obfuscate_codebase
+from sast_triage.preprocessing.secret_masking import mask_secrets
 from utils.checkmarx_helpers import CheckmarxClient
 from utils.git_helpers import GitHelpers
 from utils.click_helpers import CommaList
@@ -109,6 +110,11 @@ async def run_triage_analysis(model_name: str, output_dir: str, project_name: st
 @click.option("--severities", default=",".join(DEFAULT_SEVERITIES), help="Comma-separated list of severities")
 @click.option("--branch", default=DEFAULT_BRANCH, help="Git branch to analyze")
 @click.option("--output", "output_dir", default=DEFAULT_OUTPUT_DIR, help="Output directory")
+@click.option(
+    "--gitleaks-report",
+    required=True,
+    help="Path or URL to Gitleaks CSV report, or 'none' if no report exists",
+)
 @click.option("--keep-temp", is_flag=True, help=f"Whether to keep {TEMP_DIR} or not")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
 def run_triage(
@@ -117,9 +123,10 @@ def run_triage(
     severities: str,
     branch: str,
     output_dir: str,
+    gitleaks_report: str,
     keep_temp: bool,
     finding_hashes: List,
-    verbose: bool
+    verbose: bool,
 ) -> None:
     """
     Fetch SAST findings from Checkmarx One and run triage analysis.
@@ -219,6 +226,23 @@ def run_triage(
                         for k, v in obfuscation_report.replacements_by_type.items()
                     )
                     logger.info(f"Obfuscation breakdown: {breakdown}")
+
+                # Mandatory: mask secrets from Gitleaks report
+                if gitleaks_report.lower() != "none":
+                    logger.info("Masking secrets from Gitleaks report...")
+                    masking_report = mask_secrets(
+                        CODEBASE_DIR, gitleaks_report
+                    )
+                    logger.info(
+                        f"Secret masking complete: "
+                        f"{masking_report.total_secrets_masked} secrets "
+                        f"masked in {masking_report.files_modified} files"
+                    )
+                else:
+                    logger.info(
+                        "No Gitleaks report provided "
+                        "(--gitleaks-report none)"
+                    )
         else:
             logger.warning("No repository URL found, continuing without codebase.")
 
