@@ -62,6 +62,9 @@ async def _run_triage_analysis(
     scan_id: str = None,
     checkmarx_base_url: str = None,
     branch: str = None,
+    repo_url: str = None,
+    obfuscation_report=None,
+    masking_report=None,
 ) -> int:
     """
     Run the triage analysis on the fetched data.
@@ -74,6 +77,9 @@ async def _run_triage_analysis(
         scan_id: Scan identifier for reporting
         checkmarx_base_url: Checkmarx base URL for report links
         branch: Git branch being analyzed
+        repo_url: Repository URL for logging context
+        obfuscation_report: ObfuscationReport from preprocessing
+        masking_report: MaskingReport from preprocessing
 
     Returns:
         Exit code (0 for success, 1 for failure)
@@ -85,7 +91,10 @@ async def _run_triage_analysis(
         vertex_location = os.getenv("DEFAULT_LOCATION")
 
         if not vertex_project:
-            logger.error("PROJECT_ID environment variable is required for Vertex AI")
+            logger.error(
+                "PROJECT_ID environment variable is required "
+                "for Vertex AI"
+            )
             return 1
 
         logger.info(f"Using Vertex AI project: {vertex_project}")
@@ -101,8 +110,16 @@ async def _run_triage_analysis(
             scan_id=scan_id,
             checkmarx_base_url=checkmarx_base_url,
             branch=branch,
+            repo_url=repo_url,
             output_dir=output_dir,
         )
+
+        # Log preprocessing reports in the session log
+        if obfuscation_report or masking_report:
+            agent.agent_logger.log_preprocessing(
+                obfuscation_report=obfuscation_report,
+                masking_report=masking_report,
+            )
 
         await agent.process_all_findings(output_dir)
         logger.info("Analysis complete!")
@@ -311,6 +328,9 @@ def execute_triage(
                 scan_id,
                 base_url,
                 branch,
+                repo_url=repo_url,
+                obfuscation_report=obfuscation_report,
+                masking_report=masking_report,
             )
         )
 

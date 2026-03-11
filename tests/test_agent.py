@@ -85,7 +85,7 @@ class TestSASTTriageAgent:
         assert csv_path_param.default == FINDINGS_CSV_FILE
     
     def test_save_incremental_result(self, agent, tmp_path):
-        """Test saving incremental results."""
+        """Test saving incremental results with metadata wrapper."""
         assessments_file = tmp_path / "findings_assessment.json"
         agent.assessments_file = str(assessments_file)
 
@@ -100,8 +100,10 @@ class TestSASTTriageAgent:
         assert assessments_file.exists()
         with open(assessments_file, "r") as f:
             data = json.load(f)
-        assert len(data) == 1
-        assert data[0]["resultHash"] == "hash-001"
+        assert "metadata" in data
+        assert "results" in data
+        assert len(data["results"]) == 1
+        assert data["results"][0]["resultHash"] == "hash-001"
 
         result2 = {
             "resultHash": "hash-002",
@@ -113,8 +115,8 @@ class TestSASTTriageAgent:
 
         with open(assessments_file, "r") as f:
             data = json.load(f)
-        assert len(data) == 2
-        assert data[1]["resultHash"] == "hash-002"
+        assert len(data["results"]) == 2
+        assert data["results"][1]["resultHash"] == "hash-002"
 
         # Update existing result
         result1_updated = {
@@ -127,9 +129,9 @@ class TestSASTTriageAgent:
 
         with open(assessments_file, "r") as f:
             data = json.load(f)
-        assert len(data) == 2
-        assert data[0]["assessment_result"] == "NOT_EXPLOITABLE"
-        assert data[0]["assessment_confidence"] == 0.95
+        assert len(data["results"]) == 2
+        assert data["results"][0]["assessment_result"] == "NOT_EXPLOITABLE"
+        assert data["results"][0]["assessment_confidence"] == 0.95
     
     def test_get_pending_findings(self, agent, test_findings_path):
         """Test getting pending findings from CSV."""
@@ -188,6 +190,11 @@ class TestSASTTriageAgent:
                     "justification": "Direct SQL concatenation detected",
                 },
             }]
+            mock_response.usage_metadata = {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+            }
 
             agent.llm_with_tools = Mock()
             agent.llm_with_tools.ainvoke = AsyncMock(return_value=mock_response)
