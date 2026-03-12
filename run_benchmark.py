@@ -6,7 +6,7 @@ import logging
 from utils.banner import display_banner
 from utils.generic_logging import setup_logging
 from benchmark.benchmark_helpers import BenchmarkHelpers
-from run_triage import run_triage
+from run_triage import cli
 
 from config import DEFAULT_OUTPUT_DIR, APP_NAME, BENCHMARK_DATASETS_DIR, DEFAULT_TRIAGE_MODEL
 
@@ -42,10 +42,10 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
             project_output_dir = os.path.join(output_dir, project_name)
             os.makedirs(project_output_dir, exist_ok=True)
 
-            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir]
+            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", "none"]
 
             logger.debug(f"Launching run_triage command with parameters : {' '.join(parameters)}")
-            result = runner.invoke(run_triage, parameters)
+            result = runner.invoke(cli, ["run"] + parameters)
 
             # Re-setting up logging as it will have been closed when finishin the run_triage
             setup_logging(level=logging.DEBUG) if verbose else setup_logging(level=logging.INFO)
