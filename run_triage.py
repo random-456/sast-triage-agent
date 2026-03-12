@@ -57,12 +57,12 @@ from config import (
 async def _run_triage_analysis(
     model_name: str,
     output_dir: str,
-    project_name: str = None,
-    project_id: str = None,
-    scan_id: str = None,
-    checkmarx_base_url: str = None,
-    branch: str = None,
-    repo_url: str = None,
+    project_name: Optional[str] = None,
+    project_id: Optional[str] = None,
+    scan_id: Optional[str] = None,
+    checkmarx_base_url: Optional[str] = None,
+    branch: Optional[str] = None,
+    repo_url: Optional[str] = None,
     obfuscation_report=None,
     masking_report=None,
 ) -> int:
