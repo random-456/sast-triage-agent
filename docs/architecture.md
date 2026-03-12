@@ -25,23 +25,19 @@ The system is built around a CLI entry point (`run_triage.py`) that orchestrates
 ## Processing Flow
 
 ```mermaid
-flowchart TD
+flowchart LR
     A[CLI Input] --> B{Mode?}
-    B -->|Non-Interactive| C[Parse CLI Arguments]
-    B -->|Interactive| D[Guided Prompts]
-    C --> E[Resolve Project]
-    D --> E
-    E --> F[Fetch Findings from Checkmarx]
-    F --> G[Filter by State + Severity]
-    G --> H[Clone Repository]
-    H --> I[Obfuscate Sensitive Elements]
-    I --> J[Mask Secrets from Gitleaks]
-    J --> K{Interactive?}
-    K -->|Yes| L[Show Summary + Confirm]
-    K -->|No| M[Run Triage Analysis]
-    L -->|Confirmed| M
-    L -->|Declined| N[Exit]
-    M --> O[Save Results + Logs]
+    B -->|run| C[Parse CLI Args] --> E
+    B -->|interactive| D[Guided Prompts] --> D1{Confirm Config?}
+    D1 -->|No| X[Exit]
+    D1 -->|Yes| E[Resolve Project & Fetch Findings]
+    E --> F[Clone & Preprocess Codebase]
+    F --> G{Interactive?}
+    G -->|No| I[Run Triage Analysis]
+    G -->|Yes| H{Confirm Preprocessing?}
+    H -->|No| X
+    H -->|Yes| I
+    I --> J[Save Results + Logs]
 ```
 
 ### Step-by-step

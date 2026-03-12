@@ -29,6 +29,9 @@ REFRESH_TOKEN=refresh-token
 # Vertex AI Configuration
 PROJECT_ID=gcp-project-id
 DEFAULT_LOCATION=europe-west4
+
+# Optional: Phoenix tracing (set to true, 1, or yes to enable)
+# SAST_TRIAGE_TRACE=false
 ```
 
 ## Application Constants
@@ -116,7 +119,7 @@ pip install arize-phoenix openinference-instrumentation-langchain
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.10+
 - Access to a Google Cloud project with Vertex AI API enabled
 - Application Default Credentials configured: `gcloud auth application-default login`
 - Access to a Checkmarx One instance with a valid refresh token

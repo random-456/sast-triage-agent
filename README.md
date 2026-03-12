@@ -13,7 +13,7 @@ cp .env.example .env
 ```
 
 **Prerequisites:**
-- Python 3.12+
+- Python 3.10+
 - Access to Google Cloud project with Vertex AI API enabled
 - Application Default Credentials configured (`gcloud auth application-default login`)
 - Access to a Checkmarx One instance with a valid refresh token
