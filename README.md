@@ -100,6 +100,8 @@ Compare model accuracy against human-reviewed findings:
 python run_benchmark.py --model gemini-2.5-pro --output benchmark_results -v
 ```
 
+> **Note:** Benchmark runs skip Gitleaks secrets masking (`--gitleaks-report none`) to focus purely on triage accuracy.
+
 Benchmark datasets are stored in `benchmark/datasets/`. Each file contains findings with analyst-provided ground truth:
 
 ```json
