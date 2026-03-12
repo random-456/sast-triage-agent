@@ -134,9 +134,10 @@ class SASTTriageAgent:
 
         # File to store assessment results (with timestamp)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        name = project_name or "unknown"
         self.assessments_file = os.path.join(
             output_dir,
-            f"findings_assessment_{project_name}_{timestamp}.json",
+            f"findings_assessment_{name}_{timestamp}.json",
         )
 
     async def analyze_single_finding(
