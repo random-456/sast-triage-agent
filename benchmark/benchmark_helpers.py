@@ -7,6 +7,7 @@ import json
 import statistics
 import traceback
 import os
+import glob as glob_module
 
 from benchmark.benchmark_models import DatasetProject, JustificationComparisonResult
 from benchmark.justification_check import JustificationAICheck
@@ -65,8 +66,17 @@ class BenchmarkHelpers:
             dataset_data = json.load(open(dataset_filepath))
 
             # Then we get the data from the assessment performed by the agent
-            agent_assessment_filepath = os.path.join(output_dir, f"findings_assessment_{cxone_project_name}.json")
+            pattern = os.path.join(output_dir, f"findings_assessment_{cxone_project_name}_*.json")
+            matches = sorted(glob_module.glob(pattern), key=os.path.getmtime, reverse=True)
+            if not matches:
+                self.logger.error(f"No assessment file found matching {pattern}")
+                return None
+            agent_assessment_filepath = matches[0]
             agent_assessment_data = json.load(open(agent_assessment_filepath))
+
+            # Unwrap metadata envelope if present
+            if isinstance(agent_assessment_data, dict) and "results" in agent_assessment_data:
+                agent_assessment_data = agent_assessment_data["results"]
 
             # Then we get data for each finding and use it to enrich the dataset data
             enriched_dataset_data = dataset_data
