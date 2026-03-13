@@ -67,6 +67,8 @@ These metrics treat triage as a three-class classification problem (`CONFIRMED`,
 
 ### Legacy Metrics
 
+Accuracy alone is misleading for SAST data — when most findings are not exploitable, a model that dismisses everything still scores high on accuracy while missing every real vulnerability. Use per-class precision and recall above for go/no-go decisions.
+
 | Metric | Description |
 |--------|-------------|
 | Average accuracy | Percentage of findings where agent matches analyst result |
@@ -91,16 +93,17 @@ The table below defines two tiers for a production go/no-go decision. **Minimum*
 | Metric | Minimum | Target | Rationale |
 |--------|---------|--------|-----------|
 | CONFIRMED recall | 0.90 | 0.95 | Missing a real vulnerability is the highest-risk failure mode. |
-| CONFIRMED precision | 0.70 | 0.85 | Some over-flagging is acceptable; analysts review CONFIRMED items anyway. |
+| CONFIRMED precision | 0.60 | 0.70 | Over-flagging is accepted to protect recall; analysts review CONFIRMED items anyway. |
 | NOT_EXPLOITABLE precision | 0.90 | 0.95 | When the agent dismisses a finding, it must be right — no silent misses. |
-| NOT_EXPLOITABLE recall | 0.70 | 0.85 | Under-dismissing creates extra analyst work but no security risk. |
-| Average accuracy | 80% | 90% | Overall agreement rate across all classes. |
+| NOT_EXPLOITABLE recall | 0.65 | 0.80 | Under-dismissing creates extra analyst work but no security risk. |
+| Average accuracy | 75% | 85% | Lower than typical ML targets because we deliberately accept over-confirmation. |
 | Average score | 2.0 | 2.5 | Justification quality (0-4 scale); ≥ 2.0 means reasoning is at least adequate. |
 
 **Reading the thresholds:**
 
 - **CONFIRMED recall** is the single most important metric. A value below 0.90 means more than 1 in 10 real vulnerabilities are missed — unacceptable for automated post-processing.
 - **NOT_EXPLOITABLE precision** is the second priority. When the agent says "not exploitable", that finding leaves the review queue. A false dismissal is a silent miss.
+- **CONFIRMED precision** is intentionally relaxed. The agent is tuned to err on the side of confirming when uncertain. This is a fail-safe trade-off: more analyst workload on false positives is preferable to missing real vulnerabilities.
 - Precision and recall for **REFUSED** are intentionally omitted. REFUSED is a safety valve — the agent should refuse rather than guess. A high REFUSED rate signals low model confidence, not poor classification.
 
 ## Output Files
