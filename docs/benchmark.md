@@ -95,7 +95,7 @@ The table below defines two tiers for a production go/no-go decision. **Minimum*
 | CONFIRMED recall | 0.90 | 0.95 | Missing a real vulnerability is the highest-risk failure mode. |
 | CONFIRMED precision | 0.60 | 0.70 | Over-flagging is accepted to protect recall; analysts review CONFIRMED items anyway. |
 | NOT_EXPLOITABLE precision | 0.90 | 0.95 | When the agent dismisses a finding, it must be right — no silent misses. |
-| NOT_EXPLOITABLE recall | 0.65 | 0.80 | Under-dismissing creates extra analyst work but no security risk. |
+| NOT_EXPLOITABLE recall | 0.60 | 0.70 | Mirrors CONFIRMED precision — both reflect the accepted over-confirmation rate. |
 | Average accuracy | 75% | 85% | Lower than typical ML targets because we deliberately accept over-confirmation. |
 | Average score | 2.0 | 2.5 | Justification quality (0-4 scale); ≥ 2.0 means reasoning is at least adequate. |
 
