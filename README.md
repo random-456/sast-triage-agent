@@ -132,3 +132,4 @@ Detailed documentation is available in the [`docs/`](docs/) directory:
 - [Usage Guide](docs/usage-guide.md) -- CLI reference for both modes with examples
 - [Preprocessing](docs/preprocessing.md) -- Obfuscation and secret masking pipeline
 - [Configuration](docs/configuration.md) -- Environment variables, constants, model setup
+- [Benchmark](docs/benchmark.md) -- Benchmark metrics, datasets, and output format

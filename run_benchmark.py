@@ -30,6 +30,8 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
     datasets = [os.path.join(BENCHMARK_DATASETS_DIR, f) for f in os.listdir(BENCHMARK_DATASETS_DIR) if f.endswith(".json")]
     logger.info(f"Found {len(datasets)} datasets to evaluate !")
 
+    all_datasets_data = []
+
     for dataset in datasets:
         json_data = BenchmarkHelpers.load_and_validate_dataset(dataset)
 
@@ -79,9 +81,18 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
                         raw_dataset_data=[dataset_data_with_scores],
                         output_dir=project_output_dir
                     )
+
+                    all_datasets_data.append(dataset_data_with_scores)
             else:
                 logger.error("Command failed!")
                 logger.error(result.exception)
+
+    # Generate cross-dataset summary KPIs
+    BenchmarkHelpers.generate_summary_kpis(
+        model_name=model_name,
+        all_datasets_data=all_datasets_data,
+        output_dir=output_dir,
+    )
 
 if __name__ == "__main__":
     run_benchmark()
