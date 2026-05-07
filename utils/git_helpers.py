@@ -1,5 +1,6 @@
 """Git repository management utilities."""
 
+import base64
 import os
 import subprocess
 import logging
@@ -30,8 +31,11 @@ class GitHelpers:
             quiet: Whether to suppress git output
             host_tokens: Optional mapping of lowercase hostname -> access token.
                 If the URL's host is in the map, the matching token is sent as
-                a Bearer Authorization header for this clone invocation only
-                (it is not written to .git/config or embedded in the URL).
+                an HTTP Basic Authorization header (with the conventional
+                "x-access-token" username) for this clone invocation only — it
+                is not written to .git/config or embedded in the URL. Basic is
+                used because GitHub Enterprise Server does not reliably accept
+                Bearer for git-over-HTTPS, while github.com accepts both.
                 Hosts not in the map fall back to the local git CLI credentials.
 
         Returns:
@@ -118,15 +122,19 @@ def _build_clone_command(
     quiet: bool,
     token: Optional[str],
 ) -> List[str]:
-    """Build the argv list for `git clone`, optionally with a Bearer auth header.
+    """Build the argv list for `git clone`, optionally with a Basic auth header.
 
     The `-c http.extraHeader=...` flag goes before the `clone` subcommand so it
     only applies to this invocation and is not persisted in the cloned repo's
-    config.
+    config. The token is base64-encoded as `x-access-token:<token>` — the
+    pattern used by GitHub Apps and GitHub Actions, which works for classic
+    PATs, fine-grained PATs, and App installation tokens against both
+    github.com and GitHub Enterprise Server.
     """
     cmd: List[str] = ["git"]
     if token:
-        cmd += ["-c", f"http.extraHeader=Authorization: Bearer {token}"]
+        creds = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+        cmd += ["-c", f"http.extraHeader=Authorization: Basic {creds}"]
     cmd += ["clone", "--depth", "1", repo_url, target_dir]
     if quiet:
         cmd.append("--quiet")

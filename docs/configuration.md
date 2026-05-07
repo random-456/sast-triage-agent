@@ -18,7 +18,7 @@ The application reads configuration from a `.env` file in the project root. Copy
 |----------|---------|-------------|
 | `DEFAULT_LOCATION` | `europe-west4` | Vertex AI region |
 | `SAST_TRIAGE_TRACE` | -- | Set to `true`, `1`, or `yes` to enable Phoenix tracing |
-| `GITHUB_TOKENS` | -- | Per-host GitHub access tokens for HTTPS clones. Format: `host=token,host=token` (e.g. `github.com=ghp_xxx,ghe.example.com=ghp_yyy`). Hostname is matched case-insensitively against the Checkmarx-supplied repo URL; unmatched hosts fall back to the local git CLI credentials. The token is sent as a Bearer header for the clone only — never written to the cloned repo's git config. |
+| `GITHUB_TOKENS` | -- | Per-host GitHub access tokens for HTTPS clones. Format: `host=token,host=token` (e.g. `github.com=ghp_xxx,ghe.example.com=ghp_yyy`). Hostname is matched case-insensitively against the Checkmarx-supplied repo URL; unmatched hosts fall back to the local git CLI credentials. The token is sent as an HTTP Basic Authorization header (username `x-access-token`) for the clone only — never written to the cloned repo's git config. |
 
 ### `.env.example`
 
@@ -37,9 +37,9 @@ DEFAULT_LOCATION=europe-west4
 # Optional: per-host GitHub access tokens used when cloning HTTPS repos.
 # Format: comma-separated "host=token" pairs. Hostname is matched
 # case-insensitively against the URL returned by Checkmarx; non-matching
-# hosts fall back to the local git CLI credentials. The token is sent as a
-# Bearer Authorization header for the clone only — never written to
-# .git/config or the URL.
+# hosts fall back to the local git CLI credentials. The token is sent as an
+# HTTP Basic Authorization header (username "x-access-token") for the clone
+# only — never written to .git/config or the URL.
 # GITHUB_TOKENS=github.com=ghp_xxx,ghe.example.com=ghp_yyy
 ```
 
