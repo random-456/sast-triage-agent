@@ -41,7 +41,9 @@ class TestCloneRepositoryCommandConstruction:
         assert ok is True
         cmd = captured_cmd["cmd"]
         assert "extraHeader" not in " ".join(cmd)
+        # Canonical shape: options before positional args.
         assert cmd[:2] == ["git", "clone"]
+        assert cmd.index("--quiet") < cmd.index("https://github.com/foo/bar.git")
 
     def test_host_match_injects_basic_header(self, tmp_path, captured_cmd):
         target = tmp_path / "repo"
@@ -107,17 +109,24 @@ class TestCloneRepositoryCommandConstruction:
         assert all("ghp_aaa" not in part for part in cmd)
         assert all("ghp_bbb" not in part for part in cmd)
 
-    def test_ssh_url_does_not_inject_header(self, tmp_path, captured_cmd):
+    def test_ssh_url_with_matching_entry_warns_and_skips_token(
+        self, tmp_path, captured_cmd, caplog
+    ):
         target = tmp_path / "repo"
-        ok = GitHelpers.clone_repository(
-            "ssh://git@github.com/foo/bar.git",
-            target_dir=str(target),
-            host_tokens={"github.com": "ghp_secret123"},
-        )
+        with caplog.at_level(logging.WARNING, logger="utils.git_helpers"):
+            ok = GitHelpers.clone_repository(
+                "ssh://git@github.com/foo/bar.git",
+                target_dir=str(target),
+                host_tokens={"github.com": "ghp_secret123"},
+            )
         assert ok is True
         cmd = captured_cmd["cmd"]
         assert all("ghp_secret123" not in part for part in cmd)
         assert "extraHeader" not in " ".join(cmd)
+        assert any(
+            "URL scheme is 'ssh'" in r.message and r.levelname == "WARNING"
+            for r in caplog.records
+        )
 
 
 class TestCloneRepositoryErrorRedaction:

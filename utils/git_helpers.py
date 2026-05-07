@@ -54,18 +54,7 @@ class GitHelpers:
             )
             return True
 
-        token = _resolve_token(repo_url, host_tokens)
-        if host_tokens and not token:
-            host = (urlparse(repo_url).hostname or "").lower()
-            cls.logger.info(
-                f"No GITHUB_TOKENS entry for host '{host}' — "
-                "using local git credentials."
-            )
-        if token:
-            cls.logger.info(
-                f"Authenticating with token from GITHUB_TOKENS for host "
-                f"'{(urlparse(repo_url).hostname or '').lower()}'."
-            )
+        token = _resolve_token(repo_url, host_tokens, cls.logger)
 
         cls.logger.info(f"Cloning repository from {repo_url}...")
 
@@ -100,20 +89,41 @@ class GitHelpers:
 
 
 def _resolve_token(
-    repo_url: str, host_tokens: Optional[Mapping[str, str]]
+    repo_url: str,
+    host_tokens: Optional[Mapping[str, str]],
+    logger: logging.Logger,
 ) -> Optional[str]:
     """Return the token for the URL's host, or None if there is no match.
 
-    Hostname comparison is case-insensitive. Only HTTPS URLs are eligible
-    (Bearer-header auth is meaningless over SSH/git protocols).
+    Hostname comparison is case-insensitive. Only HTTPS URLs are eligible —
+    Basic-header auth has no effect over SSH/git protocols. If a host entry
+    exists but the URL scheme is not HTTPS, a warning is emitted so the user
+    is not left wondering why the configured token did not apply.
     """
     if not host_tokens:
         return None
     parsed = urlparse(repo_url)
-    if parsed.scheme.lower() != "https":
-        return None
     host = (parsed.hostname or "").lower()
-    return host_tokens.get(host)
+    scheme = parsed.scheme.lower()
+    configured = host_tokens.get(host)
+
+    if configured and scheme == "https":
+        logger.info(
+            f"Authenticating with token from GITHUB_TOKENS for host '{host}'."
+        )
+        return configured
+    if configured:
+        logger.warning(
+            f"GITHUB_TOKENS has an entry for host '{host}' but URL scheme is "
+            f"'{scheme}' — token only applies to https URLs; falling back to "
+            "local git credentials."
+        )
+        return None
+    logger.info(
+        f"No GITHUB_TOKENS entry for host '{host}' — "
+        "using local git credentials."
+    )
+    return None
 
 
 def _build_clone_command(
@@ -135,9 +145,10 @@ def _build_clone_command(
     if token:
         creds = base64.b64encode(f"x-access-token:{token}".encode()).decode()
         cmd += ["-c", f"http.extraHeader=Authorization: Basic {creds}"]
-    cmd += ["clone", "--depth", "1", repo_url, target_dir]
+    cmd += ["clone"]
     if quiet:
         cmd.append("--quiet")
+    cmd += ["--depth", "1", repo_url, target_dir]
     return cmd
 
 
