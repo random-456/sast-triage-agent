@@ -6,6 +6,7 @@
         "languageName": "javascript",
         "queryName": "SQL_Injection",
         "severity": "HIGH",
+        "description": "User input is concatenated into a SQL query in /vulnerable.js at line 12.",
         "dataflow": [
             {
                 "fileName": "/vulnerable.js",
@@ -34,6 +35,7 @@
         "languageName": "javascript",
         "queryName": "XSS_Reflected",
         "severity": "MEDIUM",
+        "description": "User input is reflected without encoding in /nonexistent.js at line 20.",
         "dataflow": [
             {
                 "fileName": "/nonexistent.js",

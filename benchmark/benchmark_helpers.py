@@ -1,14 +1,15 @@
 from pydantic import ValidationError
 from typing import Dict, List
-from collections import defaultdict
 from datetime import datetime
 import logging
 import json
 import statistics
 import traceback
 import os
+import glob as glob_module
 
 from benchmark.benchmark_models import DatasetProject, JustificationComparisonResult
+from benchmark.benchmark_metrics import build_full_kpi_output
 from benchmark.justification_check import JustificationAICheck
 
 from config import BENCHMARK_DATASETS_DIR
@@ -65,8 +66,17 @@ class BenchmarkHelpers:
             dataset_data = json.load(open(dataset_filepath))
 
             # Then we get the data from the assessment performed by the agent
-            agent_assessment_filepath = os.path.join(output_dir, f"findings_assessment_{cxone_project_name}.json")
+            pattern = os.path.join(output_dir, f"findings_assessment_{cxone_project_name}_*.json")
+            matches = sorted(glob_module.glob(pattern), key=os.path.getmtime, reverse=True)
+            if not matches:
+                self.logger.error(f"No assessment file found matching {pattern}")
+                return None
+            agent_assessment_filepath = matches[0]
             agent_assessment_data = json.load(open(agent_assessment_filepath))
+
+            # Unwrap metadata envelope if present
+            if isinstance(agent_assessment_data, dict) and "results" in agent_assessment_data:
+                agent_assessment_data = agent_assessment_data["results"]
 
             # Then we get data for each finding and use it to enrich the dataset data
             enriched_dataset_data = dataset_data
@@ -174,83 +184,55 @@ class BenchmarkHelpers:
             self.logger.error(traceback.format_exc())
 
     @classmethod
-    def generate_kpis(self, model_name: str, raw_dataset_data: List, output_dir: str) -> None:
+    def generate_kpis(
+        self, model_name: str, raw_dataset_data: List, output_dir: str,
+    ) -> None:
+        """Generate KPI file for a single dataset."""
         try:
             if not raw_dataset_data:
                 self.logger.warning("Empty dataset data. Skipping KPI generation...")
                 return
 
-            language_data, category_data, complexity_data, severity_data = (
-                defaultdict(lambda: {
-                    "total_count": 0,
-                    "accurate_count": 0,
-                    "cumulated_score": 0,
-                    "cumulated_confidence": 0
-                }) for _ in range(4)
-            )
-            cumulated_average_score = 0
+            output = build_full_kpi_output(raw_dataset_data)
 
-            for project in raw_dataset_data:
-                findings = project.get("findings", [])
-                project_average_score = project.get("average_score", 0)
-                cumulated_average_score += project_average_score
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            filename = f"{timestamp}_{model_name.replace(' ', '-')}_benchmark_kpis.json"
+            kpis_filepath = os.path.join(output_dir, filename)
 
-                for finding in findings:
-                    language = finding.get("language")
-                    category = finding.get("category")
-                    complexity = finding.get("complexity")
-                    severity = finding.get("severity")
-
-                    analyst_triage_result = finding.get("analyst_triage", {}).get("result", 0)
-                    agent_triage_result = finding.get("agent_triage", {}).get("result", 0)
-                    is_accurate = 1 if analyst_triage_result == agent_triage_result else 0
-
-                    score = finding.get("score", 0)
-                    confidence = finding.get("confidence", 0)
-
-                    language_stats = language_data[language]
-                    category_stats = category_data[category]
-                    complexity_stats = complexity_data[complexity]
-                    severity_stats = severity_data[severity]
-
-                    for stats in [language_stats, category_stats, complexity_stats, severity_stats]:
-                        stats["total_count"] += 1
-                        stats["accurate_count"] += is_accurate
-                        stats["cumulated_score"] += score
-                        stats["cumulated_confidence"] += confidence
-
-            output = {
-                "average_score": cumulated_average_score / len(raw_dataset_data)
-            }
-
-            aggregated_data = {
-                "language": language_data,
-                "category": category_data,
-                "complexity": complexity_data,
-                "severity": severity_data
-            }
-
-            for criteria in aggregated_data:
-                criteria_kpi_data = []
-                aggregated_criteria_data = aggregated_data.get(criteria)
-
-                for criteria_entry in aggregated_criteria_data:
-                    criteria_entry_value = aggregated_criteria_data.get(criteria_entry)
-                    criteria_kpi_data.append({
-                        criteria_entry: {
-                            "average_accuracy": criteria_entry_value["accurate_count"] / criteria_entry_value["total_count"] * 100,
-                            "average_score": criteria_entry_value["cumulated_score"] / criteria_entry_value["total_count"],
-                            "average_confidence": criteria_entry_value["cumulated_confidence"] / criteria_entry_value["total_count"]
-                        }
-                    })
-
-                output[f"{criteria}_kpi"] = criteria_kpi_data
-
-            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-            kpis_filepath = os.path.join(output_dir, f"{timestamp}_{model_name.replace(' ', '-')}_benchmark_kpis.json")
-
-            json.dump(output, open(kpis_filepath, "w"), indent=4)
+            with open(kpis_filepath, "w") as f:
+                json.dump(output, f, indent=4)
             self.logger.info(f"Saved KPIs data to {kpis_filepath}")
-        except:
+        except Exception:
             self.logger.error("Failed to generate KPIs from enriched datasets data")
+            self.logger.error(traceback.format_exc())
+
+    @classmethod
+    def generate_summary_kpis(
+        self,
+        model_name: str,
+        all_datasets_data: List,
+        output_dir: str,
+    ) -> None:
+        """Generate a cross-dataset summary KPI file at the output root."""
+        try:
+            if not all_datasets_data:
+                self.logger.warning(
+                    "No datasets data for summary. Skipping..."
+                )
+                return
+
+            output = build_full_kpi_output(all_datasets_data)
+
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            filename = (
+                f"{timestamp}_{model_name.replace(' ', '-')}"
+                "_benchmark_summary.json"
+            )
+            summary_filepath = os.path.join(output_dir, filename)
+
+            with open(summary_filepath, "w") as f:
+                json.dump(output, f, indent=4)
+            self.logger.info(f"Saved summary KPIs to {summary_filepath}")
+        except Exception:
+            self.logger.error("Failed to generate summary KPIs")
             self.logger.error(traceback.format_exc())

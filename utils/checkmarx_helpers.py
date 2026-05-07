@@ -247,14 +247,11 @@ class CheckmarxClient:
             self.logger.info(f"Filtering by severities: {', '.join(severities)}")
 
         while True:
-            findings_url = f"{self.base_url}/api/sast-results"
+            findings_url = f"{self.base_url}/api/results"
             findings_params = {
                 "scan-id": scan_id,
-                "include-nodes": "true",
-                "apply-predicates": "true",
                 "offset": offset,
                 "limit": limit,
-                "sort": "+status,-severity,-queryname",
             }
 
             response = requests.get(
@@ -312,25 +309,27 @@ class CheckmarxClient:
         detailed_records = []
 
         for finding in findings:
-            nodes = finding.get("nodes", [])
+            data = finding.get("data", {})
+            vuln_details = finding.get("vulnerabilityDetails", {})
 
-            # Use resultHash from Checkmarx as the result hash
-            result_hash = finding.get("resultHash", "")
+            result_hash = data.get("resultHash", finding.get("id", ""))
 
             triage_records.append({
                 "resultHash": result_hash,
                 "severity": finding.get("severity", ""),
-                "triaged": "no"
+                "state": finding.get("state", ""),
+                "triaged": "no",
             })
 
             detailed_records.append({
                 "resultHash": result_hash,
-                "category": finding.get("group", ""),
-                "cweID": finding.get("cweID", ""),
-                "languageName": finding.get("languageName", ""),
-                "queryName": finding.get("queryName", ""),
+                "category": data.get("group", ""),
+                "cweID": vuln_details.get("cweId", ""),
+                "languageName": data.get("languageName", ""),
+                "queryName": data.get("queryName", ""),
                 "severity": finding.get("severity", ""),
-                "dataflow": nodes
+                "description": finding.get("description", ""),
+                "dataflow": data.get("nodes", []),
             })
 
         return triage_records, detailed_records

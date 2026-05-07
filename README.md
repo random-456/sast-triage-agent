@@ -1,133 +1,135 @@
 # SAST Triage Agent
 
-Automated triage of Checkmarx One SAST findings using LangChain and LLM. Fetches findings directly from Checkmarx API, clones repositories, and analyzes dataflow paths to make exploitability decisions.
+Automated triage of Checkmarx One SAST findings using LangChain and LLM. Fetches findings from the Checkmarx API, clones the repository, preprocesses the codebase to remove sensitive data, and analyzes dataflow paths to make exploitability decisions.
 
-## Setup
+## Quick Start
 
 ```bash
-# (Recommended: Create a virtual environment)
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with individual settings
-```
-
-## Configuration
-
-Edit `.env` file:
-```env
-# Checkmarx One Configuration
-BASE_URL=https://
-REFRESH_TOKEN=refresh-token
-
-# Vertex AI Configuration
-PROJECT_ID=gcp-project-id
-DEFAULT_LOCATION=europe-west4
-DEFAULT_MODEL=gemini-2.5-flash
+# Edit .env with your Checkmarx and GCP credentials
 ```
 
 **Prerequisites:**
-- Access to Google Cloud Project with Vertex AI API enabled
+- Python 3.10+
+- Access to Google Cloud project with Vertex AI API enabled
 - Application Default Credentials configured (`gcloud auth application-default login`)
+- Access to a Checkmarx One instance with a valid refresh token
+- Git installed
 
 ## Usage
 
+### Non-interactive mode
+
 ```bash
-python run_triage.py PROJECT_NAME [OPTIONS]
-
-# Examples:
-python run_triage.py my-project                                     # Analyze project with default settings
-python run_triage.py my-project --severities HIGH                   # Only HIGH severity findings
-python run_triage.py my-project --output-dir ./analysis             # Custom output directory
-python run_triage.py my-project --branch main                       # Analyze specific branch
-python run_triage.py my-project --finding <cx_result_hash>          # Analyze a single finding by its result hash
+python run_triage.py run PROJECT_NAME --gitleaks-report <path|none> [OPTIONS]
 ```
 
-Options:
-- `--severities`: Comma-separated severities (default: HIGH,MEDIUM)
-- `--output-dir`: Output directory (default: current directory)
-- `--branch`: Git branch to analyze (default: default.SecurityPipeline)
-- `--finding`: The Checkmarx result hash of a single finding to analyze
-
-## Output Structure
-
-```
-<output-dir>/
-├── findings/
-│   ├── triage_list.csv         # Finding IDs with severity and triage status
-│   └── findings_details.json   # Detailed finding data with dataflow
-├── codebase/                   # Cloned repository (if available)
-├── findings_assessment.json    # Final triage decisions
-├── triage_report.html          # Interactive HTML report with findings
-└── triage_agent.log            # Execution log
-```
-
-## Results Format
-
-**findings_assessment.json**:
-```json
-[{
-    "resultHash": "8ac6484c12c49772",
-    "assessment_result": "CONFIRMED|NOT_EXPLOITABLE|REFUSED",
-    "assessment_confidence": 0.85,
-    "assessment_justification": "..."
-}]
-```
-
-**triage_report.html**:
-- Interactive HTML report with Tailwind CSS styling
-- Progressive generation (updates after each finding)
-- Sortable by severity, result, confidence
-- Filterable by assessment result
-- Color-coded severity badges (CRITICAL, HIGH, MEDIUM, LOW, INFO)
-- Grayscale styling for NOT_EXPLOITABLE findings
-- Detailed dataflow visualization
-
-## Testing
-
-Run the test suite:
 ```bash
-python -m pytest tests/
+# Default settings (HIGH + MEDIUM severity, TO_VERIFY state)
+python run_triage.py run my-project --gitleaks-report none
+
+# With Gitleaks secret masking, only HIGH severity
+python run_triage.py run my-project --gitleaks-report report.csv --severities HIGH
+
+# Filter by state and branch
+python run_triage.py run my-project --gitleaks-report none --states TO_VERIFY,CONFIRMED --branch main
+
+# Analyze specific findings by hash
+python run_triage.py run my-project --gitleaks-report none --findings abc123,def456
 ```
 
-The test suite includes security tests, tool functionality tests and end-to-end integration tests.
+### Interactive mode
 
-## Benchmark
+```bash
+python run_triage.py interactive [-v]
+```
 
-A benchmark mode can be used to compare the accuracy of different models for triage of CheckmarxOne findings.
+Guided prompts collect all configuration. A summary is displayed for confirmation before execution.
 
-### Creating a benchmarking dataset
+### Key Options
 
-A ready-to-use dataset can be found in **benchmark/datasets**. Each project to use for the benchmark must have a separate file in this directory following the naming convention [CXONE PROJECT NAME].json and this format :
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--gitleaks-report` | -- | Path to Gitleaks CSV, or `none` (required) |
+| `--severities` | `HIGH,MEDIUM` | Comma-separated severity filter |
+| `--states` | `TO_VERIFY` | Comma-separated Checkmarx state filter |
+| `--branch` | `default.SecurityPipeline` | Git branch to analyze |
+| `--findings` | -- | Specific result hashes (bypasses filters) |
+| `--model` | `gemini-2.5-pro` | AI model for analysis |
+| `--trace` | `false` | Enable Phoenix tracing (localhost:6006) |
+| `-v, --verbose` | `false` | Enable debug-level logging |
+
+## Output
+
+Results are saved to a timestamped JSON file in the output directory:
 
 ```json
 {
-    "project": "CXONE PROJECT NAME",
-    "github_url": "GITHUB URL",
-    "findings" : [
-        {
-            "id": "CXONE FINDING ID",
-            "language": "LANGUAGE",
-            "category": "CXONE FINDING TYPE",
-            "severity": "CXONE FINDING SEVERITY",
-            "complexity": "EASY / MEDIUM / COMPLEX",
-            "analyst_triage": {
-                "result": "CONFIRMED / NOT_EXPLOITABLE",
-                "justification": "A brief justification for the result"
-            }
-        },
-        ...
-    ]
+  "metadata": {
+    "project_name": "my-project",
+    "model": "gemini-2.5-pro",
+    "summary": { "confirmed": 2, "not_exploitable": 3, "refused": 0 }
+  },
+  "results": [
+    {
+      "resultHash": "8ac6484c12c49772",
+      "assessment_result": "CONFIRMED",
+      "assessment_confidence": 0.92,
+      "assessment_justification": "..."
+    }
+  ]
 }
 ```
 
-### Running a benchmark
+Session logs with full conversation history and token usage are saved to `logs/`.
+
+## Testing
 
 ```bash
-Usage: run_benchmark.py [OPTIONS]
-
-Options:
-  --model TEXT   AI Model used for analysis
-  --output TEXT  Output directory
-  -v, --verbose  Enable verbose output
-  --help         Show this message and exit.
+python -m pytest tests/ -v
 ```
+
+## Benchmark
+
+Compare model accuracy against human-reviewed findings:
+
+```bash
+python run_benchmark.py --model gemini-2.5-pro --output benchmark_results -v
+```
+
+> **Note:** Benchmark runs skip Gitleaks secrets masking (`--gitleaks-report none`) to focus purely on triage accuracy.
+
+Benchmark datasets are stored in `benchmark/datasets/`. Each file contains findings with analyst-provided ground truth:
+
+```json
+{
+  "project": "CXONE PROJECT NAME",
+  "github_url": "GITHUB URL",
+  "findings": [
+    {
+      "id": "FINDING ID",
+      "language": "JavaScript",
+      "category": "SQL_Injection",
+      "severity": "HIGH",
+      "complexity": "MEDIUM",
+      "analyst_triage": {
+        "result": "CONFIRMED",
+        "justification": "Direct string concatenation in SQL query"
+      }
+    }
+  ]
+}
+```
+
+## Documentation
+
+Detailed documentation is available in the [`docs/`](docs/) directory:
+
+- [Architecture](docs/architecture.md) -- System overview, component descriptions, Mermaid diagrams
+- [Usage Guide](docs/usage-guide.md) -- CLI reference for both modes with examples
+- [Preprocessing](docs/preprocessing.md) -- Obfuscation and secret masking pipeline
+- [Configuration](docs/configuration.md) -- Environment variables, constants, model setup
+- [Benchmark](docs/benchmark.md) -- Benchmark metrics, datasets, and output format

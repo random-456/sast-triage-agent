@@ -1,12 +1,14 @@
-"""Tests for Checkmarx One API client."""
+"""Tests for Checkmarx One API client and findings data pipeline."""
 
+import csv
 import json
 import os
 import tempfile
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
-from sast_triage.api import CheckmarxClient
+from utils.checkmarx_helpers import CheckmarxClient
+from utils.findings_helpers import FindingsHelpers
 
 
 class TestCheckmarxClient(unittest.TestCase):
@@ -39,7 +41,7 @@ class TestCheckmarxClient(unittest.TestCase):
         finally:
             os.unlink(temp_cert_path)
     
-    @patch("sast_triage.api.checkmarx_client.requests.post")
+    @patch("utils.checkmarx_helpers.requests.post")
     def test_refresh_access_token_success(self, mock_post):
         """Test successful token refresh."""
         mock_response = Mock()
@@ -53,7 +55,7 @@ class TestCheckmarxClient(unittest.TestCase):
         self.assertEqual(self.client.access_token, "new-access-token")
         mock_post.assert_called_once()
     
-    @patch("sast_triage.api.checkmarx_client.requests.post")
+    @patch("utils.checkmarx_helpers.requests.post")
     def test_refresh_access_token_failure(self, mock_post):
         """Test token refresh failure."""
         mock_response = Mock()
@@ -65,7 +67,7 @@ class TestCheckmarxClient(unittest.TestCase):
         
         self.assertIn("Auth failed", str(context.exception))
     
-    @patch("sast_triage.api.checkmarx_client.requests.get")
+    @patch("utils.checkmarx_helpers.requests.get")
     def test_get_project_details_with_repo(self, mock_get):
         """Test getting project details with repository URL."""
         self.client.access_token = "test-token"
@@ -84,7 +86,7 @@ class TestCheckmarxClient(unittest.TestCase):
         self.assertEqual(repo_url, "https://github.com/test/repo.git")
         mock_get.assert_called_once()
     
-    @patch("sast_triage.api.checkmarx_client.requests.get")
+    @patch("utils.checkmarx_helpers.requests.get")
     def test_get_project_details_without_repo(self, mock_get):
         """Test getting project details without repository URL."""
         self.client.access_token = "test-token"
@@ -101,7 +103,7 @@ class TestCheckmarxClient(unittest.TestCase):
         
         self.assertIsNone(repo_url)
     
-    @patch("sast_triage.api.checkmarx_client.requests.get")
+    @patch("utils.checkmarx_helpers.requests.get")
     def test_get_findings_for_project(self, mock_get):
         """Test fetching findings for a project."""
         self.client.access_token = "test-token"
@@ -158,49 +160,100 @@ class TestCheckmarxClient(unittest.TestCase):
         self.assertEqual(findings[0]["queryName"], "SQL_Injection")
     
     def test_process_findings_to_records(self):
-        """Test processing raw findings into records."""
+        """Test processing raw findings into records (/api/results format)."""
         findings = [
             {
-                "similarityID": "sim-001",
-                "resultHash": "hash-001",
+                "type": "sast",
+                "id": "hash-001",
+                "state": "TO_VERIFY",
                 "severity": "HIGH",
-                "queryName": "SQL_Injection",
-                "cweID": 89,
-                "group": "Security",
-                "languageName": "Python",
-                "nodes": [
-                    {
-                        "fileName": "/app/login.py",
-                        "line": "45",
-                        "column": "12",
-                        "nodeID": 1,
-                        "domType": "source"
-                    },
-                    {
-                        "fileName": "/app/login.py",
-                        "line": "50",
-                        "column": "8",
-                        "nodeID": 2,
-                        "domType": "sink"
-                    }
-                ]
+                "description": "SQL injection in login.py",
+                "data": {
+                    "queryName": "SQL_Injection",
+                    "group": "Security",
+                    "resultHash": "hash-001",
+                    "languageName": "Python",
+                    "nodes": [
+                        {
+                            "fileName": "/app/login.py",
+                            "line": "45",
+                            "column": "12",
+                            "nodeID": 1,
+                            "domType": "source",
+                        },
+                        {
+                            "fileName": "/app/login.py",
+                            "line": "50",
+                            "column": "8",
+                            "nodeID": 2,
+                            "domType": "sink",
+                        },
+                    ],
+                },
+                "vulnerabilityDetails": {"cweId": 89},
             }
         ]
-        
-        triage_records, detailed_records = self.client.process_findings_to_records(findings)
-        
+
+        triage_records, detailed_records = self.client.process_findings_to_records(
+            findings
+        )
+
         self.assertEqual(len(triage_records), 1)
         self.assertEqual(len(detailed_records), 1)
-        
+
         # Check triage record
         self.assertEqual(triage_records[0]["severity"], "HIGH")
+        self.assertEqual(triage_records[0]["state"], "TO_VERIFY")
         self.assertEqual(triage_records[0]["triaged"], "no")
         self.assertEqual(triage_records[0]["resultHash"], "hash-001")
-        
+
         # Check detailed record
         self.assertEqual(detailed_records[0]["queryName"], "SQL_Injection")
         self.assertEqual(detailed_records[0]["cweID"], 89)
+        self.assertEqual(detailed_records[0]["description"], "SQL injection in login.py")
         self.assertEqual(len(detailed_records[0]["dataflow"]), 2)
+
+
+class TestFindingsHelpers(unittest.TestCase):
+    """Test FindingsHelpers CSV/JSON output."""
+
+    def test_csv_includes_state_column(self):
+        """Verify saved CSV includes the state column."""
+        triage_records = [
+            {
+                "resultHash": "hash-001",
+                "severity": "HIGH",
+                "state": "TO_VERIFY",
+                "triaged": "no",
+            },
+            {
+                "resultHash": "hash-002",
+                "severity": "LOW",
+                "state": "CONFIRMED",
+                "triaged": "no",
+            },
+        ]
+        detailed_records = [
+            {"resultHash": "hash-001", "description": "desc1"},
+            {"resultHash": "hash-002", "description": "desc2"},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, "triage_list.csv")
+            json_path = os.path.join(tmpdir, "findings_details.json")
+
+            with patch("utils.findings_helpers.FINDINGS_DIR", tmpdir), \
+                 patch("utils.findings_helpers.FINDINGS_CSV_FILE", csv_path), \
+                 patch("utils.findings_helpers.FINDINGS_JSON_FILE", json_path):
+                FindingsHelpers.save_findings_data(triage_records, detailed_records)
+
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+
+            self.assertIn("state", reader.fieldnames)
+            self.assertEqual(rows[0]["state"], "TO_VERIFY")
+            self.assertEqual(rows[1]["state"], "CONFIRMED")
 
 
 if __name__ == "__main__":

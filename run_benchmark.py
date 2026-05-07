@@ -6,7 +6,7 @@ import logging
 from utils.banner import display_banner
 from utils.generic_logging import setup_logging
 from benchmark.benchmark_helpers import BenchmarkHelpers
-from run_triage import run_triage
+from run_triage import cli
 
 from config import DEFAULT_OUTPUT_DIR, APP_NAME, BENCHMARK_DATASETS_DIR, DEFAULT_TRIAGE_MODEL
 
@@ -30,6 +30,8 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
     datasets = [os.path.join(BENCHMARK_DATASETS_DIR, f) for f in os.listdir(BENCHMARK_DATASETS_DIR) if f.endswith(".json")]
     logger.info(f"Found {len(datasets)} datasets to evaluate !")
 
+    all_datasets_data = []
+
     for dataset in datasets:
         json_data = BenchmarkHelpers.load_and_validate_dataset(dataset)
 
@@ -42,10 +44,10 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
             project_output_dir = os.path.join(output_dir, project_name)
             os.makedirs(project_output_dir, exist_ok=True)
 
-            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir]
+            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", "none"]
 
             logger.debug(f"Launching run_triage command with parameters : {' '.join(parameters)}")
-            result = runner.invoke(run_triage, parameters)
+            result = runner.invoke(cli, ["run"] + parameters)
 
             # Re-setting up logging as it will have been closed when finishin the run_triage
             setup_logging(level=logging.DEBUG) if verbose else setup_logging(level=logging.INFO)
@@ -79,9 +81,18 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
                         raw_dataset_data=[dataset_data_with_scores],
                         output_dir=project_output_dir
                     )
+
+                    all_datasets_data.append(dataset_data_with_scores)
             else:
                 logger.error("Command failed!")
                 logger.error(result.exception)
+
+    # Generate cross-dataset summary KPIs
+    BenchmarkHelpers.generate_summary_kpis(
+        model_name=model_name,
+        all_datasets_data=all_datasets_data,
+        output_dir=output_dir,
+    )
 
 if __name__ == "__main__":
     run_benchmark()
