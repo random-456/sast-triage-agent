@@ -8,7 +8,7 @@ from utils.generic_logging import setup_logging
 from benchmark.benchmark_helpers import BenchmarkHelpers
 from run_triage import cli
 
-from config import DEFAULT_OUTPUT_DIR, APP_NAME, BENCHMARK_DATASETS_DIR, DEFAULT_TRIAGE_MODEL
+from config import DEFAULT_OUTPUT_DIR, APP_NAME, BENCHMARK_DATASETS_DIR, BENCHMARK_SECRET_REPORTS_DIR, DEFAULT_TRIAGE_MODEL
 
 @click.command()
 @click.option("--model", "model_name", default=DEFAULT_TRIAGE_MODEL, help="AI Model used for analysis")
@@ -39,12 +39,21 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
             project_name = json_data.project
             finding_ids = [finding.id for finding in json_data.findings]
 
+            dataset_basename = os.path.splitext(os.path.basename(dataset))[0]
+            gitleaks_report = os.path.join(BENCHMARK_SECRET_REPORTS_DIR, f"{dataset_basename}.csv")
+            if not os.path.isfile(gitleaks_report):
+                logger.error(
+                    f"Missing secrets report for dataset '{dataset_basename}': "
+                    f"expected {os.path.abspath(gitleaks_report)}. Skipping."
+                )
+                continue
+
             logger.info(f"Performing triage for {len(finding_ids)} findings...")
 
             project_output_dir = os.path.join(output_dir, project_name)
             os.makedirs(project_output_dir, exist_ok=True)
 
-            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", "none"]
+            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", gitleaks_report]
 
             logger.debug(f"Launching run_triage command with parameters : {' '.join(parameters)}")
             result = runner.invoke(cli, ["run"] + parameters)

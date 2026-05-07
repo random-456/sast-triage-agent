@@ -43,3 +43,4 @@ DEFAULT_STATES = ["TO_VERIFY"]
 
 # Benchmark Configuration
 BENCHMARK_DATASETS_DIR = os.path.join("benchmark", "datasets")
+BENCHMARK_SECRET_REPORTS_DIR = os.path.join("benchmark", "secret-reports")
