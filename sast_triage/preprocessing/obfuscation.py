@@ -17,7 +17,7 @@ OBFUSCATION_PATTERNS = {
     "IPV4": r"([0-9]{1,3}\.){3}[0-9]{1,3}",
     "IPV6": r"([0-9a-fA-F]{0,4}:(:)?){2,7}([0-9a-fA-F]{3,4})",
     "MAC": r"([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})",
-    "FQDN": r"(([a-zA-Z0-9_\-]){1,20}\.){1,5}(abcorg\.com|corp)",
+    "FQDN": r"(([a-zA-Z0-9_\-]){1,20}\.){1,5}(airbus\.com|corp)",
 }
 
 BINARY_EXTENSIONS = frozenset({
