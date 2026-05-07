@@ -47,7 +47,7 @@ Defined in `config.py`. These rarely need modification but can be adjusted for s
 | `DEFAULT_OUTPUT_DIR` | `output` | Default output directory for results |
 | `CODEBASE_DIR` | `temp/codebase` | Where the repository is cloned |
 | `FINDINGS_DIR` | `temp/findings` | Where fetched findings are stored |
-| `CERTIFICATES_CRT_FILE` | `assets/abcorg-ca.crt` | CA certificate for corporate SSL |
+| `CERTIFICATES_CRT_FILE` | `assets/airbus-ca.crt` | CA certificate for corporate SSL |
 
 ### Model Configuration
 
@@ -69,7 +69,7 @@ Defined in `config.py`. These rarely need modification but can be adjusted for s
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `CHECKMARX_CLIENT_ID` | `ast-app` | OAuth client ID for Checkmarx One |
-| `CHECKMARX_REALM` | `abcorg` | Checkmarx tenant/realm name |
+| `CHECKMARX_REALM` | `airbus` | Checkmarx tenant/realm name |
 | `CHECKMARX_API_LIMIT` | `1000` | Max findings per API request (pagination) |
 | `DEFAULT_SEVERITIES` | `["HIGH", "MEDIUM"]` | Default severity filter |
 | `DEFAULT_BRANCH` | `default.SecurityPipeline` | Default branch for scan lookup |
