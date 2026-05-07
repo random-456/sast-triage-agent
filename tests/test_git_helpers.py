@@ -1,5 +1,6 @@
 """Tests for GitHelpers.clone_repository and GITHUB_TOKENS parsing."""
 
+import base64
 import logging
 import subprocess
 import sys
@@ -11,6 +12,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.git_helpers import GitHelpers, parse_host_tokens
+
+
+def _expected_basic_header(token: str) -> str:
+    creds = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    return f"http.extraHeader=Authorization: Basic {creds}"
 
 
 @pytest.fixture
@@ -37,20 +43,22 @@ class TestCloneRepositoryCommandConstruction:
         assert "extraHeader" not in " ".join(cmd)
         assert cmd[:2] == ["git", "clone"]
 
-    def test_host_match_injects_bearer_header(self, tmp_path, captured_cmd):
+    def test_host_match_injects_basic_header(self, tmp_path, captured_cmd):
         target = tmp_path / "repo"
+        token = "ghp_secret123"
         ok = GitHelpers.clone_repository(
             "https://github.com/foo/bar.git",
             target_dir=str(target),
-            host_tokens={"github.com": "ghp_secret123"},
+            host_tokens={"github.com": token},
         )
         assert ok is True
         cmd = captured_cmd["cmd"]
         assert cmd[0] == "git"
         assert cmd[1] == "-c"
-        assert cmd[2] == "http.extraHeader=Authorization: Bearer ghp_secret123"
+        assert cmd[2] == _expected_basic_header(token)
         assert cmd[3] == "clone"
-        assert all("ghp_secret123" not in part for part in cmd[4:])
+        # Raw token must not appear anywhere in argv (only base64-wrapped).
+        assert all(token not in part for part in cmd)
 
     def test_host_miss_omits_header(self, tmp_path, captured_cmd, caplog):
         target = tmp_path / "repo"
@@ -73,14 +81,15 @@ class TestCloneRepositoryCommandConstruction:
         self, tmp_path, captured_cmd
     ):
         target = tmp_path / "repo"
+        token = "ghp_secret123"
         ok = GitHelpers.clone_repository(
             "https://GitHub.com/foo/bar.git",
             target_dir=str(target),
-            host_tokens={"github.com": "ghp_secret123"},
+            host_tokens={"github.com": token},
         )
         assert ok is True
         cmd = captured_cmd["cmd"]
-        assert "http.extraHeader=Authorization: Bearer ghp_secret123" in cmd
+        assert _expected_basic_header(token) in cmd
 
     def test_multiple_hosts_pick_correct_token(self, tmp_path, captured_cmd):
         target = tmp_path / "repo"
@@ -94,8 +103,9 @@ class TestCloneRepositoryCommandConstruction:
         )
         assert ok is True
         cmd = captured_cmd["cmd"]
-        assert "http.extraHeader=Authorization: Bearer ghp_bbb" in cmd
+        assert _expected_basic_header("ghp_bbb") in cmd
         assert all("ghp_aaa" not in part for part in cmd)
+        assert all("ghp_bbb" not in part for part in cmd)
 
     def test_ssh_url_does_not_inject_header(self, tmp_path, captured_cmd):
         target = tmp_path / "repo"
