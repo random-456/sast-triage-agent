@@ -18,6 +18,7 @@ The application reads configuration from a `.env` file in the project root. Copy
 |----------|---------|-------------|
 | `DEFAULT_LOCATION` | `europe-west4` | Vertex AI region |
 | `SAST_TRIAGE_TRACE` | -- | Set to `true`, `1`, or `yes` to enable Phoenix tracing |
+| `GITHUB_TOKEN` | -- | GitHub Personal Access Token used when cloning `github.com` repos. Sent as a Bearer header for the clone only — not written to the cloned repo's git config. When unset, the local git CLI credentials are used. |
 
 ### `.env.example`
 
@@ -32,6 +33,11 @@ DEFAULT_LOCATION=europe-west4
 
 # Optional: Phoenix tracing (set to true, 1, or yes to enable)
 # SAST_TRIAGE_TRACE=false
+
+# Optional: GitHub Personal Access Token used when cloning github.com repos.
+# Sent as a Bearer Authorization header for the clone only. When unset, the
+# local git CLI credentials (SSH keys, OS credential helper) are used instead.
+# GITHUB_TOKEN=ghp_xxx
 ```
 
 ## Application Constants

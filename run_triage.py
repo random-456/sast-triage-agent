@@ -269,7 +269,9 @@ def execute_triage(
         masking_report = None
 
         if repo_url:
-            clone_success = GitHelpers.clone_repository(repo_url)
+            clone_success = GitHelpers.clone_repository(
+                repo_url, token=os.getenv("GITHUB_TOKEN") or None
+            )
             if not clone_success:
                 logger.warning(
                     "Repository cloning failed, continuing with analysis..."
