@@ -25,7 +25,7 @@ python run_benchmark.py [OPTIONS]
 | `--output` | `output` | Root output directory |
 | `-v, --verbose` | `false` | Enable debug-level logging |
 
-Benchmark runs use `--gitleaks-report none` to focus on triage accuracy.
+Each dataset is paired with a Gitleaks CSV report so that secret masking runs as part of the benchmark, mirroring production preprocessing. See [Secret Reports](#secret-reports) below.
 
 ## Datasets
 
@@ -50,6 +50,25 @@ Datasets live in `benchmark/datasets/` as JSON files. Each file represents a Che
   ]
 }
 ```
+
+## Secret Reports
+
+Each dataset must be paired with a Gitleaks CSV named after the dataset stem and placed under `benchmark/secret-reports/`:
+
+```
+benchmark/datasets/my-project.json
+benchmark/secret-reports/my-project.csv
+```
+
+The CSV is passed through to `run_triage` as `--gitleaks-report`, so secret masking runs during the benchmark exactly as it does in production. Datasets without a matching CSV are skipped with an error logged to the benchmark run.
+
+Generate a report by cloning the project's source and running [Gitleaks](https://github.com/gitleaks/gitleaks):
+
+```bash
+gitleaks detect --source /path/to/repo --report-format csv --report-path benchmark/secret-reports/my-project.csv
+```
+
+Neither `benchmark/datasets/` nor `benchmark/secret-reports/` is tracked in git — both are populated locally per benchmarking environment.
 
 ## Metrics
 
