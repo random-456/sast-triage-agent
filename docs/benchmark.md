@@ -62,14 +62,6 @@ benchmark/secret-reports/my-project.csv
 
 The CSV is passed through to `run_triage` as `--gitleaks-report`, so secret masking runs during the benchmark exactly as it does in production. Datasets without a matching CSV are skipped with an error logged to the benchmark run.
 
-Generate a report by cloning the project's source and running [Gitleaks](https://github.com/gitleaks/gitleaks):
-
-```bash
-gitleaks detect --source /path/to/repo --report-format csv --report-path benchmark/secret-reports/my-project.csv
-```
-
-Neither `benchmark/datasets/` nor `benchmark/secret-reports/` is tracked in git — both are populated locally per benchmarking environment.
-
 ## Metrics
 
 ### Classification Metrics
