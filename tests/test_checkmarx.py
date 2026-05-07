@@ -160,37 +160,32 @@ class TestCheckmarxClient(unittest.TestCase):
         self.assertEqual(findings[0]["queryName"], "SQL_Injection")
     
     def test_process_findings_to_records(self):
-        """Test processing raw findings into records (/api/results format)."""
+        """Test processing raw findings into records (/api/sast-results format)."""
         findings = [
             {
-                "type": "sast",
-                "id": "hash-001",
+                "resultHash": "hash-001",
                 "state": "TO_VERIFY",
                 "severity": "HIGH",
-                "description": "SQL injection in login.py",
-                "data": {
-                    "queryName": "SQL_Injection",
-                    "group": "Security",
-                    "resultHash": "hash-001",
-                    "languageName": "Python",
-                    "nodes": [
-                        {
-                            "fileName": "/app/login.py",
-                            "line": "45",
-                            "column": "12",
-                            "nodeID": 1,
-                            "domType": "source",
-                        },
-                        {
-                            "fileName": "/app/login.py",
-                            "line": "50",
-                            "column": "8",
-                            "nodeID": 2,
-                            "domType": "sink",
-                        },
-                    ],
-                },
-                "vulnerabilityDetails": {"cweId": 89},
+                "queryName": "SQL_Injection",
+                "group": "Security",
+                "languageName": "Python",
+                "cweID": 89,
+                "nodes": [
+                    {
+                        "fileName": "/app/login.py",
+                        "line": "45",
+                        "column": "12",
+                        "nodeID": 1,
+                        "domType": "source",
+                    },
+                    {
+                        "fileName": "/app/login.py",
+                        "line": "50",
+                        "column": "8",
+                        "nodeID": 2,
+                        "domType": "sink",
+                    },
+                ],
             }
         ]
 
@@ -210,8 +205,10 @@ class TestCheckmarxClient(unittest.TestCase):
         # Check detailed record
         self.assertEqual(detailed_records[0]["queryName"], "SQL_Injection")
         self.assertEqual(detailed_records[0]["cweID"], 89)
-        self.assertEqual(detailed_records[0]["description"], "SQL injection in login.py")
+        self.assertEqual(detailed_records[0]["category"], "Security")
+        self.assertEqual(detailed_records[0]["languageName"], "Python")
         self.assertEqual(len(detailed_records[0]["dataflow"]), 2)
+        self.assertNotIn("description", detailed_records[0])
 
 
 class TestFindingsHelpers(unittest.TestCase):
@@ -234,8 +231,8 @@ class TestFindingsHelpers(unittest.TestCase):
             },
         ]
         detailed_records = [
-            {"resultHash": "hash-001", "description": "desc1"},
-            {"resultHash": "hash-002", "description": "desc2"},
+            {"resultHash": "hash-001", "queryName": "SQL_Injection"},
+            {"resultHash": "hash-002", "queryName": "XSS"},
         ]
 
         with tempfile.TemporaryDirectory() as tmpdir:
