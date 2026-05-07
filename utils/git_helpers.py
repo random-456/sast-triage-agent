@@ -3,12 +3,10 @@
 import os
 import subprocess
 import logging
-from typing import List, Optional
+from typing import Dict, List, Mapping, Optional
 from urllib.parse import urlparse
 
 from config import CODEBASE_DIR
-
-_GITHUB_HOSTS = {"github.com", "www.github.com"}
 
 
 class GitHelpers:
@@ -21,7 +19,7 @@ class GitHelpers:
         repo_url: str,
         target_dir: str = CODEBASE_DIR,
         quiet: bool = True,
-        token: Optional[str] = None,
+        host_tokens: Optional[Mapping[str, str]] = None,
     ) -> bool:
         """
         Clone a git repository to the specified directory.
@@ -30,10 +28,11 @@ class GitHelpers:
             repo_url: The URL of the git repository
             target_dir: The target directory for cloning
             quiet: Whether to suppress git output
-            token: Optional GitHub access token. When provided and the URL
-                points to github.com, the token is sent as a Bearer
-                Authorization header for the clone invocation only (it is
-                never written to .git/config or embedded in the URL).
+            host_tokens: Optional mapping of lowercase hostname -> access token.
+                If the URL's host is in the map, the matching token is sent as
+                a Bearer Authorization header for this clone invocation only
+                (it is not written to .git/config or embedded in the URL).
+                Hosts not in the map fall back to the local git CLI credentials.
 
         Returns:
             True if successful, False otherwise
@@ -51,18 +50,22 @@ class GitHelpers:
             )
             return True
 
-        effective_token = token if token and _is_github_url(repo_url) else None
-        if token and not effective_token:
+        token = _resolve_token(repo_url, host_tokens)
+        if host_tokens and not token:
+            host = (urlparse(repo_url).hostname or "").lower()
             cls.logger.info(
-                "GITHUB_TOKEN is set but repo URL is not on github.com — "
-                "skipping token auth."
+                f"No GITHUB_TOKENS entry for host '{host}' — "
+                "using local git credentials."
             )
-        if effective_token:
-            cls.logger.info("Authenticating with GITHUB_TOKEN.")
+        if token:
+            cls.logger.info(
+                f"Authenticating with token from GITHUB_TOKENS for host "
+                f"'{(urlparse(repo_url).hostname or '').lower()}'."
+            )
 
         cls.logger.info(f"Cloning repository from {repo_url}...")
 
-        cmd = _build_clone_command(repo_url, target_dir, quiet, effective_token)
+        cmd = _build_clone_command(repo_url, target_dir, quiet, token)
 
         try:
             subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -76,7 +79,7 @@ class GitHelpers:
             return False
 
         except subprocess.CalledProcessError as e:
-            stderr = _redact(e.stderr, effective_token)
+            stderr = _redact(e.stderr, token)
             if stderr and "already exists and is not an empty directory" in stderr:
                 cls.logger.error("Directory already contains a repository.")
                 return True
@@ -86,13 +89,27 @@ class GitHelpers:
             return False
 
         except Exception as e:
-            cls.logger.error(f"Unexpected error while cloning: {_redact(str(e), effective_token)}")
+            cls.logger.error(
+                f"Unexpected error while cloning: {_redact(str(e), token)}"
+            )
             return False
 
 
-def _is_github_url(repo_url: str) -> bool:
-    host = (urlparse(repo_url).hostname or "").lower()
-    return host in _GITHUB_HOSTS
+def _resolve_token(
+    repo_url: str, host_tokens: Optional[Mapping[str, str]]
+) -> Optional[str]:
+    """Return the token for the URL's host, or None if there is no match.
+
+    Hostname comparison is case-insensitive. Only HTTPS URLs are eligible
+    (Bearer-header auth is meaningless over SSH/git protocols).
+    """
+    if not host_tokens:
+        return None
+    parsed = urlparse(repo_url)
+    if parsed.scheme.lower() != "https":
+        return None
+    host = (parsed.hostname or "").lower()
+    return host_tokens.get(host)
 
 
 def _build_clone_command(
@@ -120,3 +137,32 @@ def _redact(text: Optional[str], token: Optional[str]) -> Optional[str]:
     if not text or not token:
         return text
     return text.replace(token, "***")
+
+
+def parse_host_tokens(raw: Optional[str]) -> Dict[str, str]:
+    """Parse a GITHUB_TOKENS env value into a {lowercase_host: token} dict.
+
+    Format: "host1=token1,host2=token2". Whitespace around entries is trimmed.
+    Empty input or None returns an empty dict. Malformed entries (no '=', or
+    missing host/token) are skipped with a warning so a single typo does not
+    silently strip every token.
+    """
+    if not raw:
+        return {}
+    result: Dict[str, str] = {}
+    logger = logging.getLogger(__name__)
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        host, sep, token = entry.partition("=")
+        host = host.strip().lower()
+        token = token.strip()
+        if not sep or not host or not token:
+            logger.warning(
+                "Ignoring malformed GITHUB_TOKENS entry "
+                "(expected 'host=token')."
+            )
+            continue
+        result[host] = token
+    return result

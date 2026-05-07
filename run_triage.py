@@ -39,7 +39,7 @@ from utils.click_helpers import CommaList
 from utils.directory_helpers import DirectoryHelpers
 from utils.findings_helpers import FindingsHelpers
 from utils.generic_logging import setup_logging
-from utils.git_helpers import GitHelpers
+from utils.git_helpers import GitHelpers, parse_host_tokens
 from utils.banner import display_banner
 
 from config import (
@@ -270,7 +270,7 @@ def execute_triage(
 
         if repo_url:
             clone_success = GitHelpers.clone_repository(
-                repo_url, token=os.getenv("GITHUB_TOKEN") or None
+                repo_url, host_tokens=parse_host_tokens(os.getenv("GITHUB_TOKENS"))
             )
             if not clone_success:
                 logger.warning(

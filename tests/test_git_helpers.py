@@ -1,4 +1,4 @@
-"""Tests for GitHelpers.clone_repository, focused on token authentication."""
+"""Tests for GitHelpers.clone_repository and GITHUB_TOKENS parsing."""
 
 import logging
 import subprocess
@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.git_helpers import GitHelpers
+from utils.git_helpers import GitHelpers, parse_host_tokens
 
 
 @pytest.fixture
@@ -27,24 +27,22 @@ def captured_cmd():
 
 
 class TestCloneRepositoryCommandConstruction:
-    def test_no_token_omits_extraheader(self, tmp_path, captured_cmd):
+    def test_no_host_tokens_omits_extraheader(self, tmp_path, captured_cmd):
         target = tmp_path / "repo"
         ok = GitHelpers.clone_repository(
             "https://github.com/foo/bar.git", target_dir=str(target)
         )
         assert ok is True
         cmd = captured_cmd["cmd"]
-        assert "http.extraHeader=Authorization: Bearer" not in " ".join(cmd)
+        assert "extraHeader" not in " ".join(cmd)
         assert cmd[:2] == ["git", "clone"]
 
-    def test_github_url_with_token_injects_extraheader(
-        self, tmp_path, captured_cmd
-    ):
+    def test_host_match_injects_bearer_header(self, tmp_path, captured_cmd):
         target = tmp_path / "repo"
         ok = GitHelpers.clone_repository(
             "https://github.com/foo/bar.git",
             target_dir=str(target),
-            token="ghp_secret123",
+            host_tokens={"github.com": "ghp_secret123"},
         )
         assert ok is True
         cmd = captured_cmd["cmd"]
@@ -52,46 +50,71 @@ class TestCloneRepositoryCommandConstruction:
         assert cmd[1] == "-c"
         assert cmd[2] == "http.extraHeader=Authorization: Bearer ghp_secret123"
         assert cmd[3] == "clone"
-        # Token must NOT be embedded in the repo URL.
         assert all("ghp_secret123" not in part for part in cmd[4:])
 
-    def test_non_github_url_with_token_skips_extraheader(
-        self, tmp_path, captured_cmd, caplog
-    ):
+    def test_host_miss_omits_header(self, tmp_path, captured_cmd, caplog):
         target = tmp_path / "repo"
         with caplog.at_level(logging.INFO, logger="utils.git_helpers"):
             ok = GitHelpers.clone_repository(
                 "https://gitlab.com/foo/bar.git",
                 target_dir=str(target),
-                token="ghp_secret123",
+                host_tokens={"github.com": "ghp_secret123"},
             )
         assert ok is True
         cmd = captured_cmd["cmd"]
         assert all("ghp_secret123" not in part for part in cmd)
         assert "extraHeader" not in " ".join(cmd)
         assert any(
-            "not on github.com" in record.message for record in caplog.records
+            "No GITHUB_TOKENS entry for host 'gitlab.com'" in r.message
+            for r in caplog.records
         )
 
-    def test_uppercase_github_host_still_recognized(
+    def test_uppercase_host_matches_lowercase_map_key(
         self, tmp_path, captured_cmd
     ):
         target = tmp_path / "repo"
         ok = GitHelpers.clone_repository(
             "https://GitHub.com/foo/bar.git",
             target_dir=str(target),
-            token="ghp_secret123",
+            host_tokens={"github.com": "ghp_secret123"},
         )
         assert ok is True
         cmd = captured_cmd["cmd"]
         assert "http.extraHeader=Authorization: Bearer ghp_secret123" in cmd
+
+    def test_multiple_hosts_pick_correct_token(self, tmp_path, captured_cmd):
+        target = tmp_path / "repo"
+        ok = GitHelpers.clone_repository(
+            "https://ghe.example.com/foo/bar.git",
+            target_dir=str(target),
+            host_tokens={
+                "github.com": "ghp_aaa",
+                "ghe.example.com": "ghp_bbb",
+            },
+        )
+        assert ok is True
+        cmd = captured_cmd["cmd"]
+        assert "http.extraHeader=Authorization: Bearer ghp_bbb" in cmd
+        assert all("ghp_aaa" not in part for part in cmd)
+
+    def test_ssh_url_does_not_inject_header(self, tmp_path, captured_cmd):
+        target = tmp_path / "repo"
+        ok = GitHelpers.clone_repository(
+            "ssh://git@github.com/foo/bar.git",
+            target_dir=str(target),
+            host_tokens={"github.com": "ghp_secret123"},
+        )
+        assert ok is True
+        cmd = captured_cmd["cmd"]
+        assert all("ghp_secret123" not in part for part in cmd)
+        assert "extraHeader" not in " ".join(cmd)
 
 
 class TestCloneRepositoryErrorRedaction:
     def test_token_redacted_from_logged_stderr(self, tmp_path, caplog):
         target = tmp_path / "repo"
         token = "ghp_supersecret"
-        leaking_stderr = f"fatal: bad credential ghp_supersecret in header"
+        leaking_stderr = "fatal: bad credential ghp_supersecret in header"
 
         def fake_run(cmd, *args, **kwargs):
             raise subprocess.CalledProcessError(
@@ -103,7 +126,7 @@ class TestCloneRepositoryErrorRedaction:
             ok = GitHelpers.clone_repository(
                 "https://github.com/foo/bar.git",
                 target_dir=str(target),
-                token=token,
+                host_tokens={"github.com": token},
             )
 
         assert ok is False
@@ -133,3 +156,36 @@ class TestCloneRepositoryDirectoryBypass:
             ok = GitHelpers.clone_repository("", target_dir=str(tmp_path / "x"))
         assert ok is False
         mock_run.assert_not_called()
+
+
+class TestParseHostTokens:
+    def test_none_returns_empty_dict(self):
+        assert parse_host_tokens(None) == {}
+
+    def test_empty_string_returns_empty_dict(self):
+        assert parse_host_tokens("") == {}
+
+    def test_single_pair(self):
+        assert parse_host_tokens("github.com=ghp_abc") == {"github.com": "ghp_abc"}
+
+    def test_multiple_pairs(self):
+        result = parse_host_tokens(
+            "github.com=ghp_abc,ghe.example.com=ghp_xyz"
+        )
+        assert result == {
+            "github.com": "ghp_abc",
+            "ghe.example.com": "ghp_xyz",
+        }
+
+    def test_lowercases_host_keys(self):
+        assert parse_host_tokens("GitHub.COM=ghp_abc") == {"github.com": "ghp_abc"}
+
+    def test_strips_whitespace(self):
+        result = parse_host_tokens("  github.com = ghp_abc , ghe.x.com = ghp_y ")
+        assert result == {"github.com": "ghp_abc", "ghe.x.com": "ghp_y"}
+
+    def test_skips_malformed_entries(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="utils.git_helpers"):
+            result = parse_host_tokens("github.com=ghp_abc,broken,=,host=,=tok")
+        assert result == {"github.com": "ghp_abc"}
+        assert any("malformed" in r.message.lower() for r in caplog.records)
