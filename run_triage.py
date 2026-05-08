@@ -65,6 +65,7 @@ async def _run_triage_analysis(
     repo_url: Optional[str] = None,
     obfuscation_report=None,
     masking_report=None,
+    compact_logs: bool = False,
 ) -> int:
     """
     Run the triage analysis on the fetched data.
@@ -112,6 +113,7 @@ async def _run_triage_analysis(
             branch=branch,
             repo_url=repo_url,
             output_dir=output_dir,
+            compact_logs=compact_logs,
         )
 
         # Log preprocessing reports in the session log
@@ -178,6 +180,7 @@ def execute_triage(
     keep_temp: bool,
     finding_hashes: Optional[List[str]],
     interactive: bool = False,
+    compact_logs: bool = False,
 ) -> None:
     """
     Shared triage execution logic used by both run and interactive commands.
@@ -346,6 +349,7 @@ def execute_triage(
                 repo_url=repo_url,
                 obfuscation_report=obfuscation_report,
                 masking_report=masking_report,
+                compact_logs=compact_logs,
             )
         )
 
@@ -443,6 +447,15 @@ def cli():
     is_flag=True,
     help="Enable Phoenix tracing (UI at localhost:6006)",
 )
+@click.option(
+    "--compact-logs",
+    is_flag=True,
+    help=(
+        "Write a reduced agent log: omit input prompt bodies, store the "
+        "system prompt by sha256 hash only, and drop bulk arrays from "
+        "tool results. For development/analysis runs only."
+    ),
+)
 def run(
     project_name: str,
     model_name: str,
@@ -455,6 +468,7 @@ def run(
     finding_hashes: List,
     verbose: bool,
     trace: bool,
+    compact_logs: bool,
 ) -> None:
     """
     Run triage in non-interactive mode.
@@ -481,6 +495,7 @@ def run(
         keep_temp=keep_temp,
         finding_hashes=finding_hashes,
         interactive=False,
+        compact_logs=compact_logs,
     )
 
 
@@ -495,7 +510,16 @@ def run(
     is_flag=True,
     help="Enable Phoenix tracing (UI at localhost:6006)",
 )
-def interactive(verbose: bool, trace: bool) -> None:
+@click.option(
+    "--compact-logs",
+    is_flag=True,
+    help=(
+        "Write a reduced agent log: omit input prompt bodies, store the "
+        "system prompt by sha256 hash only, and drop bulk arrays from "
+        "tool results. For development/analysis runs only."
+    ),
+)
+def interactive(verbose: bool, trace: bool, compact_logs: bool) -> None:
     """Run triage in interactive mode with guided prompts."""
     display_banner(APP_NAME)
     setup_logging(logging.DEBUG) if verbose else setup_logging(logging.INFO)
@@ -527,6 +551,7 @@ def interactive(verbose: bool, trace: bool) -> None:
         keep_temp=False,
         finding_hashes=config["finding_hashes"],
         interactive=True,
+        compact_logs=compact_logs,
     )
 
 
