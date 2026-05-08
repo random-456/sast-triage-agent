@@ -248,7 +248,7 @@ def execute_triage(
             original_count = len(findings)
             findings = [
                 f for f in findings
-                if f.get("data", {}).get("resultHash") in finding_hashes
+                if f.get("resultHash") in finding_hashes
             ]
 
             if len(findings) != len(finding_hashes):
