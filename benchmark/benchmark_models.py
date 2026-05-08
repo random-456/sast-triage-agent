@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from enum import Enum
 
 # Models required for benchmarking
@@ -11,18 +11,18 @@ class JustificationComparisonResult(Enum):
   DIFFERENT = 1
 
 class Language(Enum):
-  JAVA = "Java"
-  JAVASCRIPT = "Javascript"
-  ANGULAR = "Angular"
-  NODEJS = "NodeJS"
-  PYTHON = "Python"
-  PHP = "PHP"
-  C = "C"
-  CPP = "C++"
-  KOTLIN = "Kotlin"
-  SWIFT = "Swift"
-  DOTNET = ".NET"
-  CSHARP = "C#"
+  JAVA = "java"
+  JAVASCRIPT = "javascript"
+  ANGULAR = "angular"
+  NODEJS = "nodejs"
+  PYTHON = "python"
+  PHP = "php"
+  C = "c"
+  CPP = "c++"
+  KOTLIN = "kotlin"
+  SWIFT = "swift"
+  DOTNET = ".net"
+  CSHARP = "c#"
 
 class Severity(Enum):
   CRITICAL = "CRITICAL"
@@ -50,7 +50,7 @@ class DatasetFinding(BaseModel):
   language: Language
   category: str
   severity: Severity
-  complexity: Complexity
+  complexity: Optional[Complexity] = None
   analyst_triage: DatasetTriage
 
 class DatasetProject(BaseModel):
