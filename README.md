@@ -60,6 +60,7 @@ Guided prompts collect all configuration. A summary is displayed for confirmatio
 | `--findings` | -- | Specific result hashes (bypasses filters) |
 | `--model` | `gemini-2.5-pro` | AI model for analysis |
 | `--trace` | `false` | Enable Phoenix tracing (localhost:6006) |
+| `--compact-logs` | `false` | Reduced agent log (no input prompt bodies, system prompt by hash, tool result bulk arrays dropped). Dev analysis only. |
 | `-v, --verbose` | `false` | Enable debug-level logging |
 
 ## Output

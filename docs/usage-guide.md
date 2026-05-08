@@ -23,6 +23,7 @@ python run_triage.py run PROJECT_NAME --gitleaks-report <path|none> [OPTIONS]
 | `--output` | `output` | Output directory |
 | `--keep-temp` | `false` | Preserve temp directory after execution |
 | `--trace` | `false` | Enable Phoenix tracing UI at localhost:6006 |
+| `--compact-logs` | `false` | Reduced agent log (no input prompt bodies, system prompt by hash, tool result bulk arrays dropped). Dev analysis only. |
 | `-v, --verbose` | `false` | Enable debug-level logging |
 
 ### Examples
