@@ -11,6 +11,32 @@ from sast_triage.agent_models import TriageDecision
 from config import MAX_LOG_RESULT_LENGTH
 
 
+_OPAQUE_PART_KEYS = ("thought_signature",)
+
+
+def _strip_signatures(content):
+    """Drop opaque round-trip-only keys (e.g. Gemini's ``thought_signature``)
+    from list-of-parts content so logs stay human-readable.
+
+    Returns a new structure; the caller's object is never mutated, so the
+    untouched original can still be sent back to the model in the next turn.
+    Plain-string content and other non-list values pass through unchanged.
+    """
+    if not isinstance(content, list):
+        return content
+    cleaned = []
+    for part in content:
+        if isinstance(part, dict) and any(
+            k in part for k in _OPAQUE_PART_KEYS
+        ):
+            cleaned.append(
+                {k: v for k, v in part.items() if k not in _OPAQUE_PART_KEYS}
+            )
+        else:
+            cleaned.append(part)
+    return cleaned
+
+
 class AgentLoggingManager:
     """Handles comprehensive logging for agent conversations."""
 
@@ -112,7 +138,7 @@ class AgentLoggingManager:
         log_entry = {
             "type": message_type,
             "timestamp": datetime.datetime.now().isoformat(),
-            "content": content,
+            "content": _strip_signatures(content),
         }
 
         if tool_calls:

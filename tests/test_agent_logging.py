@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sast_triage.agent_logging import AgentLoggingManager
+from sast_triage.agent_logging import AgentLoggingManager, _strip_signatures
 from sast_triage.agent_models import TriageDecision
 
 
@@ -312,6 +312,97 @@ class TestPreprocessingLogging:
 
         assert "obfuscation" in log["preprocessing"]
         assert "secret_masking" in log["preprocessing"]
+
+
+class TestThoughtSignatureStripping:
+    """Strip Gemini ``thought_signature`` from logged content while keeping
+    the original message intact for the next LLM turn."""
+
+    def test_strip_signatures_passes_plain_string_through(self):
+        assert _strip_signatures("just a string") == "just a string"
+
+    def test_strip_signatures_passes_none_through(self):
+        assert _strip_signatures(None) is None
+
+    def test_strip_signatures_drops_signature_key_from_part(self):
+        content = [
+            {
+                "type": "text",
+                "text": "I will start by reading the file.",
+                "thought_signature": "Cq8JAY89...opaque...",
+            }
+        ]
+        cleaned = _strip_signatures(content)
+        assert cleaned == [
+            {"type": "text", "text": "I will start by reading the file."}
+        ]
+
+    def test_strip_signatures_keeps_parts_without_signature_unchanged(self):
+        content = [
+            {"type": "text", "text": "no signature here"},
+            "raw string part",
+        ]
+        cleaned = _strip_signatures(content)
+        assert cleaned == content
+
+    def test_strip_signatures_does_not_mutate_input(self):
+        original = [
+            {
+                "type": "text",
+                "text": "preamble",
+                "thought_signature": "opaque",
+            }
+        ]
+        original_snapshot = [dict(part) for part in original]
+        _strip_signatures(original)
+        assert original == original_snapshot
+
+    def test_log_message_strips_signature_from_assistant_content(
+        self, tmp_path
+    ):
+        mgr = AgentLoggingManager(model_name="gemini-2.5-pro", temperature=0.1)
+        mgr.log_file = tmp_path / "test_log.json"
+        finding_log = mgr.log_finding_start("hash-001")
+
+        assistant_content = [
+            {
+                "type": "text",
+                "text": "I will start by analyzing the source.",
+                "thought_signature": "Cq8JAY89...opaque...",
+            }
+        ]
+        mgr.log_message(
+            finding_log,
+            "assistant",
+            assistant_content,
+            tool_calls=[{"name": "read_file", "args": {"file_path": "x"}}],
+        )
+
+        # Original is unchanged so the next LLM turn still has the signature.
+        assert "thought_signature" in assistant_content[0]
+
+        # On disk, the signature is gone.
+        with open(mgr.log_file) as f:
+            log = json.load(f)
+        logged_entry = log["findings_processed"][0]["conversation"][0]
+        assert logged_entry["content"] == [
+            {"type": "text", "text": "I will start by analyzing the source."}
+        ]
+        assert logged_entry["tool_calls"] == [
+            {"name": "read_file", "args": {"file_path": "x"}}
+        ]
+
+    def test_log_message_leaves_plain_string_content_alone(self, tmp_path):
+        mgr = AgentLoggingManager(model_name="gemini-2.5-pro", temperature=0.1)
+        mgr.log_file = tmp_path / "test_log.json"
+        finding_log = mgr.log_finding_start("hash-002")
+
+        mgr.log_message(finding_log, "assistant", "plain text response")
+
+        with open(mgr.log_file) as f:
+            log = json.load(f)
+        logged_entry = log["findings_processed"][0]["conversation"][0]
+        assert logged_entry["content"] == "plain text response"
 
 
 class TestSessionSummary:
