@@ -12,37 +12,7 @@ from typing import Dict, List
 from langchain_core.tools import tool
 
 from config import CODEBASE_DIR, FINDINGS_CSV_FILE, FINDINGS_JSON_FILE, MAX_SEARCH_RESULTS
-
-
-def _io_safe(path: str) -> str:
-    """Return ``path`` in a form safe for I/O on the current platform.
-
-    No-op on POSIX. On Windows, returns the absolute path with the
-    ``\\\\?\\`` (or ``\\\\?\\UNC\\`` for shares) long-path prefix so Win32
-    bypasses the legacy MAX_PATH (260-char) limit. Real enterprise repos
-    routinely produce paths past that limit once cloned into a nested
-    workspace, which would otherwise cause "file not found" on read while
-    ``os.listdir`` of the parent (just under the limit) still succeeds.
-    """
-    if os.name != "nt":
-        return path
-    path = os.path.abspath(path)
-    if path.startswith("\\\\?\\"):
-        return path
-    if path.startswith("\\\\"):
-        return "\\\\?\\UNC\\" + path[2:]
-    return "\\\\?\\" + path
-
-
-def _display_path(path: str) -> str:
-    """Strip the Windows long-path prefix for display / relpath computation."""
-    if os.name != "nt":
-        return path
-    if path.startswith("\\\\?\\UNC\\"):
-        return "\\\\" + path[8:]
-    if path.startswith("\\\\?\\"):
-        return path[4:]
-    return path
+from utils.path_helpers import io_safe, display_path
 
 
 def validate_safe_path(base_path: str, requested_path: str) -> str:
@@ -78,7 +48,7 @@ def validate_safe_path(base_path: str, requested_path: str) -> str:
         # commonpath raises ValueError if paths are on different drives on Windows
         raise ValueError(f"Path traversal attempt detected: {requested_path}")
 
-    return _io_safe(full_path)
+    return io_safe(full_path)
 
 
 @tool
@@ -188,7 +158,7 @@ def search_in_files(pattern: str, file_extensions: str = "*") -> Dict:
         # Use the long-path-safe form for globbing and I/O on Windows;
         # keep an unprefixed copy for clean relpath display.
         base_display = os.path.abspath(CODEBASE_DIR)
-        base = _io_safe(base_display)
+        base = io_safe(base_display)
 
         if file_extensions == "*":
             search_path = os.path.join(base, "**", "*")
@@ -212,7 +182,7 @@ def search_in_files(pattern: str, file_extensions: str = "*") -> Dict:
                     for i, line in enumerate(lines):
                         if pattern_re.search(line):
                             rel_path = os.path.relpath(
-                                _display_path(file_path), base_display
+                                display_path(file_path), base_display
                             )
                             results.append({
                                 "file": rel_path,

@@ -4,6 +4,7 @@ import stat
 import logging
 
 from config import TEMP_DIR
+from utils.path_helpers import io_safe
 
 class DirectoryHelpers:
 
@@ -16,7 +17,10 @@ class DirectoryHelpers:
         """
         if not keep_temp_dir and os.path.isdir(TEMP_DIR):
             self.logger.info(f"Cleaning {TEMP_DIR} directory...")
-            shutil.rmtree(TEMP_DIR, onerror=self.handle_remove_readonly)
+            # io_safe applies the Win32 \\?\ long-path prefix so rmtree can
+            # walk nested cloned repos that breach MAX_PATH; without it the
+            # walk fails with FileNotFoundError on a previous run's leftovers.
+            shutil.rmtree(io_safe(TEMP_DIR), onerror=self.handle_remove_readonly)
 
         os.makedirs(TEMP_DIR, exist_ok=keep_temp_dir)
         os.makedirs(output_dir, exist_ok=True)
