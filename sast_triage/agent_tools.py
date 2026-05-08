@@ -14,6 +14,37 @@ from langchain_core.tools import tool
 from config import CODEBASE_DIR, FINDINGS_CSV_FILE, FINDINGS_JSON_FILE, MAX_SEARCH_RESULTS
 
 
+def _io_safe(path: str) -> str:
+    """Return ``path`` in a form safe for I/O on the current platform.
+
+    No-op on POSIX. On Windows, returns the absolute path with the
+    ``\\\\?\\`` (or ``\\\\?\\UNC\\`` for shares) long-path prefix so Win32
+    bypasses the legacy MAX_PATH (260-char) limit. Real enterprise repos
+    routinely produce paths past that limit once cloned into a nested
+    workspace, which would otherwise cause "file not found" on read while
+    ``os.listdir`` of the parent (just under the limit) still succeeds.
+    """
+    if os.name != "nt":
+        return path
+    path = os.path.abspath(path)
+    if path.startswith("\\\\?\\"):
+        return path
+    if path.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + path[2:]
+    return "\\\\?\\" + path
+
+
+def _display_path(path: str) -> str:
+    """Strip the Windows long-path prefix for display / relpath computation."""
+    if os.name != "nt":
+        return path
+    if path.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path[8:]
+    if path.startswith("\\\\?\\"):
+        return path[4:]
+    return path
+
+
 def validate_safe_path(base_path: str, requested_path: str) -> str:
     """
     Validate that requested path stays within base_path boundary.
@@ -24,7 +55,8 @@ def validate_safe_path(base_path: str, requested_path: str) -> str:
         requested_path: The requested path to validate
 
     Returns:
-        The validated absolute path
+        The validated absolute path, in a form safe for I/O on this platform
+        (long-path-prefixed on Windows).
 
     Raises:
         ValueError: If path traversal is detected
@@ -36,7 +68,9 @@ def validate_safe_path(base_path: str, requested_path: str) -> str:
     full_path = os.path.abspath(os.path.join(base, clean_path))
 
     # Check if the resolved path is within the base path
-    # Using os.path.commonpath to ensure the path doesn't escape
+    # Using os.path.commonpath to ensure the path doesn't escape.
+    # Run the check against the non-prefixed form so commonpath sees
+    # comparable paths.
     try:
         if not os.path.commonpath([base, full_path]) == base:
             raise ValueError(f"Path traversal attempt detected: {requested_path}")
@@ -44,7 +78,7 @@ def validate_safe_path(base_path: str, requested_path: str) -> str:
         # commonpath raises ValueError if paths are on different drives on Windows
         raise ValueError(f"Path traversal attempt detected: {requested_path}")
 
-    return full_path
+    return _io_safe(full_path)
 
 
 @tool
@@ -151,15 +185,20 @@ def search_in_files(pattern: str, file_extensions: str = "*") -> Dict:
         Search results with file paths and matching lines
     """
     try:
+        # Use the long-path-safe form for globbing and I/O on Windows;
+        # keep an unprefixed copy for clean relpath display.
+        base_display = os.path.abspath(CODEBASE_DIR)
+        base = _io_safe(base_display)
+
         if file_extensions == "*":
-            search_path = os.path.join(CODEBASE_DIR, "**", "*")
+            search_path = os.path.join(base, "**", "*")
             files = glob.glob(search_path, recursive=True)
             files = [f for f in files if os.path.isfile(f)]
         else:
             files = []
             for ext in file_extensions.split(","):
                 ext = ext.strip().lstrip(".")
-                search_path = os.path.join(CODEBASE_DIR, "**", f"*.{ext}")
+                search_path = os.path.join(base, "**", f"*.{ext}")
                 files.extend(glob.glob(search_path, recursive=True))
 
         results = []
@@ -172,7 +211,9 @@ def search_in_files(pattern: str, file_extensions: str = "*") -> Dict:
                     lines = f.readlines()
                     for i, line in enumerate(lines):
                         if pattern_re.search(line):
-                            rel_path = os.path.relpath(file_path, CODEBASE_DIR)
+                            rel_path = os.path.relpath(
+                                _display_path(file_path), base_display
+                            )
                             results.append({
                                 "file": rel_path,
                                 "line": i + 1,
