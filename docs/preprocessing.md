@@ -24,7 +24,7 @@ Obfuscation scans all text files in the codebase and replaces infrastructure pat
 | IPv4 | `([0-9]{1,3}\.){3}[0-9]{1,3}` | `__IPV4__` | `192.168.1.1` |
 | IPv6 | `([0-9a-fA-F]{0,4}:(:)?){2,7}(...)` | `__IPV6__` | `fe80::1` |
 | MAC | `([0-9A-Fa-f]{2}[:-]){5}(...)` | `__MAC__` | `00:1A:2B:3C:4D:5E` |
-| FQDN | Internal domain patterns | `__FQDN__` | `server.abcorg.com` |
+| FQDN | Internal domain patterns | `__FQDN__` | `server.airbus.com` |
 
 ### Binary File Handling
 

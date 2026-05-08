@@ -39,7 +39,7 @@ from utils.click_helpers import CommaList
 from utils.directory_helpers import DirectoryHelpers
 from utils.findings_helpers import FindingsHelpers
 from utils.generic_logging import setup_logging
-from utils.git_helpers import GitHelpers
+from utils.git_helpers import GitHelpers, parse_host_tokens
 from utils.banner import display_banner
 
 from config import (
@@ -151,6 +151,22 @@ def filter_findings_by_state(
     return [f for f in findings if f.get("state", "").upper() in state_set]
 
 
+def filter_findings_by_hashes(
+    findings: list[dict],
+    finding_hashes: list[str],
+) -> list[dict]:
+    """
+    Filter findings to those whose resultHash matches one in finding_hashes.
+
+    The /api/sast-results endpoint returns resultHash at the top level of
+    each finding; the unified /api/results endpoint nests it under "data".
+    This helper assumes the flat shape — keep it aligned with whichever
+    endpoint CheckmarxClient.get_findings_for_project currently uses.
+    """
+    hash_set = set(finding_hashes)
+    return [f for f in findings if f.get("resultHash") in hash_set]
+
+
 def execute_triage(
     project_name: str,
     model_name: str,
@@ -246,10 +262,7 @@ def execute_triage(
                 f"Filtering for findings with hashes: {', '.join(finding_hashes)}"
             )
             original_count = len(findings)
-            findings = [
-                f for f in findings
-                if f.get("data", {}).get("resultHash") in finding_hashes
-            ]
+            findings = filter_findings_by_hashes(findings, finding_hashes)
 
             if len(findings) != len(finding_hashes):
                 logger.error(
@@ -269,7 +282,9 @@ def execute_triage(
         masking_report = None
 
         if repo_url:
-            clone_success = GitHelpers.clone_repository(repo_url)
+            clone_success = GitHelpers.clone_repository(
+                repo_url, host_tokens=parse_host_tokens(os.getenv("GITHUB_TOKENS"))
+            )
             if not clone_success:
                 logger.warning(
                     "Repository cloning failed, continuing with analysis..."

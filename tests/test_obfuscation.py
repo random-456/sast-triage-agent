@@ -80,17 +80,17 @@ class TestMacObfuscation:
 
 
 class TestFqdnObfuscation:
-    def test_fqdn_abcorg_replaced(self, tmp_path: str) -> None:
-        """FQDNs ending in abcorg.com are replaced with __FQDN__ placeholder."""
+    def test_fqdn_airbus_replaced(self, tmp_path: str) -> None:
+        """FQDNs ending in airbus.com are replaced with __FQDN__ placeholder."""
         _write_file(
             tmp_path,
             "hosts.txt",
-            "host = server.internal.abcorg.com\n",
+            "host = server.internal.airbus.com\n",
         )
         report = obfuscate_codebase(str(tmp_path))
 
         content = _read_file(os.path.join(tmp_path, "hosts.txt"))
-        assert "server.internal.abcorg.com" not in content
+        assert "server.internal.airbus.com" not in content
         assert "__FQDN__" in content
         assert report.replacements_by_type.get("FQDN", 0) >= 1
 
@@ -139,7 +139,7 @@ class TestMultiplePatternsInOneFile:
         content = (
             "ip = 10.0.0.1\n"
             "mac = AA:BB:CC:DD:EE:FF\n"
-            "host = app.prod.abcorg.com\n"
+            "host = app.prod.airbus.com\n"
         )
         _write_file(tmp_path, "mixed.conf", content)
         report = obfuscate_codebase(str(tmp_path))
@@ -147,7 +147,7 @@ class TestMultiplePatternsInOneFile:
         result = _read_file(os.path.join(tmp_path, "mixed.conf"))
         assert "10.0.0.1" not in result
         assert "AA:BB:CC:DD:EE:FF" not in result
-        assert "app.prod.abcorg.com" not in result
+        assert "app.prod.airbus.com" not in result
         assert "__IPV4__" in result
         assert "__MAC__" in result
         assert "__FQDN__" in result

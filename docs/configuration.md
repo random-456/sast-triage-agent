@@ -18,6 +18,7 @@ The application reads configuration from a `.env` file in the project root. Copy
 |----------|---------|-------------|
 | `DEFAULT_LOCATION` | `europe-west4` | Vertex AI region |
 | `SAST_TRIAGE_TRACE` | -- | Set to `true`, `1`, or `yes` to enable Phoenix tracing |
+| `GITHUB_TOKENS` | -- | Per-host GitHub access tokens for HTTPS clones. Format: `host=token,host=token` (e.g. `github.com=ghp_xxx,ghe.example.com=ghp_yyy`). Hostname is matched case-insensitively against the Checkmarx-supplied repo URL; unmatched hosts fall back to the local git CLI credentials. The token is sent as an HTTP Basic Authorization header (username `x-access-token`) for the clone only — never written to the cloned repo's git config. |
 
 ### `.env.example`
 
@@ -32,6 +33,14 @@ DEFAULT_LOCATION=europe-west4
 
 # Optional: Phoenix tracing (set to true, 1, or yes to enable)
 # SAST_TRIAGE_TRACE=false
+
+# Optional: per-host GitHub access tokens used when cloning HTTPS repos.
+# Format: comma-separated "host=token" pairs. Hostname is matched
+# case-insensitively against the URL returned by Checkmarx; non-matching
+# hosts fall back to the local git CLI credentials. The token is sent as an
+# HTTP Basic Authorization header (username "x-access-token") for the clone
+# only — never written to .git/config or the URL.
+# GITHUB_TOKENS=github.com=ghp_xxx,ghe.example.com=ghp_yyy
 ```
 
 ## Application Constants
@@ -47,7 +56,7 @@ Defined in `config.py`. These rarely need modification but can be adjusted for s
 | `DEFAULT_OUTPUT_DIR` | `output` | Default output directory for results |
 | `CODEBASE_DIR` | `temp/codebase` | Where the repository is cloned |
 | `FINDINGS_DIR` | `temp/findings` | Where fetched findings are stored |
-| `CERTIFICATES_CRT_FILE` | `assets/abcorg-ca.crt` | CA certificate for corporate SSL |
+| `CERTIFICATES_CRT_FILE` | `assets/airbus-ca.crt` | CA certificate for corporate SSL |
 
 ### Model Configuration
 
@@ -69,7 +78,7 @@ Defined in `config.py`. These rarely need modification but can be adjusted for s
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `CHECKMARX_CLIENT_ID` | `ast-app` | OAuth client ID for Checkmarx One |
-| `CHECKMARX_REALM` | `abcorg` | Checkmarx tenant/realm name |
+| `CHECKMARX_REALM` | `airbus` | Checkmarx tenant/realm name |
 | `CHECKMARX_API_LIMIT` | `1000` | Max findings per API request (pagination) |
 | `DEFAULT_SEVERITIES` | `["HIGH", "MEDIUM"]` | Default severity filter |
 | `DEFAULT_BRANCH` | `default.SecurityPipeline` | Default branch for scan lookup |

@@ -247,11 +247,18 @@ class CheckmarxClient:
             self.logger.info(f"Filtering by severities: {', '.join(severities)}")
 
         while True:
-            findings_url = f"{self.base_url}/api/results"
+            # Use the SAST-specific endpoint. The unified /api/results returns
+            # results from all scanners (SAST, SCA, IaC, secrets, …) in one
+            # paginated stream and offers no server-side scanner-type filter,
+            # so on projects with many non-SAST findings the SAST results can
+            # be silently truncated out of the first page(s).
+            findings_url = f"{self.base_url}/api/sast-results"
             findings_params = {
                 "scan-id": scan_id,
                 "offset": offset,
                 "limit": limit,
+                "include-nodes": "true",
+                "apply-predicates": "true",
             }
 
             response = requests.get(
@@ -309,10 +316,7 @@ class CheckmarxClient:
         detailed_records = []
 
         for finding in findings:
-            data = finding.get("data", {})
-            vuln_details = finding.get("vulnerabilityDetails", {})
-
-            result_hash = data.get("resultHash", finding.get("id", ""))
+            result_hash = finding.get("resultHash", "")
 
             triage_records.append({
                 "resultHash": result_hash,
@@ -323,13 +327,12 @@ class CheckmarxClient:
 
             detailed_records.append({
                 "resultHash": result_hash,
-                "category": data.get("group", ""),
-                "cweID": vuln_details.get("cweId", ""),
-                "languageName": data.get("languageName", ""),
-                "queryName": data.get("queryName", ""),
+                "category": finding.get("group", ""),
+                "cweID": finding.get("cweID", ""),
+                "languageName": finding.get("languageName", ""),
+                "queryName": finding.get("queryName", ""),
                 "severity": finding.get("severity", ""),
-                "description": finding.get("description", ""),
-                "dataflow": data.get("nodes", []),
+                "dataflow": finding.get("nodes", []),
             })
 
         return triage_records, detailed_records
