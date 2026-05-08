@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from enum import Enum
 
@@ -52,6 +52,13 @@ class DatasetFinding(BaseModel):
   severity: Severity
   complexity: Optional[Complexity] = None
   analyst_triage: DatasetTriage
+
+  @field_validator("complexity", mode="before")
+  @classmethod
+  def _empty_complexity_to_none(cls, v):
+    if v == "" or v is None:
+      return None
+    return v
 
 class DatasetProject(BaseModel):
   project: str
