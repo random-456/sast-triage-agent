@@ -14,7 +14,15 @@ from config import DEFAULT_OUTPUT_DIR, APP_NAME, BENCHMARK_DATASETS_DIR, BENCHMA
 @click.option("--model", "model_name", default=DEFAULT_TRIAGE_MODEL, help="AI Model used for analysis")
 @click.option("--output", "output_dir", default=DEFAULT_OUTPUT_DIR, help="Output directory")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
-def run_benchmark(model_name: str, output_dir: str, verbose: bool):
+@click.option(
+    "--compact-logs",
+    is_flag=True,
+    help=(
+        "Forward --compact-logs to each run_triage invocation. "
+        "Reduced agent log; for development analysis only."
+    ),
+)
+def run_benchmark(model_name: str, output_dir: str, verbose: bool, compact_logs: bool):
     """
     Run a benchmark based on a defined set of CheckmarxOne findings. Results are saved to the chosen output directory.
     """
@@ -54,6 +62,8 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
             os.makedirs(project_output_dir, exist_ok=True)
 
             parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", gitleaks_report]
+            if compact_logs:
+                parameters.append("--compact-logs")
 
             logger.debug(f"Launching run_triage command with parameters : {' '.join(parameters)}")
             result = runner.invoke(cli, ["run"] + parameters)
