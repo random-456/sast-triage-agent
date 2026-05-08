@@ -3,7 +3,7 @@
 import pytest
 from click.testing import CliRunner
 
-from run_triage import cli, filter_findings_by_state
+from run_triage import cli, filter_findings_by_hashes, filter_findings_by_state
 
 
 @pytest.fixture
@@ -126,6 +126,31 @@ class TestStateFilterLogic:
         ]
         result = filter_findings_by_state(findings, ["TO_VERIFY"])
         assert len(result) == 0
+
+
+class TestHashFilterLogic:
+    def test_keeps_only_requested_hashes(self) -> None:
+        """Only findings whose resultHash is in the requested set are kept."""
+        findings = [
+            {"resultHash": "a"},
+            {"resultHash": "b"},
+            {"resultHash": "c"},
+        ]
+        result = filter_findings_by_hashes(findings, ["a", "c"])
+        assert {f["resultHash"] for f in result} == {"a", "c"}
+
+    def test_reads_top_level_result_hash(self) -> None:
+        """Regression: must read resultHash from the top level, not data.resultHash.
+
+        /api/sast-results returns the hash at the top level. A previous version
+        looked under finding["data"]["resultHash"] (the /api/results shape) and
+        silently matched nothing.
+        """
+        findings = [
+            {"resultHash": "a", "data": {"resultHash": "wrong"}},
+        ]
+        assert filter_findings_by_hashes(findings, ["a"]) == findings
+        assert filter_findings_by_hashes(findings, ["wrong"]) == []
 
 
 class TestGitleaksValidation:
