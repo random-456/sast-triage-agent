@@ -2,6 +2,7 @@
 Logging utilities for SAST Triage Agent
 """
 
+import hashlib
 import json
 import datetime
 from typing import Dict, List, Any, Optional
@@ -12,6 +13,14 @@ from config import MAX_LOG_RESULT_LENGTH
 
 
 _OPAQUE_PART_KEYS = ("thought_signature",)
+
+# (bulk_field_name, count_label) for tools whose result has one large array
+# we want to drop in compact mode. Other tools' results are kept verbatim.
+_TOOL_BULK_FIELDS = {
+    "read_file": ("content", "lines"),
+    "list_directory": ("items", "items"),
+    "search_in_files": ("results", "matches"),
+}
 
 
 def _strip_signatures(content):
@@ -37,6 +46,33 @@ def _strip_signatures(content):
     return cleaned
 
 
+def _hash_prompt(prompt: str) -> str:
+    """Stable short hash of a prompt string for log traceability."""
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
+
+
+def _compact_tool_result(tool_name: str, result: Any) -> Any:
+    """Drop the bulk array from a tool result so logs stay scannable.
+
+    Only applies to tools listed in ``_TOOL_BULK_FIELDS``; everything else
+    passes through unchanged. The bulk field is replaced with a small
+    ``_stripped`` marker that records its length, so the reader still knows
+    roughly how much was returned.
+    """
+    if not isinstance(result, dict):
+        return result
+    spec = _TOOL_BULK_FIELDS.get(tool_name)
+    if not spec:
+        return result
+    bulk_field, label = spec
+    bulk = result.get(bulk_field)
+    if not isinstance(bulk, list):
+        return result
+    cleaned = {k: v for k, v in result.items() if k != bulk_field}
+    cleaned["_stripped"] = f"<{len(bulk)} {label}>"
+    return cleaned
+
+
 class AgentLoggingManager:
     """Handles comprehensive logging for agent conversations."""
 
@@ -49,6 +85,7 @@ class AgentLoggingManager:
         scan_id: Optional[str] = None,
         repo_url: Optional[str] = None,
         branch: Optional[str] = None,
+        compact_logs: bool = False,
     ):
         """
         Initialize the logging manager.
@@ -61,6 +98,10 @@ class AgentLoggingManager:
             scan_id: Scan identifier for session context
             repo_url: Repository URL for session context
             branch: Git branch being analyzed
+            compact_logs: If True, write a reduced log (no input prompt
+                bodies, system prompt by hash only, tool result bulk
+                arrays dropped). Intended for development analysis runs;
+                do not use in production where full traceability matters.
         """
         self.model_name = model_name
         self.temperature = temperature
@@ -69,6 +110,8 @@ class AgentLoggingManager:
         self.scan_id = scan_id
         self.repo_url = repo_url
         self.branch = branch
+        self.compact_logs = compact_logs
+        self._system_prompt_recorded = False
         self.setup_logging()
 
     def setup_logging(self):
@@ -89,6 +132,7 @@ class AgentLoggingManager:
                 "scan_id": self.scan_id,
                 "repo_url": self.repo_url,
                 "branch": self.branch,
+                "compact_logs": self.compact_logs,
             },
             "preprocessing": {},
             "findings_processed": [],
@@ -118,6 +162,65 @@ class AgentLoggingManager:
         }
         self.session_log["findings_processed"].append(finding_log)
         return finding_log
+
+    def log_initial_inputs(
+        self,
+        finding_log: Dict,
+        system_prompt: str,
+        human_prompt: str,
+    ):
+        """Record the system + initial human prompts for a finding.
+
+        The system prompt is recorded once at session level (deduplicated
+        by hash); per-finding entries reference it by hash so repeated
+        runs over many findings don't bloat the log with identical
+        copies. In compact mode the session-level entry is just the hash;
+        otherwise the full text is also stored.
+
+        The human prompt is the per-finding input prompt (system template
+        + finding_details JSON). In compact mode it's replaced with a
+        marker referencing the result_hash, so the actual prompt can be
+        reconstructed from finding_details + the source template.
+        Subsequent ``human`` nudge messages are still logged verbatim via
+        ``log_message`` — only this initial prompt is compacted.
+        """
+        sys_hash = _hash_prompt(system_prompt)
+
+        if not self._system_prompt_recorded:
+            self.session_log["session_metadata"]["system_prompt_hash"] = (
+                sys_hash
+            )
+            if not self.compact_logs:
+                self.session_log["session_metadata"]["system_prompt"] = (
+                    system_prompt
+                )
+            self._system_prompt_recorded = True
+
+        finding_log["conversation"].append({
+            "type": "system",
+            "timestamp": datetime.datetime.now().isoformat(),
+            "content": (
+                f"<see session_metadata.system_prompt "
+                f"(sha256:{sys_hash})>"
+            ),
+        })
+
+        if self.compact_logs:
+            result_hash = finding_log.get("result_hash", "?")
+            human_content = (
+                f"<stripped: input prompt with finding_details "
+                f"for {result_hash}>"
+            )
+        else:
+            human_content = human_prompt
+
+        finding_log["conversation"].append({
+            "type": "human",
+            "timestamp": datetime.datetime.now().isoformat(),
+            "content": human_content,
+        })
+
+        self.save_log()
 
     def log_message(
         self,
@@ -164,12 +267,17 @@ class AgentLoggingManager:
             tool_args: Arguments passed to the tool
             result: The result returned by the tool (will be truncated if too long)
         """
+        recorded = (
+            _compact_tool_result(tool_name, result)
+            if self.compact_logs
+            else result
+        )
         log_entry = {
             "type": "tool_result",
             "timestamp": datetime.datetime.now().isoformat(),
             "tool": tool_name,
             "args": tool_args,
-            "result": str(result)[:MAX_LOG_RESULT_LENGTH],
+            "result": str(recorded)[:MAX_LOG_RESULT_LENGTH],
         }
 
         finding_log["conversation"].append(log_entry)

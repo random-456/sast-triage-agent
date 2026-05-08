@@ -55,6 +55,7 @@ class SASTTriageAgent:
         branch: Optional[str] = None,
         repo_url: Optional[str] = None,
         output_dir: str = DEFAULT_OUTPUT_DIR,
+        compact_logs: bool = False,
     ):
         """
         Initialize the SAST Triage Agent.
@@ -71,6 +72,9 @@ class SASTTriageAgent:
             branch: Git branch being analyzed
             repo_url: Repository URL for logging
             output_dir: Directory for output files
+            compact_logs: If True, write a reduced agent log (no input
+                prompt bodies, system prompt by hash only, tool result
+                bulk arrays dropped). For development analysis only.
         """
         self.project_name = project_name
         self.project_id = project_id
@@ -126,6 +130,7 @@ class SASTTriageAgent:
             scan_id=scan_id,
             repo_url=repo_url,
             branch=branch,
+            compact_logs=compact_logs,
         )
 
         # System and Human prompts
@@ -181,11 +186,8 @@ class SASTTriageAgent:
                 ("human", input_prompt),
             ]
 
-            self.agent_logger.log_message(
-                finding_log, "system", self.system_prompt
-            )
-            self.agent_logger.log_message(
-                finding_log, "human", input_prompt
+            self.agent_logger.log_initial_inputs(
+                finding_log, self.system_prompt, input_prompt
             )
 
             max_iterations = MAX_ANALYSIS_ITERATIONS
