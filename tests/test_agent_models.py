@@ -9,6 +9,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import CONFIDENCE_THRESHOLD
 from sast_triage.agent_models import (
+    AnalystVerdict,
+    CheckmarxFinding,
+    CriticConfig,
+    CritiqueDecision,
+    CritiqueResult,
     SuggestedState,
     TriageDecision,
     derive_state,
@@ -75,3 +80,109 @@ class TestTriageDecisionSchema:
         )
         assert decision.agreement_rate is None
         assert decision.sample_count is None
+
+
+# A real finding shape from a benchmark repo, trimmed to the modelled fields.
+_REAL_FINDING = {
+    "resultHash": "IjQ8QoUyChcGwkSE7oLELYPPjFI=",
+    "state": "TO_VERIFY",
+    "severity": "MEDIUM",
+    "category": "Java_Medium_Threat",
+    "cweID": "328",
+    "languageName": "java",
+    "queryName": "Reversible_One_Way_Hash",
+    "dataflow": [
+        {
+            "column": 65,
+            "fileName": "/src/.../BenchmarkTest02717.java",
+            "fullName": '""SHA1PRNG""',
+            "line": 50,
+            "method": "doPost",
+            "name": '""SHA1PRNG""',
+            "nodeID": 2085836,
+            "domType": "StringLiteral",
+        }
+    ],
+}
+
+
+class TestCheckmarxFinding:
+    """The finding model validates the ingestion boundary."""
+
+    def test_parses_real_finding_payload(self):
+        finding = CheckmarxFinding(**_REAL_FINDING)
+        assert finding.resultHash == "IjQ8QoUyChcGwkSE7oLELYPPjFI="
+        assert finding.queryName == "Reversible_One_Way_Hash"
+        assert finding.dataflow[0].fileName.endswith("BenchmarkTest02717.java")
+        assert finding.dataflow[0].line == 50
+
+    def test_cwe_int_is_coerced_to_string(self):
+        finding = CheckmarxFinding(resultHash="h", cweID=328)
+        assert finding.cweID == "328"
+
+    def test_cwe_string_is_preserved(self):
+        finding = CheckmarxFinding(resultHash="h", cweID="328")
+        assert finding.cweID == "328"
+
+    def test_only_result_hash_is_required(self):
+        finding = CheckmarxFinding(resultHash="h")
+        assert finding.queryName is None
+        assert finding.cweID is None
+        assert finding.dataflow == []
+
+    def test_missing_result_hash_rejected(self):
+        with pytest.raises(ValueError):
+            CheckmarxFinding(queryName="SQL_Injection")
+
+    def test_unmodelled_fields_are_preserved(self):
+        finding = CheckmarxFinding(resultHash="h", description="extra payload")
+        assert finding.model_dump()["description"] == "extra payload"
+
+
+class TestAnalystVerdict:
+    """A single analyst sample carries the vote key plus its evidence trail."""
+
+    def test_minimal_verdict_defaults_collections(self):
+        verdict = AnalystVerdict(
+            is_vulnerable=True, confidence=0.9, reasoning="reachable sink"
+        )
+        assert verdict.citation_lines == []
+        assert verdict.evidence_refs == []
+        assert verdict.sample_temperature is None
+
+    def test_confidence_out_of_range_rejected(self):
+        with pytest.raises(ValueError):
+            AnalystVerdict(is_vulnerable=False, confidence=2.0, reasoning="x")
+
+
+class TestCritiqueResult:
+    """The critic's structured assessment requires a weakest point."""
+
+    def test_approved_still_requires_weakest_point(self):
+        with pytest.raises(ValueError):
+            CritiqueResult(decision="APPROVED", rationale="fine")
+
+    def test_decision_accepts_enum_values(self):
+        crit = CritiqueResult(
+            decision="NEEDS_MORE_RESEARCH",
+            rationale="path not established",
+            weakest_point="no sink confirmed",
+        )
+        assert crit.decision == CritiqueDecision.NEEDS_MORE_RESEARCH
+        assert crit.gaps == []
+
+    def test_invalid_decision_rejected(self):
+        with pytest.raises(ValueError):
+            CritiqueResult(
+                decision="LGTM", rationale="x", weakest_point="y"
+            )
+
+
+class TestCriticConfig:
+    """Critic loop defaults match doc 05."""
+
+    def test_defaults(self):
+        config = CriticConfig()
+        assert config.temperature == 0.6
+        assert config.max_research_loops == 2
+        assert config.max_reanalysis_loops == 2
