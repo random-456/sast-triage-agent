@@ -10,9 +10,41 @@
 ## Goal
 
 A new contributor can `git clone`, read the docs, and understand
-the v3 system without reading source code. No stale references to
-removed features. No half-written v2 plans presented as current
-architecture.
+the system without reading source code. No stale references to
+removed features.
+
+## Documentation principles (apply to every shipped doc)
+
+These govern all documentation that ships in the product
+(`docs/`, `README.md`, `AGENTS.md` — anything on feature/dev
+branches):
+
+- **Neutral, present-tense.** Describe what the system *is* and how
+  it works, with the rationale behind each design decision. Do
+  **not** write it as a changelog or migration narrative (no "we
+  changed X", no version-to-version framing). A reader should see a
+  coherent description of the current system, not its history.
+- **Comprehensive with justifications.** Cover the important design
+  topics and *why* each choice was made (e.g. why a separate critic,
+  why agreement-based confidence, why dataflow-guided retrieval).
+  The reasoning is part of the documentation, not just the
+  mechanics.
+- **No unproven quantitative claims.** Either cite a source, or
+  phrase qualitatively ("can be expected to", "tends to"). Never
+  state a specific improvement/saving multiplier as fact without
+  evidence.
+- **No specific organizational scale figures.** Describe scale
+  qualitatively ("large application portfolios", "high-volume
+  projects"), never with concrete app/repo/finding counts.
+- **No references to outside parties or private discussions**, and
+  **no reference to any external comparator project.** These inform
+  our reasoning but must not appear in shipped docs.
+
+**Planning material is not shipped.** `redesign-analysis.md` and the
+`v3-evolution/` folder are working/scratch documents and are **not
+committed to feature/dev branches**. Only the cleaned, final
+documentation in `docs/` and `README.md` ships. The planning folders
+may contain framing and references that the shipped docs must not.
 
 ## Documentation refresh
 

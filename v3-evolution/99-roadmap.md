@@ -42,8 +42,8 @@ across implementers if needed.
 | # | Doc | Effort | Notes |
 |---|---|---|---|
 | 1 | `03-llm-backend.md` | 1 day | langchain-google-genai migration; unblocks AI Studio dev |
-| 2 | `04-prompt-redesign.md` (checklists + steps) | 5-7 days | Top-5 CWE checklists; rest in Phase 2 |
-| 3 | `06-proposed-not-exploitable.md` | 2 days | Plumbing for the new verdict state |
+| 2 | `04-prompt-redesign.md` (checklists + steps) | 5-7 days | Full CWE checklist set (subagent-authored) + mandatory analysis steps |
+| 3 | `06-output-model.md` | 2 days | Two-field output (classification + disposition); read-only |
 | 4 | `10-phoenix-removal.md` | 0.5 day | Clean-up |
 
 **Ship gate:** gold-set numbers improve on at least overall F1.
@@ -58,7 +58,6 @@ No regression in any per-CWE bucket > 5 points.
 |---|---|---|---|
 | 1 | `07-langgraph-and-stateless.md` | 5-7 days | Migrate per-finding loop to LangGraph |
 | 2 | `05-critic-and-self-consistency.md` | 5-7 days | Separate critic LLM + N-sample voting |
-| 3 | `04-prompt-redesign.md` (remaining checklists) | 5-7 days | The remaining 10 CWE checklists |
 
 **Ship gate:** the high-confidence-FN failure mode is gone — verify
 on the gold-set that no finding reported at confidence ≥ 0.9 is a
@@ -71,21 +70,23 @@ visible once the critic loop exists.
 
 | # | Doc | Effort | Notes |
 |---|---|---|---|
-| 1 | `08-tree-sitter-extraction.md` | 3-5 days | Function-level extraction across 8 languages |
+| 1 | `08-code-retrieval.md` | 3-5 days | Dataflow-guided extraction + whole-file fallback |
 
-**Ship gate:** average tokens consumed per finding drops by ≥ 30%
-without recall regressing. (Cheaper without quality loss = win.)
+**Ship gate:** large files are no longer read whole; no per-CWE
+recall regression vs the pre-retrieval baseline. (Token savings show
+up mainly on large files, which the gold-set may under-represent.)
 
 ## Phase 4 — Scale features (Week 9-12)
 
-**Required for production deployment** at the 2000-app target.
+**Required for production deployment** at scale (large application portfolios).
 
 | # | Doc | Effort | Notes |
 |---|---|---|---|
 | 1 | `09-finding-clustering.md` | 7-10 days | Cluster + representative analysis |
 
-**Ship gate:** amortized per-finding cost on a synthetic 100-finding
-cluster-heavy dataset drops to ≤ $0.10 average.
+**Ship gate:** on a synthetic cluster-heavy dataset, total LLM calls
+drop in proportion to cluster sizes, and propagated verdicts match
+full per-finding analysis on the same members.
 
 ## Phase 5 — Hygiene (Week 12-13)
 
@@ -104,16 +105,16 @@ the system without reading source code.
        02 (gold-set)
               │
               ▼
-   ┌───────── 03, 04 (first half), 06, 10 ─── Phase 1
+   ┌───────── 03, 04, 06, 10 ───────── Phase 1
    │              │
    │              ▼
    │          ┌─ 07 ──┐
    │          │       │
    │          │       ▼
-   │          │      05, 04 (rest) ──── Phase 2
+   │          │      05 ──────────────── Phase 2
    │          │
    │          ▼
-   │         08 (tree-sitter)        ──── Phase 3
+   │         08 (code retrieval)     ──── Phase 3
    │          │
    │          ▼
    │         09 (clustering)         ──── Phase 4
@@ -149,13 +150,13 @@ After each phase ships, before starting the next:
 ## Effort totals
 
 - Phase 0: 3-5 days
-- Phase 1: 8-11 days
-- Phase 2: 15-21 days
+- Phase 1: 10-14 days (includes the full subagent-authored checklist set)
+- Phase 2: 10-14 days
 - Phase 3: 3-5 days
 - Phase 4: 7-10 days
 - Phase 5: 3-5 days
 
-**Total: 7-10 working weeks of focused implementation.**
+**Total: roughly 8-11 working weeks of focused implementation.**
 
 Realistic calendar time including reviews, gold-set growth, and
 real-world interruptions: ~3 months.

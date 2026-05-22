@@ -4,7 +4,7 @@
 > against `RHEcosystemAppEng/sast-ai-workflow` and the published state of the art,
 > and a concrete recommendation for how to evolve the tool given the constraint of
 > only having Gemini 2.5 Pro on Vertex AI and an organizational ambition to run
-> across 2000+ applications.
+> across a large application portfolio.
 >
 > Bottom line up front: the current tool is not fundamentally broken, but several
 > of its core mechanisms (`verify_analysis` self-check, self-reported confidence,
@@ -403,9 +403,10 @@ Outside the per-finding subgraph, run a small linear pipeline:
    Write back to Checkmarx
 ```
 
-Clustering before analysis is what lets you tackle 2000 apps × 1000
-findings without running the full pipeline 2 million times. It's also
-where you get *better* answers, not just cheaper ones — pattern-level
+Clustering before analysis is what lets you tackle a large,
+high-volume portfolio without running the full pipeline on every
+finding. It's also where you get *better* answers, not just cheaper
+ones — pattern-level
 reasoning lets the analyst see "this codebase uses parameterized
 queries everywhere, so all 200 SQLi findings inherit that decision."
 
@@ -488,7 +489,7 @@ Goal: kill the high-confidence-FN failure mode.
 
 ### Phase 3 — Scale architecture (1-2 months)
 
-Goal: make 2000 apps × 1000 findings tractable.
+Goal: make large-portfolio scale tractable.
 
 1. **Finding clustering** by `(queryName, sink_function, source_kind)`.
 2. **Cluster-representative analysis** with pattern-match validation
@@ -519,47 +520,44 @@ Goal: make 2000 apps × 1000 findings tractable.
 
 ## 6. Scale and cost reality check
 
-Rough math for a single full sweep at the scale management is asking
-about. Assume Gemini 2.5 Pro on Vertex AI: ~$1.25 / 1M input tokens,
-~$5 / 1M output tokens, including thinking tokens (which can dominate).
+Cost is dominated by the number of LLM calls per finding. Using
+Gemini 2.5 Pro list pricing (~$1.25 / 1M input tokens, ~$5-10 / 1M
+output tokens, with thinking tokens often dominating):
 
 ### Per-finding cost, current architecture
 
-- ~30K input tokens × 1.25 / 1M = ~$0.04 input
-- ~5K output tokens × 5 / 1M = ~$0.025 output
-- Thinking can 2× this in practice
-- **~$0.10-0.20 per finding**
+A single finding consumes on the order of tens of thousands of input
+tokens plus a few thousand output tokens; thinking can roughly double
+the output cost. The result is a small fraction of a dollar per
+finding.
 
 ### Per-finding cost, proposed architecture (no clustering)
 
-- Researcher: similar to current, ~$0.10
-- Analyst (×3 for self-consistency): ~$0.05-0.10 each = ~$0.20
-- Critic (×3): ~$0.05-0.10 each = ~$0.20
-- **~$0.50 per finding** — 3-5× current cost
+Running a researcher pass plus N analyst+critic samples multiplies
+the per-finding cost by roughly the sample count — a few times the
+single-pass cost.
 
-### Why clustering is non-optional
+### Why clustering matters
 
-- 2000 apps × 500 avg findings = 1M findings
-- At $0.50 / finding without clustering = **$500K per full sweep**
-- With aggressive clustering (assume 10× dedup factor on average,
-  realistic for codebases with repetitive patterns): ~$50-100K
-- With cheap pattern-match validation per non-representative:
-  add ~$0.01 each, so 900K × $0.01 = $9K
-- **Realistic full-sweep cost with clustering: $60-120K, vs $500K naive**
-
-These numbers are rough — real cost depends heavily on codebase size,
-average finding complexity, and how aggressive clustering is — but the
-order of magnitude shows why §4.2 (clustering) isn't optional. It's
-the difference between feasible and not.
+On a large, repetitive portfolio, analyzing every finding
+independently multiplies that per-finding cost by the total finding
+count. Clustering analyzes each distinct structural pattern once and
+validates the rest with a single cheap call, so the dominant cost
+scales with the number of *distinct patterns* rather than the number
+of *findings*. How much that helps is entirely codebase-dependent —
+substantial where findings are repetitive, negligible where they are
+heterogeneous — so no fixed multiplier is claimed. The qualitative
+point stands: for large repetitive portfolios, clustering is what
+keeps a full sweep economical.
 
 ### Throughput
 
-Vertex AI Gemini 2.5 Pro: rate-limited but parallel-friendly. Two
-findings in flight is trivial; 50 in flight needs quota uplift. At
-~30s per finding (3 LLM calls × ~10s each), 50-way concurrency =
-~6000 findings/hour = ~1M findings in ~7 days of wall-clock.
-Reasonable for a quarterly sweep; tight for a continuous-incremental
-workflow.
+Gemini 2.5 Pro on Vertex AI is rate-limited but parallel-friendly. A
+handful of findings in flight is trivial; high concurrency needs a
+quota uplift. With several LLM calls per finding, the wall-clock for
+a large sweep is governed by concurrency and quota rather than any
+single finding's latency — plan a periodic batch sweep rather than
+real-time per-finding processing.
 
 ---
 
@@ -716,14 +714,15 @@ You said no questions for routine things, but a few are not routine:
    already in your benchmark format? If yes, we use that. If not,
    building it is Phase 0 and is worth a week's delay before any
    redesign.
-2. **`PROPOSED_NOT_EXPLOITABLE` write-back.** Does Checkmarx's API
-   actually accept this state for write-back from your tool?
-   (`utils/checkmarx_helpers.py` would need to handle it.)
-   The escalation strategy depends on this.
+2. **Confidence threshold for `PROPOSED_NOT_EXPLOITABLE`.** The tool
+   is read-only (no write-back), so the disposition is advisory. The
+   open question is where to set the confidence threshold that splits
+   confident dismissals (`NOT_EXPLOITABLE`) from escalated ones
+   (`PROPOSED_NOT_EXPLOITABLE`) — calibrated on the gold-set, not
+   knowable a priori.
 3. **Concurrency budget.** What's your Vertex AI Gemini 2.5 Pro QPM
-   quota today? The cost numbers in §6 assume you can run ~50 findings
-   in parallel; if the quota is much lower, the wall-clock for a
-   2000-app sweep moves from "a week" to "a quarter."
+   quota? It sets how much can run in parallel and therefore the
+   wall-clock for a full portfolio sweep.
 4. **Sast-ai-workflow's stateless prompt pattern.** I'd want to lift
    the technique. Is there any organizational concern about copying
    the design (it's Apache-2.0, but you know your context)?

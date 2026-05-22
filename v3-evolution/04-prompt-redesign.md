@@ -141,20 +141,43 @@ def select_checklist(query_name: str, cwe: str) -> ChecklistDocument:
 
 ### Authoring strategy
 
-The user has explicitly noted that Claude Code with Opus
-max-effort can author these checklists well. Recommended workflow:
+A capable model with strong security knowledge can author
+high-quality checklists. The **full set for all categories is
+authored during implementation — not phased** — so a complete
+starting point is in place before benchmarking, with later
+refinement driven by gold-set results.
 
-1. Engineer drafts the `_schema.yaml` and one exemplar
-   (`sqli.yaml`) by hand.
-2. Each remaining checklist is drafted by an LLM with the schema
-   + exemplar as context, then human-reviewed.
-3. Validate each against 5 representative findings from the
-   gold-set before committing.
+Workflow:
 
-### Prioritization
+1. Engineer hand-writes `_schema.yaml` and one exemplar
+   (`sqli.yaml`) to lock the shape and the quality bar.
+2. A dedicated authoring subagent drafts the full set, framed as a
+   senior security analyst. **The subagent must be briefed with the
+   full context** — not just "write a checklist": the goal (triage
+   true-positive vs false-positive), the asymmetric cost (a false
+   negative is the worst outcome), the Checkmarx setting and the
+   dataflow it provides, the two-field output model
+   (`06-output-model.md`), the mandatory analysis protocol (Part 2),
+   the schema, and the exemplar.
+3. A separate **adversarial review pass** challenges each checklist:
+   are the "effective sanitizer" patterns actually effective? Are
+   there known bypasses? Are the false-positive patterns real? This
+   pass exists specifically to catch over-confident or incomplete
+   guidance, and should re-question items until they hold up to
+   senior-analyst scrutiny.
+4. Validate each against representative gold-set findings before
+   committing.
 
-Don't write all 15 in Phase 1. **Phase 1 ships with the top 5 by
-gold-set finding volume.** Remaining 10 ship in Phase 2.
+### Language scope annotations
+
+Each checklist must state, per item, whether it is
+language-agnostic or language/framework-specific. SQLi
+parameterization is a universal *principle*, but "use
+`PreparedStatement`" is Java-specific while "use parameterized
+queries / bound parameters" is the language-agnostic form. Any item
+that applies only to a particular framework or runtime must say so.
+This keeps guidance correct across the multi-language findings
+Checkmarx produces and makes coverage gaps visible.
 
 ## Part 2 — Mandatory analysis steps
 

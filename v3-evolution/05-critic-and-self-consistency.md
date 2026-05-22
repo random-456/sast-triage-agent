@@ -137,8 +137,9 @@ final_confidence = 0.7 * agreement_rate + 0.3 * evidence_strength
 
 ### Adaptive N
 
-Running 3 samples per finding adds 3× cost. Adaptive sampling
-saves money:
+Running N samples multiplies the analyst+critic cost by roughly N.
+Adaptive sampling avoids paying for samples that won't change the
+outcome:
 
 - Start with N=2 samples.
 - If verdicts agree and both critics APPROVED → commit with
@@ -194,9 +195,10 @@ FINAL_CONFIDENCE_WEIGHTS = {
 5. Remove `verify_analysis` tool from `agent_tools.py`. The
    critic LLM call replaces it. Tests that referenced
    `verify_analysis` need updates.
-6. Run gold-set; expect: confidence calibration shifts (ECE drops),
-   high-confidence false negatives drop substantially, total cost
-   per finding rises ~2-3×.
+6. Run gold-set. The targets to validate: confidence calibration
+   improves (ECE drops), high-confidence false negatives drop, and
+   verdict stability rises — at the expense of more LLM calls per
+   finding (roughly proportional to the sample count).
 
 ## Acceptance criteria
 
@@ -205,13 +207,15 @@ FINAL_CONFIDENCE_WEIGHTS = {
   temperature.
 - Self-consistency aggregator is unit-tested with synthetic
   sample sets (all-agree, 2/3-agree, split, all-disagree).
-- Gold-set benchmark shows:
-  - High-confidence false-negative count drops by ≥ 50% vs baseline.
-  - ECE on the confidence-vs-correctness calibration table drops
-    by ≥ 30%.
-  - Verdict stability re-run rate rises to ≥ 95%.
-- Cost per finding rises but stays under ~$0.60 average on the
-  gold-set (clustering in Phase 4 brings real-world cost back down).
+- Gold-set benchmark targets to validate:
+  - High-confidence false-negative count drops substantially vs
+    the baseline (the primary objective).
+  - ECE on the confidence-vs-correctness calibration table improves.
+  - Verdict stability re-run rate reaches ≥ 95%.
+- Per-finding cost rises (multiple analyst+critic passes); clustering
+  (`09-finding-clustering.md`) amortizes this on real workloads.
+  Track the cost so the trade-off is visible, but it is a tunable
+  knob (sample count), not a fixed target.
 
 ## Risks / rollback
 

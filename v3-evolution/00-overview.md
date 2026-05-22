@@ -25,9 +25,10 @@ finding-level clustering. The goals are:
 3. **Add a safety valve.** New `PROPOSED_NOT_EXPLOITABLE` verdict
    state routes uncertain dismissals to human review instead of
    silently dropping them.
-4. **Scale to 2000 apps.** Finding clustering with representative
-   analysis amortizes the per-finding cost across similar findings
-   (typical 5-10× reduction at scale).
+4. **Scale to large portfolios.** Finding clustering with
+   representative analysis amortizes the per-finding cost across
+   findings that share the same structural pattern, so repetitive
+   findings don't each pay for a full analysis.
 5. **Simplify what's there.** Rip out Phoenix tracing (high cost, low
    value); refactor toward small, focused modules.
 
@@ -100,7 +101,7 @@ To keep v3 finite and shippable:
 - **FAISS known-FP corpus.** Deferred until a feedback loop with
   analyst verdicts exists. See `redesign-analysis.md` §4.3.
 - **Cross-file callers/callees in tree-sitter.** Function-at-line
-  extraction is in scope (`08-tree-sitter-extraction.md`); call-graph
+  extraction is in scope (`08-code-retrieval.md`); call-graph
   navigation is a future enhancement.
 
 ## What stays unchanged from v2

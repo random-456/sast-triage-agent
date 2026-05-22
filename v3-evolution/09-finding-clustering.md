@@ -1,207 +1,209 @@
 # 09 — Finding clustering + representative analysis
 
-> Scope: before running the per-finding subgraph, cluster the
-> incoming Checkmarx findings by structural signature. Run the full
-> subgraph only on one representative per cluster; for
-> non-representatives, run a cheap "is this the same shape?"
-> validation against the representative's verdict.
+> Scope: before running the per-finding subgraph, group incoming
+> findings by structural signature. Run the full subgraph on one
+> representative per group; for the rest, run a cheap
+> structural-equivalence check against the representative and
+> propagate its verdict only when the shapes truly match.
 >
-> Depends on: `07-langgraph-and-stateless.md` (per-finding
-> subgraph in place),
-> `05-critic-and-self-consistency.md` (the
-> per-finding cost we're trying to amortize).
+> Depends on: `07-langgraph-and-stateless.md`,
+> `05-critic-and-self-consistency.md`.
 
 ## Goal
 
-Make the 2000-app × ~1000-finding scale tractable. Realistic
-clustering reduces total LLM cost by 5-10× on typical real-world
-projects.
+Avoid re-running the full (and relatively expensive) analyst+critic
++ self-consistency loop on findings that are structurally identical
+to one already analyzed. This makes large, repetitive codebases
+practical to process. How much it saves is entirely
+codebase-dependent: substantial for codebases with many
+structurally-identical findings, negligible for highly
+heterogeneous ones. No fixed multiplier is claimed.
 
 ## Motivation
 
-Without clustering, a codebase with 200 SQLi findings will run the
-full per-finding subgraph (researcher → analyst → critic, N
-samples) 200 times. In practice:
-
-- Many of those findings share the same source pattern
-  (e.g. unsanitized `request.body.X`).
-- Many share the same sink pattern (e.g. `executeQuery(...)`).
-- Many share the same exact query-construction template.
-- A single analytical verdict applies to all of them: "this
-  codebase uses raw string concat for query construction, so all
-  SQLi findings on this pattern are CONFIRMED."
-
-Running the analyst+critic loop on each separately is wasteful
-*and* worse: the agent sometimes flip-flops between findings
-because of sampling variance.
+A single codebase often contains many findings that share the same
+vulnerability shape — the same kind of source reaching the same
+kind of sink through the same construct, differing only in location.
+Analyzing each independently repeats work and, because of sampling
+variance, can even produce inconsistent verdicts across findings
+that are really the same issue. Clustering analyzes the shape once
+and propagates, with a safety check.
 
 ## Cluster signature
 
-Group findings by the tuple `(queryName, sink_signature,
-source_signature)`:
+Findings are grouped by a structural signature derived from the
+Checkmarx dataflow. The signature uses the *kind* of source and
+sink, **not their location** — so the same pattern in different
+files/lines groups together:
 
-- **`queryName`** — already available from Checkmarx.
-- **`sink_signature`** — derived from the sink dataflow node:
-  `(sink_file_basename, sink_function_name, sink_method_called)`.
-- **`source_signature`** — derived from the source dataflow node:
-  `(source_kind, source_param_or_field)`.
+```
+(queryName, source_fingerprint, sink_fingerprint)
+```
 
-Findings with identical signatures form a cluster.
+- **`queryName`** — the Checkmarx rule (e.g. `SQL_Injection`,
+  `Reversible_One_Way_Hash`).
+- **`source_fingerprint`** — `(name, domType)` of the first
+  dataflow node.
+- **`sink_fingerprint`** — `(name, domType)` of the last dataflow
+  node.
 
-This is **structural similarity**, not semantic. It uses
-Checkmarx's already-emitted dataflow metadata. No embeddings,
-no LLM calls for clustering itself.
+**Line numbers, file names, and method lines are deliberately NOT
+part of the signature.** Including them would prevent identical
+patterns in different locations from grouping — the opposite of
+what we want. Those fields are used only for *code retrieval*
+(see `08-code-retrieval.md`), never for grouping.
+
+All three components must be equal for two findings to share a
+candidate cluster.
+
+### Why first/last node, not "source→sink taint"
+
+Not every Checkmarx finding is a clean attacker-source → dangerous-
+sink taint flow. Using the first and last dataflow node's
+`name` + `domType` as a generic fingerprint handles both taint
+flows and configuration/crypto findings without special-casing.
+
+## Worked examples
+
+### Example A — a crypto-misuse finding (from real Checkmarx output)
+
+```
+resultHash:  IjQ8QoUyChcGwkSE7oLELYPPjFI=
+queryName:   Reversible_One_Way_Hash      (CWE-328)
+dataflow[0]: name="SHA1PRNG"  domType=StringLiteral      (line 50)
+dataflow[-1]: name="getInstance" domType=MethodInvokeExpr (line 50)
+```
+
+Signature:
+
+```
+queryName:           Reversible_One_Way_Hash
+source_fingerprint:  ("SHA1PRNG", StringLiteral)
+sink_fingerprint:    ("getInstance", MethodInvokeExpr)
+```
+
+`fileName` and `line` (50), `methodLine` (39) are excluded. Any
+other finding flagging `SHA1PRNG` via `getInstance`, in any file,
+shares this cluster.
+
+### Example B — three SQL-injection findings
+
+| Finding | queryName | source_fingerprint | sink_fingerprint | Cluster |
+|---|---|---|---|---|
+| A | SQL_Injection | `(getParameter, MethodInvokeExpr)` | `(executeQuery, MethodInvokeExpr)` | **1** |
+| B | SQL_Injection | `(getParameter, MethodInvokeExpr)` | `(executeQuery, MethodInvokeExpr)` | **1** |
+| C | SQL_Injection | `(getParameter, MethodInvokeExpr)` | `(createQuery, MethodInvokeExpr)` | **2** |
+
+A and B share all three components → one cluster. C reaches a
+different sink (`createQuery`, JPA, which parameterizes differently)
+→ its own cluster, analyzed independently.
 
 ## Pipeline shape
 
-```
+```python
 findings = fetch_from_checkmarx()
+clusters = group_by_signature(findings)   # dict[signature → findings]
 
-clusters = group_by_signature(findings)
-# clusters: dict[signature → list of findings]
-
-for sig, members in clusters.items():
+for signature, members in clusters.items():
     representative = pick_representative(members)
     rep_verdict = await per_finding_graph.ainvoke(representative)
+    assign(representative, rep_verdict)
 
     for other in members:
         if other is representative:
             continue
-        # Cheap validation: same shape → inherit verdict
-        validated = await pattern_match_validate(
+        same_shape = await validate_structural_equivalence(
             representative, rep_verdict, other
         )
-        if validated:
-            assign_verdict_with_propagated(other, rep_verdict)
+        if same_shape:
+            assign(other, propagate(rep_verdict))   # confidence penalty applied
         else:
-            # Shape diverged; analyze independently
-            other_verdict = await per_finding_graph.ainvoke(other)
-            assign_verdict(other, other_verdict)
-
-write_all_back_to_checkmarx()
+            assign(other, await per_finding_graph.ainvoke(other))
 ```
+
+The outer pipeline stays plain Python (see `01-architecture.md`).
 
 ## Representative selection
 
-`pick_representative(members)`:
+`pick_representative(members)` prefers, in order:
+1. The member with the most complete dataflow (longest `dataflow`).
+2. Highest severity.
+3. Shortest source file path (less likely to be generated code).
 
-- Prefer the member with the most-complete dataflow info
-  (longest `nodes` array).
-- Tiebreaker: highest severity.
-- Tiebreaker: shortest `sink_file` path (probably less
-  generated code).
+## Structural-equivalence validation (the safety net)
 
-The picked representative gets the full subgraph treatment.
+Same signature means same *source/sink kind*, but the path *between*
+them can differ — one finding may have a sanitizer the other lacks.
+So before propagating a verdict, a cheap check confirms the shapes
+truly match:
 
-## Pattern-match validation
+`validate_structural_equivalence(representative, rep_verdict, other)`
+— a single low-temperature LLM call (no critic, no sampling) that
+sees the representative's source+sink and verdict, and the
+candidate's source+sink, and answers:
 
-`pattern_match_validate(representative, rep_verdict, other)`:
+```json
+{ "is_same": false, "divergence_reason": "candidate passes input
+  through encodeForHTML() before the sink; representative does not" }
+```
 
-A single cheap LLM call (temperature 0.1, no critic, no samples).
-The model sees:
-
-- The representative's source+sink (10 lines each)
-- The representative's verdict + 2-sentence justification
-- The candidate finding's source+sink (10 lines each)
-
-Asks one yes/no question:
-
-> "Is the candidate finding structurally equivalent to the
-> representative? Specifically: same source pattern, same sink
-> pattern, no different intermediate guards. Return JSON: `{is_same:
-> bool, divergence_reason: str}`."
-
-If `is_same=True`, inherit the representative's verdict, with a
-small confidence penalty (the representative's confidence ×
-0.95).
-
-If `is_same=False`, drop out of the cluster and run the full
-subgraph on this finding independently. Don't trust the cheap
-check alone for a flip-flop.
+If `is_same` is false, the candidate drops out of the cluster and
+goes through the full per-finding subgraph. We never propagate a
+verdict across a divergence the cheap check can spot.
 
 ## Confidence propagation
 
-- Cluster representative verdict: full confidence from the
-  subgraph (see `05-critic-and-self-consistency.md`).
-- Propagated verdicts on validated members: representative's
-  confidence × 0.95.
-- Failed validation: finding goes through the full subgraph,
-  getting its own confidence.
+- Representative: full confidence from the subgraph.
+- Validated members: representative confidence with a small penalty
+  (e.g. ×0.95) to reflect the indirection.
+- Failed validation: independent verdict with its own confidence.
 
-Track in the output: `clustered_with_representative: str |
-None`. Lets analysts see which verdicts were propagated.
-
-## Cost math
-
-Typical real-world project assumption:
-
-- 500 findings
-- 10× clustering ratio (50 unique structural patterns)
-
-Without clustering:
-- 500 × (full subgraph cost) = 500 × ~$0.50 = $250
-
-With clustering:
-- 50 × (full subgraph) = $25
-- 450 × (cheap validation, ~$0.005) = $2.25
-- Total: ~$27 — about 10× cheaper
-
-At organization scale (2000 apps × 500 findings = 1M findings):
-- Without clustering: ~$500K per full sweep
-- With 10× clustering: ~$50-100K per full sweep
-
-Real ratios depend heavily on codebase shape — small monorepos
-with repetitive patterns benefit most; small varied codebases
-benefit least.
+The output records `clustered_with` (the representative's
+`resultHash`, or `null`) and `cluster_size`, so an operator can see
+which verdicts were propagated.
 
 ## Implementation steps
 
-1. Add `sast_triage/clustering/__init__.py` with
-   `group_by_signature` and `pick_representative`.
-2. Define `FindingSignature` Pydantic model.
-3. Write `pattern_match_validate` as a single LLM call with a
-   minimal prompt.
-4. Wire into the outer pipeline (in `agent.py` /
-   `run_triage.py:_run_triage_analysis`).
-5. Add a `--no-clustering` CLI flag to bypass clustering for
-   debugging / benchmarking comparisons.
-6. Add to the assessment output schema:
-   `clustered_with_representative: str | None`,
-   `cluster_size: int`.
-7. Update `docs/benchmark.md` and `docs/architecture.md`.
+1. `sast_triage/clustering/__init__.py`: `FindingSignature` model,
+   `group_by_signature`, `pick_representative`.
+2. `validate_structural_equivalence` as a single minimal LLM call.
+3. Wire into the outer pipeline.
+4. `--no-clustering` flag to bypass (for debugging and for
+   apples-to-apples benchmark comparison).
+5. Output schema: `clustered_with`, `cluster_size`.
+6. Docs: `docs/clustering.md`, plus the architecture doc.
 
 ## Acceptance criteria
 
-- A synthetic dataset with known repetitive patterns (e.g. 100
-  near-identical SQLi findings) demonstrates ≥ 5× cost reduction
-  vs no-clustering.
-- On the gold-set, clustering doesn't degrade overall F1 (the
-  validator is robust enough to catch divergent cases).
-- Propagated verdicts are clearly marked in the output and in
-  per-finding logs.
-- `--no-clustering` bypass works.
+- On a synthetic dataset containing many structurally-identical
+  findings, total LLM calls drop in proportion to cluster sizes
+  (measured, not asserted to a fixed factor), with the
+  representative+validation path producing the same verdicts as
+  full per-finding analysis on those members.
+- On the gold-set, enabling clustering does not change classification
+  metrics beyond noise (the validator catches divergent cases).
+- Propagated verdicts are clearly marked (`clustered_with`).
+- `--no-clustering` bypass works and is used for the benchmark
+  baseline.
 
 ## Risks / rollback
 
-- **Risk:** the cheap validator inappropriately approves a
-  divergent case → wrong verdict propagated. **Mitigation:** the
-  validator's prompt is conservative; it must cite the
-  divergence reason for any approval. Gold-set benchmark detects
-  systematic errors.
-- **Risk:** clusters are unstable across runs (signature hashing
-  varies). **Mitigation:** signature is deterministic over
-  Checkmarx's output; the only variance source is the API itself.
-- **Rollback:** `--no-clustering` flag is the rollback;
-  effectively a single config flip.
+- **Risk:** the cheap validator approves a divergent case →
+  wrong verdict propagated. **Mitigation:** the validator must cite
+  a divergence reason to *reject* and is prompted conservatively;
+  the gold-set detects systematic propagation errors. When in doubt,
+  it should fail to "not same" and trigger full analysis.
+- **Risk:** signatures are too coarse (group things that shouldn't)
+  or too fine (group nothing). **Mitigation:** the
+  first/last-node fingerprint is a starting heuristic; tune on real
+  findings. The validator is the backstop against
+  too-coarse grouping.
+- **Rollback:** `--no-clustering` is effectively a single config
+  flip back to per-finding analysis.
 
 ## Out of scope
 
-- Cross-project clustering. Each project's findings are clustered
-  in isolation. Cross-project pattern recognition is a future
-  enhancement (and depends on FAISS-style infrastructure that v3
-  explicitly defers).
-- Embedding-based similarity. Structural signature is sufficient
-  and orders-of-magnitude cheaper. Reconsider only if structural
-  clustering proves too coarse on the gold-set.
-- Cluster merging based on verdict agreement. Adds complexity for
-  marginal benefit.
+- Cross-project clustering. Findings are clustered within a project.
+- Embedding-based similarity. Structural signatures are cheaper and
+  sufficient to start; revisit only if they prove too coarse on the
+  gold-set.
