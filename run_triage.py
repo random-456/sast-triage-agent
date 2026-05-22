@@ -46,6 +46,7 @@ from config import (
     DEFAULT_TRIAGE_MODEL,
     TEMP_DIR,
     APP_NAME,
+    resolve_genai_backend,
 )
 
 
@@ -83,23 +84,18 @@ async def _run_triage_analysis(
     logger = logging.getLogger("run_triage_analysis")
 
     try:
-        vertex_project = os.getenv("PROJECT_ID")
-        vertex_location = os.getenv("DEFAULT_LOCATION")
-
-        if not vertex_project:
-            logger.error(
-                "PROJECT_ID environment variable is required "
-                "for Vertex AI"
+        use_vertexai, gcp_project, gcp_location = resolve_genai_backend()
+        if use_vertexai:
+            logger.info(
+                f"Using Vertex AI project {gcp_project} ({gcp_location})"
             )
-            return 1
-
-        logger.info(f"Using Vertex AI project: {vertex_project}")
-        logger.info(f"Using location: {vertex_location}")
+        else:
+            logger.info("Using Google AI Studio (GOOGLE_API_KEY)")
         logger.info(f"Using model: {model_name}")
 
         agent = SASTTriageAgent(
-            project=vertex_project,
-            location=vertex_location,
+            project=gcp_project,
+            location=gcp_location,
             model_name=model_name,
             project_name=project_name,
             project_id=project_id,

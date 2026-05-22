@@ -9,8 +9,7 @@ import datetime
 import logging
 from typing import Dict, List, Optional
 
-from langchain_google_vertexai import ChatVertexAI
-from langchain_google_vertexai.model_garden import ChatAnthropicVertex
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import ToolMessage
 
 from sast_triage.agent_models import TriageDecision
@@ -44,9 +43,9 @@ class SASTTriageAgent:
 
     def __init__(
         self,
-        project: str,
+        project: Optional[str],
         model_name: str,
-        location: str,
+        location: Optional[str],
         temperature: float = 0.1,
         project_name: Optional[str] = None,
         project_id: Optional[str] = None,
@@ -61,9 +60,9 @@ class SASTTriageAgent:
         Initialize the SAST Triage Agent.
 
         Args:
-            project: Google Cloud Project ID for Vertex AI
-            location: Vertex AI location
-            model_name: Vertex AI model name
+            project: GCP project ID for Vertex AI, or None for AI Studio
+            location: Vertex AI region (used only when project is set)
+            model_name: Gemini model name
             temperature: Model temperature for consistency
             project_name: Project name for reporting
             project_id: Project identifier for reporting
@@ -82,26 +81,27 @@ class SASTTriageAgent:
         self.checkmarx_base_url = checkmarx_base_url
         self.branch = branch
 
-        # Initialize the appropriate LLM backend
-        if "claude" in model_name.lower():
+        # Vertex AI when a GCP project is supplied, otherwise AI Studio
+        # (GOOGLE_API_KEY). The backend is resolved by the caller; see
+        # config.resolve_genai_backend.
+        if project:
             self.logger.info(
-                f"Initializing Claude on Vertex: {model_name}"
+                f"Initializing Gemini via Vertex AI: {model_name}"
             )
-            self.llm = ChatAnthropicVertex(
-                project=project,
-                location=location,
-                model_name=model_name,
+            self.llm = ChatGoogleGenerativeAI(
+                model=model_name,
                 temperature=temperature,
                 max_retries=3,
+                vertexai=True,
+                project=project,
+                location=location,
             )
         else:
             self.logger.info(
-                f"Initializing Gemini/Vertex: {model_name}"
+                f"Initializing Gemini via AI Studio: {model_name}"
             )
-            self.llm = ChatVertexAI(
-                project=project,
-                location=location,
-                model_name=model_name,
+            self.llm = ChatGoogleGenerativeAI(
+                model=model_name,
                 temperature=temperature,
                 max_retries=3,
             )

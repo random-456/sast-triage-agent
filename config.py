@@ -17,9 +17,10 @@ CERTIFICATES_CRT_FILE = os.path.join(ASSETS_DIR, "abcorg-ca.crt")
 FINDINGS_CSV_FILE = os.path.join(FINDINGS_DIR, "triage_list.csv")
 FINDINGS_JSON_FILE = os.path.join(FINDINGS_DIR, "findings_details.json")
 
-# Vertex Configuration
+# Google GenAI Configuration
 DEFAULT_TRIAGE_MODEL = "gemini-2.5-pro"
 DEFAULT_JUSTIFICATION_COMPARISON_MODEL = "gemini-2.5-flash"
+DEFAULT_GCP_LOCATION = "europe-west4"  # Vertex AI region when GOOGLE_GENAI_USE_VERTEXAI=true
 
 # Analysis Configuration
 MAX_ANALYSIS_ITERATIONS = 30  # Maximum iterations for LLM analysis per finding
@@ -44,3 +45,36 @@ DEFAULT_STATES = ["TO_VERIFY"]
 # Benchmark Configuration
 BENCHMARK_DATASETS_DIR = os.path.join("benchmark", "datasets")
 BENCHMARK_SECRET_REPORTS_DIR = os.path.join("benchmark", "secret-reports")
+
+
+def resolve_genai_backend() -> tuple[bool, str | None, str | None]:
+    """Resolve the Google GenAI backend from the environment.
+
+    The unified ChatGoogleGenerativeAI client supports two backends: Vertex AI
+    (production) and Google AI Studio (local development). Selection is driven
+    by environment variables read at process startup.
+
+    Returns:
+        (use_vertexai, project, location). project and location are None in
+        AI Studio mode.
+
+    Raises:
+        RuntimeError: if neither backend is configured.
+    """
+    if os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("true", "1", "yes"):
+        project = os.getenv("GOOGLE_CLOUD_PROJECT")
+        if not project:
+            raise RuntimeError(
+                "GOOGLE_GENAI_USE_VERTEXAI is set but GOOGLE_CLOUD_PROJECT is "
+                "missing. Set GOOGLE_CLOUD_PROJECT to your Vertex AI project."
+            )
+        location = os.getenv("GOOGLE_CLOUD_LOCATION", DEFAULT_GCP_LOCATION)
+        return True, project, location
+
+    if not os.getenv("GOOGLE_API_KEY"):
+        raise RuntimeError(
+            "No Google GenAI backend configured. Set GOOGLE_API_KEY for AI "
+            "Studio, or GOOGLE_GENAI_USE_VERTEXAI=true with GOOGLE_CLOUD_PROJECT "
+            "for Vertex AI."
+        )
+    return False, None, None
