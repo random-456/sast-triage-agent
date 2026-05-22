@@ -1,0 +1,75 @@
+checklist_id: sqli
+display_name: "SQL Injection (CWE-89)"
+
+applies_to:
+  cwes:
+    - CWE-89
+  query_names:
+    - SQL_Injection
+
+evidence_required:
+  - description: "Source is attacker-controlled and reaches the query unmodified or only cosmetically changed"
+    examples:
+      - "HTTP request parameter, body field or header"
+      - "value read from a database row that was itself populated from user input (second-order injection)"
+  - description: "Sink is a SQL execution call that interprets the tainted value as query syntax, not as a bound parameter"
+    examples:
+      - "string concatenation or interpolation into the SQL text passed to execute/executeQuery"
+      - "ORM raw-query escape hatch that takes a SQL string (e.g. .raw(), createQuery, $queryRaw)"
+  - description: "Whether the tainted value lands in a value position or an identifier position"
+    examples:
+      - "value position: WHERE name = '<tainted>' (parameterizable)"
+      - "identifier position: ORDER BY <tainted>, table/column name (NOT parameterizable, needs an allowlist)"
+  - description: "Every guard on the path read and classified for SQLi specifically, not for another threat"
+
+sanitizer_patterns:
+  effective:
+    - "parameterized query with bound parameters (language-agnostic principle)"
+    - "PreparedStatement with ? placeholders, parameters set via setString/setInt (Java)"
+    - "ORM query with bound parameters: JPA/Hibernate positional or named params, Django ORM filter(), SQLAlchemy with bindparams, parameterized node-postgres ($1) (language/framework-specific)"
+    - "strict integer coercion before concatenation when the value is provably numeric: Integer.parseInt (Java), parseInt with isNaN guard (JS), int() (Python) where a parse failure aborts the query"
+    - "allowlist mapping for identifier positions: user input is used only to pick from a fixed set of known-safe column/table names, never concatenated directly"
+  ineffective:
+    - "string escaping or quote-doubling (addslashes, manual replace of ' with ''): bypassable, especially in identifier positions and under some multibyte charsets"
+    - "blacklist/keyword filtering (stripping SELECT, UNION, --): incomplete and bypassable with casing, comments or encoding"
+    - "stored procedure that itself builds and EXECs dynamic SQL from the parameter: moves the sink, does not remove it"
+    - "ORM used with a raw-SQL escape hatch where the tainted value is still concatenated into the SQL string"
+    - "HTML/output encoding (escapeHtml, htmlspecialchars): wrong context, does nothing for SQL"
+    - "client-side or front-end validation only: not enforced server-side"
+
+investigation_guidance: |
+  Confirm the sink really executes SQL with the tainted value as syntax.
+  Checkmarx flags the data flow; you must verify the final call. Read the
+  exact line that builds the query string and the call that runs it.
+
+  The decisive question is value position versus identifier position.
+  Bound parameters protect value positions (WHERE col = ?) completely. They
+  do NOT protect identifier positions: a table name, column name, ORDER BY
+  target or LIMIT/OFFSET in some drivers cannot be bound and must instead be
+  selected from an allowlist. A query that uses a PreparedStatement for the
+  WHERE clause but concatenates an ORDER BY column from user input is still
+  CONFIRMED.
+
+  Do not trust a method named sanitize(), escape(), clean() or safe(). Read
+  it. Escaping single quotes is a classic ineffective control: it can be
+  bypassed in identifier positions (no quotes to escape) and under specific
+  charset conditions. Only confirm NOT_EXPLOITABLE when you have read an
+  effective control and tied it to the exact tainted value on the path.
+
+  For numeric paths, a strict integer parse that aborts on failure removes
+  injectability because the value can no longer carry SQL metacharacters. A
+  loose cast that silently coerces, or a regex that merely "looks numeric",
+  is weaker: judge whether a non-numeric payload can survive.
+
+  Watch for second-order injection: a value stored earlier from user input
+  and later concatenated into SQL is still attacker-controlled even though
+  the immediate source is the database.
+
+common_false_positive_patterns: |
+  The query is fully parameterized and the tainted value is a bound parameter
+  that the scanner tracked into the query text by name only. The "tainted"
+  value is a hardcoded constant, enum or framework-internal value, not user
+  input. The value is strictly integer-parsed before use and a parse failure
+  aborts the request. The code path is test or fixture code not deployed to
+  production. The dialect/driver auto-parameterizes the call (some query
+  builders bind by default) and no raw escape hatch is used.

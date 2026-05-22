@@ -1,0 +1,34 @@
+# Reference shape for every checklist file in this directory.
+# This file is documentation only: it is not loaded at runtime. The
+# authoritative validation is the ChecklistDocument Pydantic model in
+# __init__.py. Keep the two in sync.
+#
+# Every <name>.yaml checklist (except _mapping.yaml and this file) must
+# conform to the structure below.
+
+checklist_id: string          # internal id, must match the filename stem
+display_name: string          # human-readable, used in logs and the prompt
+
+applies_to:
+  cwes: [list of strings]      # normalized "CWE-<n>" form, e.g. ["CWE-89"]
+  query_names: [list of strings]   # Checkmarx queryName values, e.g. ["SQL_Injection"]
+
+# Evidence the analyst must gather before reaching a verdict. Each item is a
+# claim that must be confirmed or refuted with a file:line citation.
+evidence_required:
+  - description: string        # what must be established
+    examples: [list of strings]   # optional, concrete instances
+
+# Sanitizer / guard patterns, split by whether they genuinely neutralize this
+# vulnerability. State language scope inline when an item is language-specific
+# (e.g. "PreparedStatement with ? (Java)") versus language-agnostic
+# (e.g. "parameterized query with bound parameters").
+sanitizer_patterns:
+  effective: [list of strings]
+  ineffective: [list of strings]
+
+# Free-form guidance specific to this CWE family. ~300-500 words.
+investigation_guidance: string
+
+# Why this CWE is often a false positive in production code.
+common_false_positive_patterns: string
