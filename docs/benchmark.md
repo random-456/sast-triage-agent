@@ -65,9 +65,39 @@ The CSV is passed through to `run_triage` as `--gitleaks-report`, so secret mask
 
 ## Metrics
 
-### Classification Metrics
+The agent output separates the classification (`is_vulnerable`) from the advisory disposition (`suggested_state`). The benchmark mirrors that split: classification quality is measured on `is_vulnerable`, and the disposition is measured separately as an operational overlay. Tuning `CONFIDENCE_THRESHOLD` shifts findings between `NOT_EXPLOITABLE` and `PROPOSED_NOT_EXPLOITABLE`, so it changes the operational metrics but provably leaves the classification metrics unchanged.
 
-These metrics treat triage as a three-class classification problem (`CONFIRMED`, `NOT_EXPLOITABLE`, `REFUSED`).
+### Binary Classification Metrics (primary)
+
+Computed on `is_vulnerable` (positive class = vulnerable) against the analyst ground truth. Findings the agent could not classify (`is_vulnerable` is `null`) are excluded from precision and recall and counted under `refusal_rate`. These are the numbers that gate a go/no-go decision.
+
+| Metric | Description |
+|--------|-------------|
+| Precision | TP / (TP + FP) |
+| Recall | TP / (TP + FN) |
+| F1 score | Harmonic mean of precision and recall |
+| TP / FP / FN / TN | Confusion counts on `is_vulnerable` |
+| Evaluated count | Findings with a non-null classification on both sides |
+| Refusal rate | Fraction of findings the agent did not classify |
+
+### Operational Metrics (secondary)
+
+Computed on `suggested_state`. They describe review burden and dismissal safety, not classification quality.
+
+| Metric | Description |
+|--------|-------------|
+| `human_review_rate` | Fraction routed to `PROPOSED_NOT_EXPLOITABLE` (the review queue) |
+| `confident_dismissal_precision` | Among `NOT_EXPLOITABLE` verdicts, the fraction truly non-exploitable. Null when there are no confident dismissals |
+| `near_miss_save_rate` | Among true positives the agent classified as non-exploitable, the fraction the threshold rescued into `PROPOSED_NOT_EXPLOITABLE`. Null when there are no such near misses |
+| `refusal_rate` | Fraction with `suggested_state` of `REFUSED` |
+
+### Calibration
+
+A confidence-vs-correctness table on `is_vulnerable`. Findings are binned by confidence; each bin reports average confidence, accuracy and count. The Expected Calibration Error (`ece`) is the count-weighted mean absolute gap between confidence and accuracy across bins. A well-calibrated model has an `ece` near 0.
+
+### Classification Breakdown (three-class)
+
+A confusion matrix and per-class precision/recall/F1 over `CONFIRMED`, `NOT_EXPLOITABLE` and `REFUSED`, mapped from `is_vulnerable`. This is a per-class view of the same classification.
 
 | Metric | Description |
 |--------|-------------|
@@ -127,6 +157,28 @@ Saved to `<output>/<project>/<timestamp>_<model>_benchmark_kpis.json`:
 ```json
 {
   "sample_count": 42,
+  "binary_classification": {
+    "evaluated_count": 38,
+    "true_positives": 10,
+    "false_positives": 2,
+    "false_negatives": 2,
+    "true_negatives": 24,
+    "precision": 0.83,
+    "recall": 0.83,
+    "f1_score": 0.83,
+    "refusal_rate": 0.0952
+  },
+  "operational_metrics": {
+    "human_review_rate": 0.1429,
+    "confident_dismissal_precision": 0.96,
+    "near_miss_save_rate": 0.5,
+    "refusal_rate": 0.0714
+  },
+  "calibration": {
+    "ece": 0.07,
+    "sample_count": 38,
+    "bins": [{"range": [0.9, 1.0], "count": 20, "avg_confidence": 0.93, "accuracy": 0.9}]
+  },
   "confusion_matrix": {
     "CONFIRMED": {"CONFIRMED": 10, "NOT_EXPLOITABLE": 2, "REFUSED": 0},
     "NOT_EXPLOITABLE": {"CONFIRMED": 1, "NOT_EXPLOITABLE": 25, "REFUSED": 0},
