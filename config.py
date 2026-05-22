@@ -27,6 +27,11 @@ MAX_ANALYSIS_ITERATIONS = 30  # Maximum iterations for LLM analysis per finding
 MAX_SEARCH_RESULTS = 50  # Safety cap for search results
 MAX_LOG_RESULT_LENGTH = 5000  # Maximum length for logging tool results
 
+# Per-finding graph circuit breakers (Phase 2 LangGraph subgraph)
+MAX_RESEARCH_ITERATIONS = 5  # Research-node visits before a forced aggregate
+MAX_REANALYSIS_LOOPS = 2  # Critic -> analyst reanalysis loops before aggregate
+DEFAULT_SAMPLES = 3  # Self-consistency samples per finding (PR5 makes adaptive)
+
 # Disposition Configuration
 # A non-exploitable verdict below this confidence is routed to
 # PROPOSED_NOT_EXPLOITABLE for human attention rather than NOT_EXPLOITABLE.
