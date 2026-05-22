@@ -9,13 +9,14 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your Checkmarx and GCP credentials
+# Edit .env with your Checkmarx credentials and Google GenAI backend
 ```
 
 **Prerequisites:**
 - Python 3.10+
-- Access to Google Cloud project with Vertex AI API enabled
-- Application Default Credentials configured (`gcloud auth application-default login`)
+- A Google GenAI backend, either:
+  - Vertex AI: a Google Cloud project with the Vertex AI API enabled and Application Default Credentials (`gcloud auth application-default login`), or
+  - Google AI Studio: a `GOOGLE_API_KEY` (prepaid, budget-cappable)
 - Access to a Checkmarx One instance with a valid refresh token
 - Git installed
 

@@ -98,12 +98,12 @@ The preprocessing pipeline runs after repository cloning and before LLM analysis
 
 ## LLM Backend
 
-The agent supports multiple LLM backends through LangChain:
+The agent uses Google Gemini through the unified `ChatGoogleGenerativeAI` client from `langchain-google-genai`. The same client talks to either backend, selected by environment variable:
 
-- **Gemini models** (default): Accessed via `ChatVertexAI` from `langchain-google-vertexai`
-- **Claude models**: Accessed via `ChatAnthropicVertex` when the model name contains "claude"
+- **Vertex AI** (production): `GOOGLE_GENAI_USE_VERTEXAI=true` with `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`. Auth via Application Default Credentials.
+- **Google AI Studio** (local development): `GOOGLE_API_KEY`, prepaid and budget-cappable.
 
-Model selection is controlled by the `--model` CLI flag or the interactive prompt. Both backends use the same tool-calling interface.
+The model is controlled by the `--model` CLI flag or the interactive prompt. Backend resolution happens once at startup in `config.resolve_genai_backend`.
 
 ## Session Logging
 

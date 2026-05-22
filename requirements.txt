@@ -1,11 +1,9 @@
 # Core LangChain packages
 langchain>=0.3.0
-langchain-google-vertexai>=2.0.0  # For Google Vertex AI
+langchain-google-genai>=4.0  # Unified Gemini client (Vertex AI + AI Studio)
+google-genai
 langchain-community>=0.3.0
 langchain-core>=0.3.0  # Core functionality and tools
-
-# Claude models support
-anthropic>=0.20.0
 
 # Data processing
 pydantic>=2.0.0

@@ -180,7 +180,7 @@ class TestOutputFilenameTimestamp:
 
     def test_output_filename_has_timestamp(self):
         """Verify filename includes date/time pattern."""
-        with patch("sast_triage.agent.ChatVertexAI") as mock_chat:
+        with patch("sast_triage.agent.ChatGoogleGenerativeAI") as mock_chat:
             mock_llm = Mock()
             mock_llm.bind_tools = Mock(return_value=mock_llm)
             mock_chat.return_value = mock_llm
@@ -207,7 +207,7 @@ class TestAssessmentOutputMetadata:
 
     def test_assessment_output_has_metadata(self):
         """Verify the JSON output contains a metadata key."""
-        with patch("sast_triage.agent.ChatVertexAI") as mock_chat:
+        with patch("sast_triage.agent.ChatGoogleGenerativeAI") as mock_chat:
             mock_llm = Mock()
             mock_llm.bind_tools = Mock(return_value=mock_llm)
             mock_chat.return_value = mock_llm

@@ -8,7 +8,7 @@ from utils.generic_logging import setup_logging
 from benchmark.benchmark_helpers import BenchmarkHelpers
 from run_triage import cli
 
-from config import DEFAULT_OUTPUT_DIR, APP_NAME, BENCHMARK_DATASETS_DIR, BENCHMARK_SECRET_REPORTS_DIR, DEFAULT_TRIAGE_MODEL
+from config import DEFAULT_OUTPUT_DIR, APP_NAME, BENCHMARK_DATASETS_DIR, BENCHMARK_SECRET_REPORTS_DIR, DEFAULT_TRIAGE_MODEL, resolve_genai_backend
 
 @click.command()
 @click.option("--model", "model_name", default=DEFAULT_TRIAGE_MODEL, help="AI Model used for analysis")
@@ -32,8 +32,7 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool, compact_logs:
     logger = logging.getLogger("run_benchmark")
 
     runner = CliRunner()
-    vertex_project = os.getenv("PROJECT_ID")
-    vertex_location = os.getenv("DEFAULT_LOCATION")
+    _, gcp_project, gcp_location = resolve_genai_backend()
 
     datasets = [os.path.join(BENCHMARK_DATASETS_DIR, f) for f in os.listdir(BENCHMARK_DATASETS_DIR) if f.endswith(".json")]
     logger.info(f"Found {len(datasets)} datasets to evaluate !")
@@ -81,8 +80,8 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool, compact_logs:
                 )
 
                 dataset_data_with_scores = BenchmarkHelpers.compute_assessment_scores(
-                    project=vertex_project,
-                    location=vertex_location,
+                    project=gcp_project,
+                    location=gcp_location,
                     dataset_data=dataset_data_with_triage_results
                 )
 

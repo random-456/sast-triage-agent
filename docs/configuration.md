@@ -10,13 +10,22 @@ The application reads configuration from a `.env` file in the project root. Copy
 |----------|-------------|---------|
 | `BASE_URL` | Checkmarx One instance URL | `https://cx.example.com` |
 | `REFRESH_TOKEN` | Checkmarx API refresh token | `eyJ...` |
-| `PROJECT_ID` | Google Cloud project ID for Vertex AI | `my-gcp-project` |
+
+### Google GenAI Backend
+
+The agent uses a single Gemini client that talks to one of two backends. Configure exactly one mode.
+
+| Variable | Mode | Description |
+|----------|------|-------------|
+| `GOOGLE_GENAI_USE_VERTEXAI` | Vertex AI | Set to `true` to use Vertex AI (production). |
+| `GOOGLE_CLOUD_PROJECT` | Vertex AI | GCP project ID. Required when Vertex AI is enabled. |
+| `GOOGLE_CLOUD_LOCATION` | Vertex AI | Region. Defaults to `europe-west4`. |
+| `GOOGLE_API_KEY` | AI Studio | Google AI Studio API key (local development). |
 
 ### Optional Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DEFAULT_LOCATION` | `europe-west4` | Vertex AI region |
 | `GITHUB_TOKENS` | -- | Per-host GitHub access tokens for HTTPS clones. Format: `host=token,host=token` (e.g. `github.com=ghp_xxx,ghe.example.com=ghp_yyy`). Hostname is matched case-insensitively against the Checkmarx-supplied repo URL; unmatched hosts fall back to the local git CLI credentials. The token is sent as an HTTP Basic Authorization header (username `x-access-token`) for the clone only — never written to the cloned repo's git config. |
 
 ### `.env.example`
@@ -26,9 +35,13 @@ The application reads configuration from a `.env` file in the project root. Copy
 BASE_URL=https://
 REFRESH_TOKEN=refresh-token
 
-# Vertex AI Configuration
-PROJECT_ID=gcp-project-id
-DEFAULT_LOCATION=europe-west4
+# Google GenAI backend: choose ONE mode.
+# Production (Vertex AI), auth via `gcloud auth application-default login`:
+GOOGLE_GENAI_USE_VERTEXAI=true
+GOOGLE_CLOUD_PROJECT=gcp-project-id
+GOOGLE_CLOUD_LOCATION=europe-west4
+# Local development (Google AI Studio), prepaid and budget-cappable:
+# GOOGLE_API_KEY=AIza...
 
 # Optional: per-host GitHub access tokens used when cloning HTTPS repos.
 # Format: comma-separated "host=token" pairs. Hostname is matched
@@ -87,16 +100,12 @@ The application sets `REQUESTS_CA_BUNDLE` and `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`
 
 ## Supported Models
 
-Any model accessible through Google Vertex AI can be used. The agent automatically selects the appropriate LangChain backend:
-
-- **Gemini models** (default): Uses `ChatVertexAI` -- any model name not containing "claude"
-- **Claude models**: Uses `ChatAnthropicVertex` -- model names containing "claude"
+The agent targets Google Gemini models through the unified `ChatGoogleGenerativeAI` client, on either the Vertex AI or AI Studio backend.
 
 Examples:
 ```bash
---model gemini-2.5-pro        # Gemini (default)
---model gemini-2.5-flash       # Gemini Flash
---model claude-sonnet-4-5      # Claude via Vertex AI
+--model gemini-2.5-pro         # default
+--model gemini-2.5-flash       # faster, lower cost
 ```
 
 ## Dependencies
@@ -106,8 +115,7 @@ Core dependencies are listed in `requirements.txt`:
 | Package | Purpose |
 |---------|---------|
 | `langchain`, `langchain-core` | Agent framework and tool definitions |
-| `langchain-google-vertexai` | Vertex AI LLM integration |
-| `anthropic` | Claude model support |
+| `langchain-google-genai`, `google-genai` | Gemini integration (Vertex AI and AI Studio) |
 | `pydantic` | Data validation and models |
 | `click` | CLI framework |
 | `questionary` | Interactive prompt library |
@@ -118,7 +126,8 @@ Core dependencies are listed in `requirements.txt`:
 ## Prerequisites
 
 - Python 3.10+
-- Access to a Google Cloud project with Vertex AI API enabled
-- Application Default Credentials configured: `gcloud auth application-default login`
+- A Google GenAI backend, either:
+  - Vertex AI: a Google Cloud project with the Vertex AI API enabled, plus Application Default Credentials (`gcloud auth application-default login`), or
+  - Google AI Studio: a `GOOGLE_API_KEY` (prepaid, budget-cappable)
 - Access to a Checkmarx One instance with a valid refresh token
 - Git installed (for repository cloning)

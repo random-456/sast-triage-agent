@@ -47,9 +47,9 @@ With Gitleaks secret masking and a specific branch:
 python run_triage.py run my-project --gitleaks-report gitleaks-report.csv --branch main
 ```
 
-Using a Claude model on Vertex AI:
+Using a faster, lower-cost model:
 ```bash
-python run_triage.py run my-project --gitleaks-report none --model claude-sonnet-4-5
+python run_triage.py run my-project --gitleaks-report none --model gemini-2.5-flash
 ```
 
 ## Interactive Mode
