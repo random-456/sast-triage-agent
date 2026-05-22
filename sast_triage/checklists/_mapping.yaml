@@ -1,0 +1,16 @@
+# Maps a finding to a checklist. Selection order (most specific first):
+#   1. query_name_to_checklist  (exact, case-insensitive on the queryName)
+#   2. cwe_to_checklist         (on the normalized "CWE-<n>" form)
+#   3. default
+#
+# queryName values follow the Checkmarx One short form (e.g. "SQL_Injection",
+# "Reflected_XSS_All_Clients"). cweID is normalized to "CWE-<n>" before lookup,
+# so integer 89, "89" and "CWE-89" all resolve here.
+
+query_name_to_checklist:
+  SQL_Injection: sqli
+
+cwe_to_checklist:
+  CWE-89: sqli
+
+default: generic

@@ -66,7 +66,7 @@ flowchart TD
 
 The agent uses a tool-calling pattern with LangChain:
 
-1. The finding details (dataflow, severity, query name, CWE) are formatted into a human prompt and sent to the LLM alongside a system prompt. The system prompt enforces a mandatory five-step analysis protocol (identify source, identify sink, enumerate the path, classify every guard, verdict), with a `file:line` citation required for each claim.
+1. The finding details (dataflow, severity, query name, CWE) are formatted into a human prompt and sent to the LLM alongside a system prompt. The system prompt enforces a mandatory five-step analysis protocol (identify source, identify sink, enumerate the path, classify every guard, verdict), with a `file:line` citation required for each claim. A CWE-specific evidence checklist is appended to the system prompt, selected from the finding's `queryName` and `cweID` (see CWE Checklists below); findings with no matching checklist receive a generic fallback.
 2. The LLM responds with tool calls to investigate the codebase: `read_file`, `search_in_files`, `list_directory`.
 3. A `verify_analysis` checkpoint tool ensures the agent reviews its reasoning before submitting.
 4. The final `submit_triage_decision` tool records the classification (`is_vulnerable`) with confidence and justification. The advisory `suggested_state` is then derived from those two fields (see Output Model below).
@@ -82,6 +82,10 @@ The agent uses a tool-calling pattern with LangChain:
 | `list_directory` | List directory contents within the codebase |
 | `verify_analysis` | Verification checkpoint before final decision |
 | `submit_triage_decision` | Submit the final exploitability verdict |
+
+### CWE Checklists
+
+Each finding's analyst prompt is augmented with a CWE-specific evidence checklist. Checklists live in `sast_triage/checklists/` as YAML files validated against the `ChecklistDocument` model. `_mapping.yaml` routes a finding to a checklist: first by an exact, case-insensitive `queryName` match, then by the normalized CWE (`CWE-<n>`), then to `generic.yaml` as the final fallback. A checklist supplies the required evidence, the controls that do and do not neutralize that vulnerability class, investigation guidance and common false-positive patterns. Selection is fail-safe: a missing or malformed checklist leaves the base prompt unchanged rather than blocking the run.
 
 ## Preprocessing Pipeline
 

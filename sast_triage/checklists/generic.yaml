@@ -1,0 +1,47 @@
+checklist_id: generic
+display_name: "Generic taint-flow finding"
+
+applies_to:
+  cwes: []
+  query_names: []
+
+evidence_required:
+  - description: "Source identified and classified as attacker-controlled or not"
+    examples:
+      - "HTTP request input, message payload, uploaded file content"
+      - "value requiring privileged local access (server env var, local config, CLI argument)"
+  - description: "Sink identified and confirmed to match the vulnerability the finding claims, or a vulnerability in the same family"
+  - description: "Every guard on the path between source and sink read and classified EFFECTIVE or INEFFECTIVE for the specific claimed vulnerability"
+  - description: "Whether the code path is reachable in production rather than test or dead code"
+
+sanitizer_patterns:
+  effective:
+    - "context-correct neutralization tied to this specific sink (the encoding/validation matches the way the sink interprets the data)"
+    - "the tainted value is constrained to a fixed allowlist of safe values"
+    - "strict type coercion that removes the dangerous character class entirely"
+  ineffective:
+    - "a guard that defends a different threat than the one this finding claims"
+    - "blacklist filtering or escaping that can be bypassed"
+    - "validation that is advisory only, or enforced solely on the client"
+    - "a function whose name implies safety but whose implementation you have not read"
+
+investigation_guidance: |
+  No CWE-specific checklist matched this finding, so reason from first
+  principles. Establish the source, the sink and the exact transformation
+  applied to the data on the way. The central question is always the same:
+  can a malicious payload travel from the source to the sink and still
+  trigger the effect the finding claims, given every guard on the path?
+
+  Match the neutralization to the sink. Encoding or validation only helps if
+  it targets the way this particular sink interprets the data. A control that
+  blocks a different vulnerability class is INEFFECTIVE here. Never trust a
+  control by its name: read the implementation and confirm it neutralizes the
+  specific threat. When you cannot establish an effective, context-correct
+  control on the path, apply the project rule and lean CONFIRMED.
+
+common_false_positive_patterns: |
+  The flagged data is not actually attacker-controlled (constant, enum or
+  privileged-local input in a single-tenant deployment). The vulnerability in
+  the code is a different type or family than the finding claims. The path is
+  test or dead code. An effective, context-correct control neutralizes the
+  payload before it reaches the sink.

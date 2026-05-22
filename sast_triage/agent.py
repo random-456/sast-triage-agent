@@ -27,6 +27,11 @@ from sast_triage.agent_tools import (
     get_finding_details,
 )
 from sast_triage.agent_logging import AgentLoggingManager
+from sast_triage.checklists import (
+    ChecklistError,
+    render_checklist_section,
+    select_checklist,
+)
 from sast_triage.prompts import (
     TRIAGE_SYSTEM_PROMPT,
     TRIAGE_INPUT_PROMPT_TEMPLATE,
@@ -149,6 +154,32 @@ class SASTTriageAgent:
             f"findings_assessment_{name}_{timestamp}.json",
         )
 
+    def _build_system_prompt(self, finding_details: Dict) -> str:
+        """Compose the base prompt with the finding's CWE-specific checklist.
+
+        Selection is driven by the finding's `queryName` and `cweID`. If no
+        checklist can be loaded the base prompt is used unchanged, so a
+        checklist problem never blocks a triage run.
+        """
+        try:
+            checklist = select_checklist(
+                finding_details.get("queryName"),
+                finding_details.get("cweID"),
+            )
+        except ChecklistError as exc:
+            self.logger.warning(
+                f"No checklist applied for {finding_details.get('resultHash')}: "
+                f"{exc}"
+            )
+            return self.system_prompt
+
+        self.logger.debug(
+            f"Selected checklist '{checklist.checklist_id}' for finding"
+        )
+        return (
+            f"{self.system_prompt}\n\n{render_checklist_section(checklist)}"
+        )
+
     async def analyze_single_finding(
         self, result_hash: str
     ) -> TriageDecision:
@@ -185,14 +216,16 @@ class SASTTriageAgent:
             finding_id=result_hash,
         )
 
+        system_prompt = self._build_system_prompt(finding_details)
+
         try:
             messages = [
-                ("system", self.system_prompt),
+                ("system", system_prompt),
                 ("human", input_prompt),
             ]
 
             self.agent_logger.log_initial_inputs(
-                finding_log, self.system_prompt, input_prompt
+                finding_log, system_prompt, input_prompt
             )
 
             max_iterations = MAX_ANALYSIS_ITERATIONS
