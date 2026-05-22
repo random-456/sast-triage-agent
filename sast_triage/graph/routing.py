@@ -10,20 +10,28 @@ from typing import Optional
 
 from config import (
     DEFAULT_SAMPLES,
+    INITIAL_SAMPLES,
     MAX_REANALYSIS_LOOPS,
     MAX_RESEARCH_ITERATIONS,
 )
 from sast_triage.agent_models import CritiqueDecision
+from sast_triage.aggregator import has_majority
 from sast_triage.graph.state import StopReason, TriageState
 
 
 def target_samples_for(state: TriageState) -> int:
     """How many self-consistency samples this finding should collect.
 
-    Fixed at `DEFAULT_SAMPLES` for now; PR5 replaces this with the adaptive
-    sampling from doc 05 (start at 2, add a tiebreaker on disagreement).
+    Adaptive (doc 05): collect `INITIAL_SAMPLES` first. If they already have a
+    majority, stop there. Otherwise add one tiebreaker sample at a time, up to
+    `DEFAULT_SAMPLES`. Avoids paying for samples that cannot change the outcome.
     """
-    return DEFAULT_SAMPLES
+    n = len(state.samples)
+    if n < INITIAL_SAMPLES:
+        return INITIAL_SAMPLES
+    if has_majority(state.samples):
+        return n
+    return min(n + 1, DEFAULT_SAMPLES)
 
 
 def route_from_analyst(state: TriageState) -> str:

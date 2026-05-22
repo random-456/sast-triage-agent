@@ -31,7 +31,11 @@ MAX_LOG_RESULT_LENGTH = 5000  # Maximum length for logging tool results
 MAX_RESEARCH_ITERATIONS = 5  # Research-node visits before a forced aggregate
 MAX_REANALYSIS_LOOPS = 2  # Critic -> analyst reanalysis loops before aggregate
 MAX_TOOL_CALLS_PER_RESEARCH = 10  # Tool-call turns within one research-node visit
-DEFAULT_SAMPLES = 3  # Self-consistency samples per finding (PR5 makes adaptive)
+INITIAL_SAMPLES = 2  # Adaptive sampling starts here; a tiebreaker may add more
+DEFAULT_SAMPLES = 3  # Max self-consistency samples per finding (tiebreak ceiling)
+# Final confidence = agreement_rate * W + evidence_strength * (1 - W). Weights
+# from doc 05; calibrate against the gold-set.
+CONFIDENCE_AGREEMENT_WEIGHT = 0.7
 # Analyst sampling temperatures, applied per sample slot for diversity; the
 # last value is reused if more samples than entries are taken (doc 05).
 ANALYST_TEMPERATURES = [0.1, 0.3, 0.5]
