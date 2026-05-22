@@ -65,17 +65,37 @@ The CSV is passed through to `run_triage` as `--gitleaks-report`, so secret mask
 
 ## Metrics
 
-### Classification Metrics
+The agent output separates the classification (`is_vulnerable`) from the advisory disposition (`suggested_state`). The benchmark mirrors that split: classification quality is measured on `is_vulnerable`, and the disposition is measured separately as an operational overlay. Tuning `CONFIDENCE_THRESHOLD` shifts findings between `NOT_EXPLOITABLE` and `PROPOSED_NOT_EXPLOITABLE`, so it changes the operational metrics but provably leaves the classification metrics unchanged.
 
-These metrics treat triage as a three-class classification problem (`CONFIRMED`, `NOT_EXPLOITABLE`, `REFUSED`).
+### Binary Classification Metrics (primary)
+
+Computed on `is_vulnerable` (positive class = vulnerable) against the analyst ground truth. Findings the agent could not classify (`is_vulnerable` is `null`) are excluded from precision and recall and counted under `refusal_rate`. These are the numbers that gate a go/no-go decision.
 
 | Metric | Description |
 |--------|-------------|
-| Confusion matrix | 3x3 matrix of actual vs predicted counts |
-| Precision | Per-class: TP / (TP + FP) |
-| Recall | Per-class: TP / (TP + FN) |
-| F1 score | Per-class: harmonic mean of precision and recall |
-| Sample count | Total number of findings evaluated |
+| Precision | Vulnerable class: TP / (TP + FP). Equivalent to CONFIRMED precision |
+| Recall | Vulnerable class: TP / (TP + FN). Equivalent to CONFIRMED recall |
+| F1 score | Harmonic mean of vulnerable-class precision and recall |
+| `not_exploitable_precision` | Negative class: TN / (TN + FN). The dismissal-quality gate |
+| `not_exploitable_recall` | Negative class: TN / (TN + FP) |
+| TP / FP / FN / TN | Confusion counts on `is_vulnerable` |
+| Evaluated count | Findings with a non-null classification on both sides |
+| Refusal rate | Fraction of findings the agent did not classify |
+
+### Operational Metrics (secondary)
+
+Computed on `suggested_state`. They describe review burden and dismissal safety, not classification quality.
+
+| Metric | Description |
+|--------|-------------|
+| `human_review_rate` | Fraction routed to `PROPOSED_NOT_EXPLOITABLE` (the review queue) |
+| `confident_dismissal_precision` | Among `NOT_EXPLOITABLE` verdicts, the fraction truly non-exploitable. Null when there are no confident dismissals |
+| `near_miss_save_rate` | Among true positives the agent classified as non-exploitable, the fraction the threshold rescued into `PROPOSED_NOT_EXPLOITABLE`. Null when there are no such near misses |
+| `refusal_rate` | Fraction with `suggested_state` of `REFUSED` |
+
+### Calibration
+
+A confidence-vs-correctness table on `is_vulnerable`. Findings are binned by confidence; each bin reports average confidence, accuracy and count. The Expected Calibration Error (`ece`) is the count-weighted mean absolute gap between confidence and accuracy across bins. A well-calibrated model has an `ece` near 0.
 
 ### Legacy Metrics
 
@@ -96,7 +116,7 @@ Metrics are computed per group for each dimension:
 - **Complexity** -- EASY, MEDIUM, COMPLEX
 - **Severity** -- CRITICAL, HIGH, MEDIUM, LOW, INFO
 
-Each group includes `sample_count`, classification metrics, and legacy metrics.
+Each group includes `sample_count`, the binary classification metrics, and legacy metrics.
 
 ### Target Thresholds
 
@@ -127,18 +147,35 @@ Saved to `<output>/<project>/<timestamp>_<model>_benchmark_kpis.json`:
 ```json
 {
   "sample_count": 42,
-  "confusion_matrix": {
-    "CONFIRMED": {"CONFIRMED": 10, "NOT_EXPLOITABLE": 2, "REFUSED": 0},
-    "NOT_EXPLOITABLE": {"CONFIRMED": 1, "NOT_EXPLOITABLE": 25, "REFUSED": 0},
-    "REFUSED": {"CONFIRMED": 0, "NOT_EXPLOITABLE": 1, "REFUSED": 3}
+  "binary_classification": {
+    "evaluated_count": 38,
+    "true_positives": 10,
+    "false_positives": 2,
+    "false_negatives": 2,
+    "true_negatives": 24,
+    "precision": 0.83,
+    "recall": 0.83,
+    "f1_score": 0.83,
+    "not_exploitable_precision": 0.92,
+    "not_exploitable_recall": 0.92,
+    "not_exploitable_f1": 0.92,
+    "refusal_rate": 0.0952
   },
-  "per_class_metrics": {
-    "CONFIRMED": {"precision": 0.91, "recall": 0.83, "f1_score": 0.87}
+  "operational_metrics": {
+    "human_review_rate": 0.1429,
+    "confident_dismissal_precision": 0.96,
+    "near_miss_save_rate": 0.5,
+    "refusal_rate": 0.0714
+  },
+  "calibration": {
+    "ece": 0.07,
+    "sample_count": 38,
+    "bins": [{"range": [0.9, 1.0], "count": 20, "avg_confidence": 0.93, "accuracy": 0.9}]
   },
   "average_accuracy": 90.48,
   "average_score": 2.8,
   "average_confidence": 0.85,
-  "language_kpi": [{"Java": {"sample_count": 15, "...":" "}}],
+  "language_kpi": [{"Java": {"sample_count": 15, "binary_classification": {}, "average_score": 2.7}}],
   "category_kpi": [],
   "complexity_kpi": [],
   "severity_kpi": []
