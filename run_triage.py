@@ -29,11 +29,6 @@ os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = CERTIFICATES_CRT_FILE
 from sast_triage.agent import SASTTriageAgent
 from sast_triage.preprocessing.obfuscation import obfuscate_codebase
 from sast_triage.preprocessing.secret_masking import mask_secrets
-from sast_triage.tracing import (
-    initialize_tracing,
-    is_tracing_enabled,
-    wait_for_trace_review,
-)
 from utils.checkmarx_helpers import CheckmarxClient
 from utils.click_helpers import CommaList
 from utils.directory_helpers import DirectoryHelpers
@@ -353,7 +348,6 @@ def execute_triage(
             )
         )
 
-        wait_for_trace_review()
         sys.exit(exit_code)
 
     except Exception as e:
@@ -443,11 +437,6 @@ def cli():
     help="Enable verbose output",
 )
 @click.option(
-    "--trace",
-    is_flag=True,
-    help="Enable Phoenix tracing (UI at localhost:6006)",
-)
-@click.option(
     "--compact-logs",
     is_flag=True,
     help=(
@@ -467,7 +456,6 @@ def run(
     keep_temp: bool,
     finding_hashes: List,
     verbose: bool,
-    trace: bool,
     compact_logs: bool,
 ) -> None:
     """
@@ -477,9 +465,6 @@ def run(
     """
     display_banner(APP_NAME)
     setup_logging(logging.DEBUG) if verbose else setup_logging(logging.INFO)
-
-    if trace or is_tracing_enabled():
-        initialize_tracing()
 
     severity_list = [s.strip().upper() for s in severities.split(",")]
     state_list = [s.strip().upper() for s in states.split(",")]
@@ -506,11 +491,6 @@ def run(
     help="Enable verbose output",
 )
 @click.option(
-    "--trace",
-    is_flag=True,
-    help="Enable Phoenix tracing (UI at localhost:6006)",
-)
-@click.option(
     "--compact-logs",
     is_flag=True,
     help=(
@@ -519,13 +499,10 @@ def run(
         "tool results. For development/analysis runs only."
     ),
 )
-def interactive(verbose: bool, trace: bool, compact_logs: bool) -> None:
+def interactive(verbose: bool, compact_logs: bool) -> None:
     """Run triage in interactive mode with guided prompts."""
     display_banner(APP_NAME)
     setup_logging(logging.DEBUG) if verbose else setup_logging(logging.INFO)
-
-    if trace or is_tracing_enabled():
-        initialize_tracing()
 
     from sast_triage.interactive import (
         display_config_summary,

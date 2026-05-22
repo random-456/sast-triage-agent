@@ -22,7 +22,6 @@ python run_triage.py run PROJECT_NAME --gitleaks-report <path|none> [OPTIONS]
 | `--gitleaks-report` | -- | Path to Gitleaks CSV, or `none` (required) |
 | `--output` | `output` | Output directory |
 | `--keep-temp` | `false` | Preserve temp directory after execution |
-| `--trace` | `false` | Enable Phoenix tracing UI at localhost:6006 |
 | `--compact-logs` | `false` | Reduced agent log (no input prompt bodies, system prompt by hash, tool result bulk arrays dropped). Dev analysis only. |
 | `-v, --verbose` | `false` | Enable debug-level logging |
 
@@ -48,11 +47,6 @@ With Gitleaks secret masking and a specific branch:
 python run_triage.py run my-project --gitleaks-report gitleaks-report.csv --branch main
 ```
 
-With verbose output and Phoenix tracing:
-```bash
-python run_triage.py run my-project --gitleaks-report none -v --trace
-```
-
 Using a Claude model on Vertex AI:
 ```bash
 python run_triage.py run my-project --gitleaks-report none --model claude-sonnet-4-5
@@ -61,7 +55,7 @@ python run_triage.py run my-project --gitleaks-report none --model claude-sonnet
 ## Interactive Mode
 
 ```bash
-python run_triage.py interactive [-v] [--trace]
+python run_triage.py interactive [-v]
 ```
 
 Interactive mode presents guided prompts to collect all configuration:
@@ -140,21 +134,6 @@ The file contains:
 ### Session Logs
 
 Each run produces a session log in the `logs/` directory with the full conversation history, token usage, and preprocessing reports. See [architecture.md](architecture.md) for details on the log structure.
-
-## Phoenix Tracing
-
-When `--trace` is passed (or `SAST_TRIAGE_TRACE=true` is set), the agent starts a local Phoenix server for LLM observability. After analysis completes, the process blocks and displays:
-
-```
-Phoenix tracing UI is available at http://localhost:6006
-Press Enter to stop Phoenix and exit...
-```
-
-This allows reviewing traces in the Phoenix UI before the process exits. Tracing requires optional dependencies:
-
-```bash
-pip install arize-phoenix openinference-instrumentation-langchain
-```
 
 ## Benchmarking
 

@@ -17,7 +17,6 @@ The application reads configuration from a `.env` file in the project root. Copy
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DEFAULT_LOCATION` | `europe-west4` | Vertex AI region |
-| `SAST_TRIAGE_TRACE` | -- | Set to `true`, `1`, or `yes` to enable Phoenix tracing |
 | `GITHUB_TOKENS` | -- | Per-host GitHub access tokens for HTTPS clones. Format: `host=token,host=token` (e.g. `github.com=ghp_xxx,ghe.example.com=ghp_yyy`). Hostname is matched case-insensitively against the Checkmarx-supplied repo URL; unmatched hosts fall back to the local git CLI credentials. The token is sent as an HTTP Basic Authorization header (username `x-access-token`) for the clone only — never written to the cloned repo's git config. |
 
 ### `.env.example`
@@ -30,9 +29,6 @@ REFRESH_TOKEN=refresh-token
 # Vertex AI Configuration
 PROJECT_ID=gcp-project-id
 DEFAULT_LOCATION=europe-west4
-
-# Optional: Phoenix tracing (set to true, 1, or yes to enable)
-# SAST_TRIAGE_TRACE=false
 
 # Optional: per-host GitHub access tokens used when cloning HTTPS repos.
 # Format: comma-separated "host=token" pairs. Hostname is matched
@@ -118,13 +114,6 @@ Core dependencies are listed in `requirements.txt`:
 | `requests` | HTTP client for Checkmarx API |
 | `python-dotenv` | `.env` file loading |
 | `pytest`, `pytest-asyncio` | Testing |
-
-### Optional Dependencies
-
-For LLM tracing with Phoenix:
-```bash
-pip install arize-phoenix openinference-instrumentation-langchain
-```
 
 ## Prerequisites
 

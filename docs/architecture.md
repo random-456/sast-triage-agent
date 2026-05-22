@@ -16,7 +16,6 @@ The system is built around a CLI entry point (`run_triage.py`) that orchestrates
 | Preprocessing | `sast_triage/preprocessing/` | Obfuscation and secret masking |
 | Interactive | `sast_triage/interactive.py` | Guided prompt collection for interactive mode |
 | Logging | `sast_triage/agent_logging.py` | Session logging with token tracking |
-| Tracing | `sast_triage/tracing.py` | Optional Phoenix/OpenTelemetry integration |
 | Checkmarx | `utils/checkmarx_helpers.py` | API client for fetching findings |
 | Git | `utils/git_helpers.py` | Repository cloning |
 | Findings | `utils/findings_helpers.py` | CSV/JSON persistence of findings data |
