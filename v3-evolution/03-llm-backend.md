@@ -131,7 +131,7 @@ Update to show both modes:
 This is the highest-risk Phase 1 change because it touches the LLM
 client itself. Mitigations:
 
-1. **Before/after gold-set comparison.** Run the v2 gold-set
+1. **Before/after gold-set comparison.** Run the gold-set
    benchmark (committed at end of Phase 0) before the migration,
    then again after. **Same baseline numbers required, ±2 F1 points
    tolerance.** If results differ more than that, investigate before

@@ -56,6 +56,22 @@ what we want. Those fields are used only for *code retrieval*
 All three components must be equal for two findings to share a
 candidate cluster.
 
+### Degenerate dataflows
+
+The dataflow comes from Checkmarx (`finding.get("nodes", [])`), so it
+can be empty or a single node. Handle both explicitly:
+
+- **No nodes:** the finding cannot be fingerprinted structurally. It
+  is never clustered (it forms its own singleton cluster) and always
+  goes through full per-finding analysis.
+- **One node:** `source_fingerprint == sink_fingerprint ==` that
+  node's `(name, domType)`. It clusters normally with other
+  single-node findings that share `(queryName, node)`.
+
+The rule is the same as everywhere else in clustering: fail toward
+full analysis, never toward propagating a verdict on a degenerate
+signature.
+
 ### Why first/last node, not "source→sink taint"
 
 Not every Checkmarx finding is a clean attacker-source → dangerous-

@@ -1,8 +1,8 @@
 # 11 — Cleanup, documentation refresh, archival
 
-> Scope: the final pass. Make the docs reflect what v3 actually
-> shipped; archive v2-evolution; remove dead code; verify the
-> README is accurate for a new contributor.
+> Scope: the final pass. Make the docs reflect what actually
+> shipped; remove dead code; verify the README is accurate for a new
+> contributor.
 >
 > Depends on: every other v3 phase shipped.
 > Last phase before v3.0 cut.
@@ -15,9 +15,8 @@ removed features.
 
 ## Documentation principles (apply to every shipped doc)
 
-These govern all documentation that ships in the product
-(`docs/`, `README.md`, `AGENTS.md` — anything on feature/dev
-branches):
+These govern all documentation that ships in the product (`docs/`,
+`README.md` and anything else on feature/dev branches):
 
 - **Neutral, present-tense.** Describe what the system *is* and how
   it works, with the rationale behind each design decision. Do
@@ -57,19 +56,21 @@ Update sections:
   `--samples N`, etc.); remove `--trace`.
 - **Key Options** — table refreshed; drop Phoenix row, add
   clustering controls.
-- **Output** — update the JSON schema to include
-  `PROPOSED_NOT_EXPLOITABLE`, `clustered_with_representative`,
-  `cluster_size`.
+- **Output:** document the output schema from `06-output-model.md`
+  (`is_vulnerable`, `confidence`, `suggested_state`, `justification`,
+  `agreement_rate`, `sample_count`) plus the clustering fields
+  `clustered_with` and `cluster_size`.
 - **Documentation** — link to new docs.
 
 ### `docs/architecture.md`
 
-Rewrite to describe v3 architecture. The Mermaid diagram from
-`v3-evolution/01-architecture.md` becomes the new canonical
-diagram. Old v2 diagram archived.
+Rewrite the architecture description. The Mermaid diagram from
+`v3-evolution/01-architecture.md` becomes the new canonical diagram,
+superseding the previous one.
 
 Sections:
-1. High-level pipeline (cluster → per-finding → write back).
+1. High-level pipeline (fetch → cluster → per-finding → aggregate to
+   local output).
 2. Per-finding subgraph (researcher → analyst → critic +
    self-consistency).
 3. Key components table (each component file path + responsibility).
@@ -122,15 +123,6 @@ Sections:
   representative-selection logic. Documents how to disable
   clustering and when you'd want to.
 
-### `AGENTS.md` (project-level Claude Code instructions)
-
-Update if it references removed features. Add a section
-documenting:
-- The gold-set benchmark is in `benchmark/datasets/`; re-run it
-  before declaring any prompt change done.
-- The architecture is documented in `docs/architecture.md`;
-  v3-evolution is *history*, not current architecture.
-
 ## Code cleanup
 
 ### Removals
@@ -141,7 +133,7 @@ documenting:
 - `sast_triage/agent_tools.py:verify_analysis` (replaced by
   critic; remove the function and any remaining test stubs).
 - Any `--trace` references in `run_triage.py` (verify).
-- Any orphaned helper functions left over from the v2 manual
+- Any orphaned helper functions left over from the previous manual
   ReAct loop.
 
 ### Renames / reorganization
@@ -168,7 +160,7 @@ sast_triage/
 │   └── search_in_files.py
 ├── prompts.py              # researcher / analyst / critic prompts
 ├── agent_models.py         # Pydantic schemas
-├── agent_logging.py        # unchanged from v2 + compact-logs
+├── agent_logging.py        # unchanged, includes compact-logs
 ├── aggregator.py           # new: self-consistency
 └── agent.py                # now slim: just orchestrates graph
 ```
@@ -182,15 +174,6 @@ ruff, flake8, etc.) and fix violations. Add a CI hook if not
 already present.
 
 ## Archival
-
-### `v2-evolution/`
-
-Move to `v2-evolution-archive/` and add a one-line
-`v2-evolution-archive/README.md`:
-
-> Historical v2 implementation plans, completed and superseded by
-> v3 (see `v3-evolution/` and `redesign-analysis.md`). Kept for
-> reference but not current architecture.
 
 ### `redesign-analysis.md`
 
@@ -220,7 +203,7 @@ Recommendation: drop. It's ~ thousands of files we don't use.
   (the cloned comparator) except in archived/historical
   documents.
 - `docs/architecture.md` reflects the actual codebase, not the
-  v2-evolution plans.
+  planning docs.
 - `git log` for the cleanup phase is small and focused — no
   bundled functional changes.
 

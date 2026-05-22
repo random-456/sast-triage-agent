@@ -218,8 +218,8 @@ async def analyze_single_finding(self, result_hash: str) -> TriageDecision:
     return final_state.verdict
 ```
 
-The outer pipeline (cluster → for each → write back) stays plain
-Python.
+The outer pipeline (cluster → for each → aggregate to local output)
+stays plain Python.
 
 ## Circuit breakers
 
@@ -233,12 +233,16 @@ NO_PROGRESS_THRESHOLD = 2  # consecutive iterations with no new evidence
 ```
 
 If any limit is hit, route to `aggregate` with a recorded
-`stop_reason`. The aggregator handles `stop_reason != "approved"`
-by:
+`stop_reason`. The aggregator does not set the disposition directly;
+it sets `is_vulnerable` + `confidence` and lets `derive_state`
+(`06-output-model.md`) produce `suggested_state`:
 
-- Routing the finding to `PROPOSED_NOT_EXPLOITABLE` if a tentative
-  verdict exists.
-- Routing to `REFUSED` if no verdict can be assembled.
+- If samples produced a tentative classification, its plurality
+  becomes `is_vulnerable` with the (low) agreement-based confidence.
+  A leaning-exploitable finding still derives to `CONFIRMED`; a
+  leaning-non-exploitable one to `PROPOSED_NOT_EXPLOITABLE`.
+- If no classification could be assembled, `is_vulnerable=null`,
+  which derives to `REFUSED`.
 
 ## Implementation steps
 

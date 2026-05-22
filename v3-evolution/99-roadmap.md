@@ -30,7 +30,7 @@ Phase order is **not arbitrary**. It follows three rules:
 |---|---|---|
 | 1 | `02-gold-set-benchmark.md` | 3-5 days |
 
-**Ship gate:** gold-set committed; current v2 code benchmarked
+**Ship gate:** gold-set committed; the current code benchmarked
 against it; baseline numbers recorded. Even if the baseline numbers
 are uncomfortable, write them down — they're the floor.
 
@@ -94,7 +94,7 @@ full per-finding analysis on the same members.
 
 | # | Doc | Effort | Notes |
 |---|---|---|---|
-| 1 | `11-cleanup-and-docs.md` | 3-5 days | README, docs/, AGENTS.md, archive v2-evolution |
+| 1 | `11-cleanup-and-docs.md` | 3-5 days | README, docs/, dead-code removal |
 
 **Ship gate:** new contributor can read the docs and understand
 the system without reading source code.

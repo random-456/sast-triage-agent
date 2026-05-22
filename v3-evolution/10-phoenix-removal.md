@@ -18,9 +18,8 @@ mechanism.
 
 ## Motivation
 
-Phoenix was added in v2 (`v2-evolution/06-phoenix-tracing.md`) to
-provide a UI for inspecting LLM traces during development. In
-practice:
+Phoenix was added in an earlier iteration to provide a UI for
+inspecting LLM traces during development. In practice:
 
 - The `--trace` flag is rarely used and requires installing optional
   dependencies the user often doesn't have.
@@ -43,7 +42,6 @@ re-add Phoenix; add Langfuse if and when the need is concrete.
 ### Files deleted
 - `sast_triage/tracing.py` (the whole module, ~108 lines)
 - `tests/test_tracing.py`
-- `v2-evolution/06-phoenix-tracing.md` (archive to `v2-evolution-archive/` per `11-cleanup-and-docs.md`)
 
 ### Files modified
 

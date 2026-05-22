@@ -10,7 +10,7 @@
 ## Goal
 
 A reproducible, version-controlled benchmark dataset of human-triaged
-SAST findings, plus the harness to run the current v2 code against it
+SAST findings, plus the harness to run the current code against it
 and produce baseline metrics. Every subsequent v3 change is validated
 by re-running this benchmark and comparing.
 
@@ -52,7 +52,7 @@ established by `benchmark/benchmark_models.py`:
 }
 ```
 
-New required fields vs v2 datasets: `queryName` and `cwe`. These are
+New required fields vs the existing datasets: `queryName` and `cwe`. These are
 both available from the Checkmarx One API (verify on existing fetched
 data — see `utils/checkmarx_helpers.py`). If they're not present in
 the user's existing exports, write a small backfill script.
@@ -130,9 +130,9 @@ KPI output.
 4. **Day 3:** Add `verdict_stability_rate` and `calibration_table`
    metrics to `benchmark/benchmark_metrics.py`. Update output schema
    in `docs/benchmark.md`.
-5. **Day 3-4:** Run the v2 code (current `main` branch) against the
+5. **Day 3-4:** Run the current code (`main` branch) against the
    gold-set 3 times. Record baseline numbers in
-   `benchmark/results/v2-baseline.json` and commit.
+   `benchmark/results/baseline.json` and commit.
 6. **Day 4:** Write `benchmark/datasets/README.md` documenting the
    curation rationale, TP/FP split, per-CWE coverage, and known
    limitations.
@@ -144,7 +144,7 @@ KPI output.
 - Each dataset includes at least 15% false positives.
 - The full benchmark harness runs end-to-end without errors against
   both datasets.
-- Three independent runs of the v2 code produce a recorded baseline,
+- Three independent runs of the current code produce a recorded baseline,
   with verdict-stability and calibration numbers included.
 - `benchmark/datasets/README.md` documents the dataset honestly,
   including limitations (per-CWE underpowering, OWASP-app TP bias,

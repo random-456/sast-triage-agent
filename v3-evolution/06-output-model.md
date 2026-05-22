@@ -50,7 +50,9 @@ Per finding:
   "suggested_state": "CONFIRMED",
   "justification": "The finding is CONFIRMED because ...",
   "agreement_rate": 1.0,
-  "sample_count": 3
+  "sample_count": 3,
+  "clustered_with": null,
+  "cluster_size": 1
 }
 ```
 
@@ -58,10 +60,17 @@ Per finding:
   `null` means the agent could not decide (maps to `REFUSED`).
 - **`confidence`**: `0.0`–`1.0`. Calibrated, agreement-based (see
   `05-critic-and-self-consistency.md`), not the model's self-report.
-- **`suggested_state`**: the disposition — a pure function of the
-  two fields above.
+- **`suggested_state`**: the disposition, a pure function of the two
+  fields above.
 - **`agreement_rate`**, **`sample_count`**: diagnostics from the
   self-consistency layer.
+- **`clustered_with`**, **`cluster_size`**: set when clustering is
+  enabled (`09-finding-clustering.md`). `clustered_with` is the
+  representative's `resultHash` when this verdict was propagated, or
+  `null`; `cluster_size` is the number of findings in the cluster.
+
+This is the canonical output schema. Other docs refer here rather
+than restating it.
 
 ## Disposition derivation
 
@@ -154,6 +163,8 @@ class TriageDecision(BaseModel):
     justification: str
     agreement_rate: float | None = None
     sample_count: int | None = None
+    clustered_with: str | None = None  # set by clustering (see 09)
+    cluster_size: int | None = None
 ```
 
 The legacy `assessment_result` / `assessment_confidence` /

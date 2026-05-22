@@ -145,10 +145,13 @@ outcome:
 - If verdicts agree and both critics APPROVED → commit with
   agreement_rate=1.0.
 - If verdicts disagree → run sample 3 as tiebreaker.
-- If still split → mark `PROPOSED_NOT_EXPLOITABLE` (escalate).
+- If still split after the tiebreaker (no majority, e.g. a sample
+  abstained) → `is_vulnerable=null`, which `derive_state` maps to
+  `REFUSED` for human attention. A split is never recorded as a
+  confident dismissal.
 
-This typically yields ~2.2 samples per finding on average,
-saving ~25% vs fixed N=3.
+This keeps the average sample count below the fixed-N ceiling; how
+much below is workload-dependent, so no fixed figure is claimed.
 
 ### Sample diversity
 

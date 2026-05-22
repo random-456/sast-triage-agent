@@ -5,7 +5,6 @@
 > work that can be picked up and executed independently.
 >
 > Strategic background: `redesign-analysis.md` (repo root).
-> Existing prior work: `v2-evolution/` (kept for reference).
 
 ## What v3 is
 
@@ -35,21 +34,35 @@ finding-level clustering. The goals are:
 ## Top-line success criteria
 
 Measured against the gold-set (see `02-gold-set-benchmark.md`),
-before any v3 change ships:
+before any change ships. The core metrics are computed on the binary
+classification `is_vulnerable` (see `06-output-model.md`), with the
+analyst label as ground truth (exploitable maps to
+`is_vulnerable=true`). The disposition (`suggested_state`) does not
+affect them.
 
-- **CONFIRMED recall ≥ 0.90** (current: ~0.80-0.85 estimated, no
-  gold-set yet to confirm)
-- **NOT_EXPLOITABLE precision ≥ 0.92** (current: unknown)
-- **Confidence calibration**: among findings reported as
-  `assessment_confidence ≥ 0.9`, actual accuracy ≥ 0.9 ± 0.05
-- **Verdict stability**: re-running the same finding 5 times yields
-  the same verdict ≥ 95% of the time
-- **Per-finding cost** with full critic+sampling under $0.60 average,
-  with clustering bringing real-world workload cost to under $0.10
-  per finding amortized
+Four gates:
 
-Direction (not gates) for v3.0 ship: all four ≥ targets met on the
-gold-set, with at least 100 findings reviewed.
+1. **Exploitable-class recall ≥ 0.90.** Of the genuinely exploitable
+   findings, the fraction the tool classifies `is_vulnerable=true`.
+   This is the most important number: a missed true positive (a false
+   negative) is the worst outcome. (Current: ~0.80-0.85 estimated, no
+   gold-set yet to confirm.)
+2. **Non-exploitable-class precision ≥ 0.92.** Of the findings the
+   tool classifies `is_vulnerable=false`, the fraction that are
+   genuinely non-exploitable. When the tool dismisses a finding it
+   must be right. (Current: unknown.)
+3. **Confidence calibration:** among findings reported at
+   `confidence ≥ 0.9`, actual accuracy ≥ 0.9 ± 0.05.
+4. **Verdict stability:** re-running the same finding 5 times yields
+   the same verdict ≥ 95% of the time.
+
+Not a gate, tracked: **per-finding cost.** Full critic plus sampling
+raises it (multiple LLM passes); clustering amortizes it on
+repetitive workloads. The amount is codebase-dependent, so no fixed
+figure or multiplier is claimed (see `09-finding-clustering.md`).
+
+Direction for v3.0 ship: all four gates met on the gold-set, with at
+least 100 findings reviewed.
 
 ## Guiding principles
 
@@ -104,7 +117,7 @@ To keep v3 finite and shippable:
   extraction is in scope (`08-code-retrieval.md`); call-graph
   navigation is a future enhancement.
 
-## What stays unchanged from v2
+## What stays unchanged
 
 - Checkmarx One API integration (`utils/checkmarx_helpers.py`)
 - Repository cloning and preprocessing (`utils/`, secret masking,

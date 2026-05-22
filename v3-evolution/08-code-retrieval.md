@@ -95,7 +95,7 @@ requests, and as the automatic fallback target.
    captures all context.
 2. **Tree-sitter parse failure** on a larger file: return a line
    window of `±LINE_WINDOW` (default 120) lines around
-   `line_number` — never the whole large file.
+   `line_number`; never the whole large file.
 3. **Unsupported language**: same line-window fallback.
 4. **Function not found at the line** (e.g. module-level code):
    line-window fallback.
@@ -157,6 +157,12 @@ relevant function"), and `read_file` described as "for small files,
 imports/constants outside a function, or when you need the whole
 file." The researcher iterates over the finding's dataflow nodes
 and pulls each enclosing function.
+
+The dataflow comes from Checkmarx (`finding.get("nodes", [])`) and
+can be empty. When the finding has no dataflow nodes, the researcher
+falls back to the finding's primary file location if one is present,
+and otherwise proceeds on finding metadata alone. That yields a
+low-confidence verdict rather than a crash.
 
 ## Testing
 
