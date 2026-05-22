@@ -30,6 +30,7 @@ MAX_LOG_RESULT_LENGTH = 5000  # Maximum length for logging tool results
 # Per-finding graph circuit breakers (Phase 2 LangGraph subgraph)
 MAX_RESEARCH_ITERATIONS = 5  # Research-node visits before a forced aggregate
 MAX_REANALYSIS_LOOPS = 2  # Critic -> analyst reanalysis loops before aggregate
+MAX_TOOL_CALLS_PER_RESEARCH = 10  # Tool-call turns within one research-node visit
 DEFAULT_SAMPLES = 3  # Self-consistency samples per finding (PR5 makes adaptive)
 
 # Disposition Configuration
