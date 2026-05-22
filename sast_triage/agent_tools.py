@@ -208,7 +208,7 @@ def search_in_files(pattern: str, file_extensions: str = "*") -> Dict:
 
 @tool
 def submit_triage_decision(
-    is_exploitable: bool,
+    is_vulnerable: bool,
     confidence: float,
     justification: str
 ) -> Dict:
@@ -216,7 +216,7 @@ def submit_triage_decision(
     Submit the final triage decision after completing analysis.
 
     Args:
-        is_exploitable: True if the vulnerability is exploitable, False if not
+        is_vulnerable: True if the finding is exploitable, False if not
         confidence: Confidence level between 0.0 and 1.0
         justification: Detailed explanation of the decision
 
@@ -227,12 +227,9 @@ def submit_triage_decision(
     if not 0.0 <= confidence <= 1.0:
         return {"error": f"Confidence must be between 0.0 and 1.0, got {confidence}"}
 
-    # Convert boolean to assessment result
-    assessment_result = "CONFIRMED" if is_exploitable else "NOT_EXPLOITABLE"
-
     return {
         "status": "decision_submitted",
-        "assessment_result": assessment_result,
+        "is_vulnerable": is_vulnerable,
         "confidence": confidence,
         "justification": justification
     }

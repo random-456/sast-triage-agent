@@ -108,28 +108,44 @@ The file contains:
     "total_findings": 5,
     "summary": {
       "confirmed": 2,
-      "not_exploitable": 2,
-      "refused": 1
+      "not_exploitable": 1,
+      "proposed_not_exploitable": 1,
+      "refused": 1,
+      "refusal_rate": 0.2
     }
   },
   "results": [
     {
       "resultHash": "abc123",
-      "assessment_result": "CONFIRMED",
-      "assessment_confidence": 0.92,
-      "assessment_justification": "..."
+      "is_vulnerable": true,
+      "confidence": 0.92,
+      "suggested_state": "CONFIRMED",
+      "justification": "..."
     }
   ]
 }
 ```
 
-### Assessment Results
+Each result separates the classification (`is_vulnerable` plus `confidence`) from the advisory disposition (`suggested_state`). The tool only reads from Checkmarx One: every `suggested_state` is a recommendation written to the local output file, never written back to Checkmarx.
 
-| Result | Meaning |
-|--------|---------|
-| `CONFIRMED` | The finding is a true positive (exploitable vulnerability) |
-| `NOT_EXPLOITABLE` | The finding is a false positive (not exploitable) |
-| `REFUSED` | The agent could not make a determination (manual review required) |
+### Classification
+
+| `is_vulnerable` | Meaning |
+|-----------------|---------|
+| `true` | The finding is exploitable (true positive) |
+| `false` | The finding is not exploitable (false positive) |
+| `null` | The agent could not decide |
+
+### Suggested State
+
+`suggested_state` is derived from the classification and confidence. A non-exploitable verdict below `CONFIDENCE_THRESHOLD` is escalated to `PROPOSED_NOT_EXPLOITABLE` rather than dismissed.
+
+| Suggested State | Derivation |
+|-----------------|------------|
+| `CONFIRMED` | `is_vulnerable` is `true` (always surfaced, regardless of confidence) |
+| `NOT_EXPLOITABLE` | `is_vulnerable` is `false` and confidence is at or above the threshold |
+| `PROPOSED_NOT_EXPLOITABLE` | `is_vulnerable` is `false` and confidence is below the threshold (flagged for human review) |
+| `REFUSED` | `is_vulnerable` is `null` (manual review required) |
 
 ### Session Logs
 

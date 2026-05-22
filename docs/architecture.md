@@ -69,7 +69,7 @@ The agent uses a tool-calling pattern with LangChain:
 1. The finding details (dataflow, severity, query name, CWE) are formatted into a human prompt and sent to the LLM alongside a system prompt.
 2. The LLM responds with tool calls to investigate the codebase: `read_file`, `search_in_files`, `list_directory`.
 3. A `verify_analysis` checkpoint tool ensures the agent reviews its reasoning before submitting.
-4. The final `submit_triage_decision` tool records the verdict (CONFIRMED / NOT_EXPLOITABLE) with confidence and justification.
+4. The final `submit_triage_decision` tool records the classification (`is_vulnerable`) with confidence and justification. The advisory `suggested_state` is then derived from those two fields (see Output Model below).
 5. If the LLM responds without a tool call, a nudge message is injected to keep the loop progressing.
 6. The loop is capped at a configurable maximum number of iterations (default: 30).
 
@@ -95,6 +95,19 @@ flowchart LR
 ```
 
 The preprocessing pipeline runs after repository cloning and before LLM analysis. Both stages produce structured reports that are recorded in the session log. See [preprocessing.md](preprocessing.md) for details.
+
+## Output Model
+
+Each finding's output separates two concerns:
+
+- **Classification** (`is_vulnerable`: `true` | `false` | `null`, plus a `confidence` in 0.0-1.0): what the agent believes about exploitability.
+- **Disposition** (`suggested_state`): what to do about it, derived deterministically from the classification and confidence by `derive_state` in `sast_triage/agent_models.py`.
+
+The derivation: a positive (`is_vulnerable=true`) is always `CONFIRMED` regardless of confidence, since missing a real vulnerability is the worst outcome. A negative at or above `CONFIDENCE_THRESHOLD` is `NOT_EXPLOITABLE`; below it, `PROPOSED_NOT_EXPLOITABLE` (flagged for human review). An undecided classification (`null`) is `REFUSED`.
+
+Keeping classification and disposition separate means tuning `CONFIDENCE_THRESHOLD` shifts findings between `NOT_EXPLOITABLE` and `PROPOSED_NOT_EXPLOITABLE` without changing the classification metrics the benchmark gates on.
+
+**Read-only constraint:** the tool only reads from Checkmarx One. Every `suggested_state` is advisory and is stored only in the local output file. No triage state is ever written back to Checkmarx.
 
 ## LLM Backend
 

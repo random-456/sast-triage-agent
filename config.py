@@ -27,6 +27,12 @@ MAX_ANALYSIS_ITERATIONS = 30  # Maximum iterations for LLM analysis per finding
 MAX_SEARCH_RESULTS = 50  # Safety cap for search results
 MAX_LOG_RESULT_LENGTH = 5000  # Maximum length for logging tool results
 
+# Disposition Configuration
+# A non-exploitable verdict below this confidence is routed to
+# PROPOSED_NOT_EXPLOITABLE for human attention rather than NOT_EXPLOITABLE.
+# Conservative placeholder; calibrate against the gold-set.
+CONFIDENCE_THRESHOLD = 0.85
+
 # Checkmarx API Configuration
 CHECKMARX_CLIENT_ID = "ast-app"  # Default client ID for Checkmarx One
 CHECKMARX_REALM = "abcorg"  # Checkmarx realm/tenant name

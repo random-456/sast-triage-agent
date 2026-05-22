@@ -72,18 +72,27 @@ Results are saved to a timestamped JSON file in the output directory:
   "metadata": {
     "project_name": "my-project",
     "model": "gemini-2.5-pro",
-    "summary": { "confirmed": 2, "not_exploitable": 3, "refused": 0 }
+    "summary": {
+      "confirmed": 2,
+      "not_exploitable": 2,
+      "proposed_not_exploitable": 1,
+      "refused": 0,
+      "refusal_rate": 0.0
+    }
   },
   "results": [
     {
       "resultHash": "8ac6484c12c49772",
-      "assessment_result": "CONFIRMED",
-      "assessment_confidence": 0.92,
-      "assessment_justification": "..."
+      "is_vulnerable": true,
+      "confidence": 0.92,
+      "suggested_state": "CONFIRMED",
+      "justification": "..."
     }
   ]
 }
 ```
+
+Each result separates the classification (`is_vulnerable` + `confidence`) from the advisory `suggested_state`. The tool only reads from Checkmarx One: verdicts are written to the local output file, never back to Checkmarx. See [docs/usage-guide.md](docs/usage-guide.md) for the full state derivation.
 
 Session logs with full conversation history and token usage are saved to `logs/`.
 
