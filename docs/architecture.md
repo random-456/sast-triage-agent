@@ -66,7 +66,7 @@ flowchart TD
 
 The agent uses a tool-calling pattern with LangChain:
 
-1. The finding details (dataflow, severity, query name, CWE) are formatted into a human prompt and sent to the LLM alongside a system prompt.
+1. The finding details (dataflow, severity, query name, CWE) are formatted into a human prompt and sent to the LLM alongside a system prompt. The system prompt enforces a mandatory five-step analysis protocol (identify source, identify sink, enumerate the path, classify every guard, verdict), with a `file:line` citation required for each claim.
 2. The LLM responds with tool calls to investigate the codebase: `read_file`, `search_in_files`, `list_directory`.
 3. A `verify_analysis` checkpoint tool ensures the agent reviews its reasoning before submitting.
 4. The final `submit_triage_decision` tool records the classification (`is_vulnerable`) with confidence and justification. The advisory `suggested_state` is then derived from those two fields (see Output Model below).
