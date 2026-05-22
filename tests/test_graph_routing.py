@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
     DEFAULT_SAMPLES,
+    INITIAL_SAMPLES,
     MAX_REANALYSIS_LOOPS,
     MAX_RESEARCH_ITERATIONS,
 )
@@ -128,9 +129,32 @@ class TestRouteAfterAggregate:
         assert route_after_aggregate(_state(verdict=decision)) == "end"
 
 
+def _no_vote() -> AnalystVerdict:
+    return AnalystVerdict(is_vulnerable=False, confidence=0.9, reasoning="r")
+
+
 class TestTargetSamplesFor:
-    def test_returns_default(self):
-        assert target_samples_for(_state()) == DEFAULT_SAMPLES
+    def test_below_initial_targets_initial(self):
+        assert target_samples_for(_state(samples=[])) == INITIAL_SAMPLES
+        assert target_samples_for(_state(samples=[_verdict()])) == INITIAL_SAMPLES
+
+    def test_majority_at_initial_stops_there(self):
+        state = _state(samples=[_verdict(), _verdict()])
+        assert target_samples_for(state) == INITIAL_SAMPLES
+
+    def test_split_at_initial_adds_a_tiebreaker(self):
+        state = _state(samples=[_verdict(), _no_vote()])
+        assert target_samples_for(state) == DEFAULT_SAMPLES
+
+    def test_caps_at_default_samples(self):
+        state = _state(
+            samples=[
+                _verdict(),
+                _no_vote(),
+                AnalystVerdict(is_vulnerable=None, confidence=0.0, reasoning="r"),
+            ]
+        )
+        assert target_samples_for(state) == DEFAULT_SAMPLES
 
 
 class TestComputeStopReason:
@@ -199,7 +223,9 @@ class TestCompiledTopology:
         result = graph.invoke(_initial())
         assert result["stop_reason"] == "approved"
         assert result["verdict"] is not None
-        assert len(result["samples"]) == DEFAULT_SAMPLES
+        # Agreeing samples reach a majority at INITIAL_SAMPLES, so adaptive
+        # sampling stops there rather than collecting the full ceiling.
+        assert len(result["samples"]) == INITIAL_SAMPLES
         # Entry research runs once; APPROVED resampling loops analyst<->critic.
         assert result["research_iterations"] == 1
 

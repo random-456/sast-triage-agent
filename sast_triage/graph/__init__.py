@@ -1,5 +1,6 @@
 """LangGraph per-finding triage subgraph."""
 
+from sast_triage.graph.aggregate import aggregate_node
 from sast_triage.graph.analyst import build_analyst_messages, make_analyst_node
 from sast_triage.graph.build import build_per_finding_graph
 from sast_triage.graph.critic import build_critic_messages, make_critic_node
@@ -30,6 +31,7 @@ __all__ = [
     "StopReason",
     "ToolCallRecord",
     "TriageState",
+    "aggregate_node",
     "build_analyst_messages",
     "build_critic_messages",
     "build_per_finding_graph",
