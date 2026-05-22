@@ -64,6 +64,30 @@ class TestSelectChecklist:
         checklist = select_checklist("Some_Unmapped_Query", 89)
         assert checklist.checklist_id == "sqli"
 
+    @pytest.mark.parametrize(
+        "query_name,expected",
+        [
+            ("Reflected_XSS", "xss_reflected"),
+            ("XSS_Evasion_Attack_via_Replace", "xss_reflected"),
+            ("Stored_XSS", "xss_stored"),
+        ],
+    )
+    def test_select_xss_subflavor_by_query_name(self, query_name, expected):
+        assert select_checklist(query_name, 79).checklist_id == expected
+
+    @pytest.mark.parametrize(
+        "cwe,expected",
+        [
+            (79, "xss_reflected"),
+            (78, "command_injection"),
+            (77, "command_injection"),
+            (22, "path_traversal"),
+        ],
+    )
+    def test_select_by_cwe_routes_to_family_checklist(self, cwe, expected):
+        # No queryName, so routing falls to the CWE map.
+        assert select_checklist(None, cwe).checklist_id == expected
+
     def test_select_query_name_takes_precedence_over_cwe(self):
         # queryName maps to sqli; the unmapped CWE must not override it.
         checklist = select_checklist("SQL_Injection", 999)

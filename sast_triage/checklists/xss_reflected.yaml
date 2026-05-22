@@ -1,0 +1,70 @@
+checklist_id: xss_reflected
+display_name: "Reflected Cross-Site Scripting (CWE-79, reflected)"
+
+applies_to:
+  cwes:
+    - CWE-79
+  query_names:
+    - Reflected_XSS
+    - XSS_Evasion_Attack_via_Replace
+
+evidence_required:
+  - description: "Source is attacker-controlled and is reflected back into an HTTP response within the same request"
+    examples:
+      - "request parameter, header or path segment echoed into the page"
+  - description: "The exact output context where the value lands, because the correct encoding depends entirely on it"
+    examples:
+      - "HTML body text"
+      - "HTML attribute value (quoted or unquoted)"
+      - "inside a <script> block or inline event handler"
+      - "URL/href context"
+      - "CSS context"
+  - description: "The response Content-Type is one a browser renders as HTML (text/html), not a non-rendered type"
+    examples:
+      - "text/html vs application/json consumed by a non-browser client"
+  - description: "Whether encoding/escaping is applied and whether it matches the output context; whether framework auto-escaping is on or explicitly bypassed"
+
+sanitizer_patterns:
+  effective:
+    - "context-correct output encoding applied at render time, matching the sink context (language-agnostic principle)"
+    - "framework template auto-escaping left enabled: Thymeleaf th:text, JSP c:out / fn:escapeXml, React JSX text interpolation, Angular interpolation (framework-specific)"
+    - "OWASP Java Encoder with the context-matching method: forHtml, forHtmlAttribute, forUriComponent, and forJavaScript only when the value sits inside a quoted JavaScript string literal (Java)"
+    - "rendering the value as inert text rather than markup (textContent, not innerHTML)"
+    - "scheme allowlist (http, https or relative) for a value used as a full URL in href/src"
+  ineffective:
+    - "HTML-body encoding applied when the value is injected into a different context (attribute, JS, URL or CSS): wrong context, bypassable"
+    - "encoding only < and > but not quotes when the value sits in a quoted attribute"
+    - "blacklist tag/keyword stripping (removing <script>): bypassable with event handlers, casing, nesting or encoding"
+    - "client-side-only sanitization that the server does not enforce"
+    - "auto-escaping explicitly disabled at the sink: th:utext, JSP <%= %> raw, React dangerouslySetInnerHTML, innerHTML assignment"
+    - "URL-encoding used for an HTML context (or vice versa)"
+    - "HTML- or URL-encoding a value used as a full URL in href/src: does not stop javascript: or data: scheme payloads, which need a scheme allowlist instead"
+
+investigation_guidance: |
+  Reflected XSS is decided by the output context, not the input. Find the
+  exact line that writes the tainted value into the response and determine
+  what surrounds it: HTML text, a quoted or unquoted attribute, a script
+  block, an event handler, a URL or a stylesheet. The same value can be safe
+  in one context and exploitable in another, so a generic "it is escaped"
+  claim is never sufficient: the escaping must match the context.
+
+  Confirm whether the response is actually rendered as HTML. A value reflected
+  into an application/json response consumed by a non-browser client, or into
+  a downloaded attachment, is usually not reflected XSS. Check the
+  Content-Type and how the endpoint is consumed.
+
+  When a framework template is used, the default is auto-escaping ON, which
+  makes most reflected findings false positives. The exploitable case is when
+  auto-escaping is explicitly bypassed: th:utext, raw JSP expressions,
+  dangerouslySetInnerHTML, direct innerHTML assignment or string-built HTML.
+  Look specifically for those bypasses on the path. A Content-Security-Policy
+  can reduce impact but is defense-in-depth: do not treat it as the control
+  that makes a clear injection NOT_EXPLOITABLE.
+
+common_false_positive_patterns: |
+  Framework auto-escaping renders the value as inert text (React JSX, Angular
+  interpolation, Thymeleaf th:text, escaped JSP). The value is not reflected to
+  a browser-rendered response (logged, returned as JSON to an API client, or
+  used server-side only). The value is strictly constrained before output
+  (enum, integer, allowlisted token). The reflection is into a non-HTML
+  Content-Type that the browser does not execute.

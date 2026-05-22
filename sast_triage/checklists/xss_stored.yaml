@@ -1,0 +1,58 @@
+checklist_id: xss_stored
+display_name: "Stored Cross-Site Scripting (CWE-79, stored)"
+
+applies_to:
+  cwes:
+    - CWE-79
+  query_names:
+    - Stored_XSS
+
+evidence_required:
+  - description: "Source is attacker-controlled and is persisted (database, file, cache, message queue)"
+    examples:
+      - "user profile field, comment body, uploaded document metadata"
+  - description: "A render sink later reads the stored value and writes it into an HTML response"
+    examples:
+      - "comment shown on a page, admin dashboard listing user-supplied data"
+  - description: "The output context at the render sink (HTML body, attribute, script, URL, CSS)"
+  - description: "Whether context-correct encoding is applied at render time, not merely at storage time; whether auto-escaping is on or bypassed at the render sink"
+
+sanitizer_patterns:
+  effective:
+    - "context-correct output encoding applied at the render sink, every place the stored value is displayed (language-agnostic principle)"
+    - "framework template auto-escaping enabled at the render sink: Thymeleaf th:text, JSP c:out, React JSX, Angular interpolation (framework-specific)"
+    - "server-side HTML sanitization with a vetted allowlist library when rich HTML must be stored: OWASP Java HTML Sanitizer, or a current maintained DOMPurify for the HTML-body context only via a server-side DOM (library-specific). DOMPurify does not cover attribute, URL, CSS or script contexts"
+  ineffective:
+    - "input-time escaping or sanitization only, with raw output at the render sink: stored data is re-decoded or rendered in a context the input filter did not anticipate"
+    - "encoding for one render context when the value is also rendered in another context elsewhere"
+    - "blacklist filtering of <script> at input: bypassable and does not cover all render contexts"
+    - "auto-escaping disabled at the render sink (th:utext, dangerouslySetInnerHTML, innerHTML, raw template expression)"
+    - "trusting that data already in the database is safe because it was 'validated' when stored"
+    - "HTML-encoding a stored value rendered as a full URL in href/src: does not stop javascript: or data: scheme payloads, which need a scheme allowlist instead"
+
+investigation_guidance: |
+  Stored XSS is about the render sink, not the storage. The vulnerability fires
+  when persisted attacker data is later written into an HTML page without
+  context-correct encoding. So locate where the stored value is read back and
+  emitted, and check the encoding there. Input-time sanitization is a weak
+  control on its own: the same stored value is often rendered in several places
+  and contexts, and a filter tuned for one will miss another.
+
+  A finding can be a true positive even if the immediate source at the sink is
+  the database: that is the second-order nature of stored XSS. Trace the value
+  back to the user-controlled write that populated the row.
+
+  As with reflected XSS, the output context governs the correct encoding, and
+  framework auto-escaping at the render template usually makes the finding a
+  false positive unless it is explicitly bypassed. If the application
+  deliberately stores and renders rich HTML, the only safe control is
+  server-side sanitization with a vetted allowlist library; verify the library
+  and its configuration rather than trusting a hand-rolled filter.
+
+common_false_positive_patterns: |
+  The render sink uses framework auto-escaping so the stored value is shown as
+  inert text. The stored value is sanitized at render time by a vetted
+  allowlist HTML sanitizer. The stored value is never rendered into an HTML
+  context (used only in non-HTML APIs, exports or server-side logic). The
+  stored field is strictly constrained at the type level (enum, numeric, fixed
+  format) so script content cannot survive.
