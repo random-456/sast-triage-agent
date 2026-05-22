@@ -51,9 +51,10 @@ class TestSASTTriageAgent:
         """Test that agent initializes correctly."""
         assert agent.model_name == "test-model"
         assert agent.temperature == 0.1
-        assert len(agent.tools) == 5
-        assert agent.system_prompt is not None
-        assert "security analyst" in agent.system_prompt.lower()
+        # The researcher gets the three investigation tools; verdict and review
+        # are handled by the analyst and critic graph nodes, not tools.
+        assert len(agent.research_tools) == 3
+        assert agent.per_finding_graph is not None
     
     def test_update_csv_status(self, agent, tmp_path):
         """Test CSV status update functionality."""
@@ -171,45 +172,45 @@ class TestSASTTriageAgent:
             assert "Could not load finding details" in decision.justification
 
     @pytest.mark.asyncio
-    async def test_analyze_single_finding_with_mock_llm(self, agent):
-        """Test analyze_single_finding with mocked LLM response."""
+    async def test_analyze_single_finding_invokes_graph_and_returns_verdict(
+        self, agent
+    ):
+        """The agent builds state, runs the graph and returns its verdict."""
         finding_data = {
             "resultHash": "hash-001",
             "severity": "HIGH",
             "queryName": "SQL_Injection",
+            "cweID": "89",
             "dataflow": [],
         }
+        graph_verdict = TriageDecision(
+            resultHash="hash-001",
+            is_vulnerable=True,
+            confidence=0.88,
+            suggested_state="CONFIRMED",
+            justification="Direct SQL concatenation detected",
+            agreement_rate=1.0,
+            sample_count=2,
+        )
 
         with patch("sast_triage.agent.get_finding_details") as mock_tool:
             mock_tool.invoke.return_value = finding_data
 
-            mock_response = Mock()
-            mock_response.content = "Analyzing the SQL injection vulnerability..."
-            mock_response.tool_calls = [{
-                "id": "call-123",
-                "name": "submit_triage_decision",
-                "args": {
-                    "is_vulnerable": True,
-                    "confidence": 0.9,
-                    "justification": "Direct SQL concatenation detected",
-                },
-            }]
-            mock_response.usage_metadata = {
-                "input_tokens": 100,
-                "output_tokens": 50,
-                "total_tokens": 150,
-            }
-
-            agent.llm_with_tools = Mock()
-            agent.llm_with_tools.ainvoke = AsyncMock(return_value=mock_response)
+            agent.per_finding_graph = Mock()
+            agent.per_finding_graph.ainvoke = AsyncMock(
+                return_value={"verdict": graph_verdict}
+            )
 
             decision = await agent.analyze_single_finding("hash-001")
 
-            assert decision.resultHash == "hash-001"
-            assert decision.is_vulnerable is True
+            # The agent passed a TriageState built from the finding to the graph.
+            state_arg = agent.per_finding_graph.ainvoke.call_args.args[0]
+            assert state_arg.finding.resultHash == "hash-001"
+            assert state_arg.checklist.checklist_id == "sqli"
+            # And returned the graph's verdict unchanged.
+            assert decision is graph_verdict
             assert decision.suggested_state == "CONFIRMED"
-            assert decision.confidence == 0.9
-            assert "Direct SQL concatenation" in decision.justification
+            assert decision.agreement_rate == 1.0
 
 
 class TestTriageDecision:

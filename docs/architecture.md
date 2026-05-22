@@ -46,46 +46,46 @@ flowchart LR
 3. **Findings Fetch** -- Findings are retrieved from the Checkmarx `/api/results` endpoint, filtered by severity. A client-side state filter is applied afterward.
 4. **Repository Clone** -- The repository is shallow-cloned (`--depth 1`) into a temporary directory.
 5. **Preprocessing** -- The cloned codebase is processed in two stages: obfuscation removes infrastructure patterns (IPs, MACs, FQDNs), and secret masking replaces secrets identified by a Gitleaks CSV report.
-6. **Analysis** -- Each finding is processed through the LLM agent loop (see below).
+6. **Analysis** -- Each finding is processed through the per-finding analysis graph (see below).
 7. **Output** -- Results are saved incrementally to a timestamped JSON file with metadata.
 
-## Agent Analysis Loop
+## Per-Finding Analysis Graph
+
+Each finding runs through a LangGraph state machine (`sast_triage/graph/`). The outer pipeline stays plain Python; the per-finding control flow is the graph.
 
 ```mermaid
 flowchart TD
-    A[Load Finding Details] --> B[Send to LLM with System Prompt]
-    B --> C{LLM Response}
-    C -->|Tool Call| D[Execute Tool]
-    D --> E[Add Result to Conversation]
-    E --> B
-    C -->|submit_triage_decision| F[Record Decision]
-    C -->|No Tool Call| G[Prompt: Use a Tool]
-    G --> B
-    F --> H[Save Result + Update CSV]
+    R[Research: gather evidence] --> A[Analyst: produce a verdict sample]
+    A --> CR{Critic}
+    CR -->|NEEDS_MORE_RESEARCH| R
+    CR -->|REANALYZE| A
+    CR -->|APPROVED, need more samples| A
+    CR -->|APPROVED / breaker hit| AG[Aggregate]
+    AG --> F[TriageDecision]
 ```
 
-The agent uses a tool-calling pattern with LangChain:
+The roles are separated across nodes:
 
-1. The finding details (dataflow, severity, query name, CWE) are formatted into a human prompt and sent to the LLM alongside a system prompt. The system prompt enforces a mandatory five-step analysis protocol (identify source, identify sink, enumerate the path, classify every guard, verdict), with a `file:line` citation required for each claim. A CWE-specific evidence checklist is appended to the system prompt, selected from the finding's `queryName` and `cweID` (see CWE Checklists below); findings with no matching checklist receive a generic fallback.
-2. The LLM responds with tool calls to investigate the codebase: `read_file`, `search_in_files`, `list_directory`.
-3. A `verify_analysis` checkpoint tool ensures the agent reviews its reasoning before submitting.
-4. The final `submit_triage_decision` tool records the classification (`is_vulnerable`) with confidence and justification. The advisory `suggested_state` is then derived from those two fields (see Output Model below).
-5. If the LLM responds without a tool call, a nudge message is injected to keep the loop progressing.
-6. The loop is capped at a configurable maximum number of iterations (default: 30).
+1. **Research** gathers evidence. A tool-using LLM reads the codebase with `read_file`, `search_in_files` and `list_directory`, accumulating snippets into an `EvidenceBundle` (the CODE BANK). Each turn is rebuilt statelessly from the graph state (system prompt + code bank + only the last tool round), so the per-turn input stays bounded on long investigations. Failed tool calls are recorded and fed back so they are not retried.
+2. **Analyst** decides. With no tools, it reasons over the CODE BANK and the CWE checklist and commits to a structured `AnalystVerdict` (`is_vulnerable`, confidence, reasoning, citations). It enforces the five-step protocol (identify source, identify sink, enumerate the path, classify every guard, verdict) with a `file:line` citation per claim. Self-consistency runs it several times at increasing temperature.
+3. **Critic** reviews. A separate adversarial LLM call at a higher temperature critiques the latest verdict against the evidence and returns a structured `CritiqueResult`: `APPROVED`, `NEEDS_MORE_RESEARCH` (loop back to research) or `REANALYZE` (loop back to the analyst with feedback). This replaces a same-model self-check.
+4. **Aggregate** collapses the samples by self-consistency: the plurality verdict is the classification and the agreement rate (blended with an evidence-strength term) is the calibrated confidence. A split routes to `REFUSED`. The advisory `suggested_state` is derived from the classification and confidence (see Output Model below).
 
-### Available Tools
+Circuit breakers bound the loops (research iterations, reanalysis loops, tool calls per research turn); hitting one routes to the aggregator with a recorded stop reason. A CWE-specific evidence checklist is selected from the finding's `queryName` and `cweID` (see CWE Checklists below) and threaded into the research, analyst and critic prompts.
+
+### Investigation Tools
+
+The research node has these tools; the analyst and critic use structured output rather than tools.
 
 | Tool | Purpose |
 |------|---------|
 | `read_file` | Read a file from the cloned codebase (path-traversal protected) |
 | `search_in_files` | Regex search across codebase files with extension filtering |
 | `list_directory` | List directory contents within the codebase |
-| `verify_analysis` | Verification checkpoint before final decision |
-| `submit_triage_decision` | Submit the final exploitability verdict |
 
 ### CWE Checklists
 
-Each finding's analyst prompt is augmented with a CWE-specific evidence checklist. Checklists live in `sast_triage/checklists/` as YAML files validated against the `ChecklistDocument` model. `_mapping.yaml` routes a finding to a checklist: first by an exact, case-insensitive `queryName` match, then by the normalized CWE (`CWE-<n>`), then to `generic.yaml` as the final fallback. A checklist supplies the required evidence, the controls that do and do not neutralize that vulnerability class, investigation guidance and common false-positive patterns. Selection is fail-safe: a missing or malformed checklist leaves the base prompt unchanged rather than blocking the run.
+Each finding's analyst prompt is augmented with a CWE-specific evidence checklist. Checklists live in `sast_triage/checklists/` as YAML files validated against the `ChecklistDocument` model. `_mapping.yaml` routes a finding to a checklist: first by an exact, case-insensitive `queryName` match, then by the normalized CWE (`CWE-<n>`), then to `generic.yaml` as the final fallback. A checklist supplies the required evidence, the controls that do and do not neutralize that vulnerability class, investigation guidance and common false-positive patterns. Selection is fail-safe: an unmatched finding, or a mapped checklist that fails to load, falls back to `generic.yaml`.
 
 ## Preprocessing Pipeline
 
@@ -128,7 +128,7 @@ Every triage session produces a timestamped JSON log file in the `logs/` directo
 
 - **Session metadata**: model, temperature, project details, branch, repository URL
 - **Preprocessing reports**: obfuscation and masking summaries
-- **Per-finding conversation**: full message history, tool calls and results, token usage
+- **Per-finding inputs**: the finding details and selected checklist, plus the final decision
 - **Session summary**: totals for confirmed/not_exploitable/refused, aggregate token usage
 
 ## Output Structure

@@ -207,35 +207,6 @@ def search_in_files(pattern: str, file_extensions: str = "*") -> Dict:
 
 
 @tool
-def submit_triage_decision(
-    is_vulnerable: bool,
-    confidence: float,
-    justification: str
-) -> Dict:
-    """
-    Submit the final triage decision after completing analysis.
-
-    Args:
-        is_vulnerable: True if the finding is exploitable, False if not
-        confidence: Confidence level between 0.0 and 1.0
-        justification: Detailed explanation of the decision
-
-    Returns:
-        Confirmation of decision submission
-    """
-    # Validate confidence is in range
-    if not 0.0 <= confidence <= 1.0:
-        return {"error": f"Confidence must be between 0.0 and 1.0, got {confidence}"}
-
-    return {
-        "status": "decision_submitted",
-        "is_vulnerable": is_vulnerable,
-        "confidence": confidence,
-        "justification": justification
-    }
-
-
-@tool
 def list_directory(directory_path: str) -> Dict:
     """
     List files and directories in a given path within the codebase.
@@ -275,42 +246,3 @@ def list_directory(directory_path: str) -> Dict:
         }
     except Exception as e:
         return {"error": f"Failed to list directory: {str(e)}"}
-
-
-@tool
-def verify_analysis(
-    investigation_summary: str,
-    key_evidence: str,
-    preliminary_assessment: str,
-    potential_gaps: str,
-    is_analysis_complete: bool
-) -> Dict:
-    """
-    Verification checkpoint before final decision. Step back and review your analysis.
-
-    Args:
-        investigation_summary: Brief summary of what you investigated
-        key_evidence: The main evidence supporting your assessment
-        preliminary_assessment: Your current assessment (CONFIRMED or NOT_EXPLOITABLE)
-        potential_gaps: Areas you're uncertain about.
-        is_analysis_complete: Set to True ONLY if potential_gaps is 'none' and you are ready to submit. Set False if you need to investigate further.
-    """
-
-    # CASE 1: The Agent signals it is done (True)
-    if is_analysis_complete:
-        return {
-            "status": "verification_complete",
-            "feedback": "Analysis verified as complete. You are authorized to proceed to submit_triage_decision."
-        }
-
-    # CASE 2: The Agent signals it is NOT done (False)
-    else:
-        # We explicitly block the agent and echo the gaps back
-        return {
-            "status": "verification_failed",
-            "feedback": (
-                f"STOP. You marked analysis as incomplete. "
-                f"Recorded gaps: '{potential_gaps}'. "
-                f"You must use read_file or search_in_files to resolve these gaps before submitting."
-            )
-        }

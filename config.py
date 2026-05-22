@@ -23,7 +23,6 @@ DEFAULT_JUSTIFICATION_COMPARISON_MODEL = "gemini-2.5-flash"
 DEFAULT_GCP_LOCATION = "europe-west4"  # Vertex AI region when GOOGLE_GENAI_USE_VERTEXAI=true
 
 # Analysis Configuration
-MAX_ANALYSIS_ITERATIONS = 30  # Maximum iterations for LLM analysis per finding
 MAX_SEARCH_RESULTS = 50  # Safety cap for search results
 MAX_LOG_RESULT_LENGTH = 5000  # Maximum length for logging tool results
 
@@ -36,6 +35,9 @@ DEFAULT_SAMPLES = 3  # Max self-consistency samples per finding (tiebreak ceilin
 # Final confidence = agreement_rate * W + evidence_strength * (1 - W). Weights
 # from doc 05; calibrate against the gold-set.
 CONFIDENCE_AGREEMENT_WEIGHT = 0.7
+# Upper bound on per-finding graph node executions. The circuit breakers above
+# terminate the loops well before this; it is a safety net for ainvoke.
+GRAPH_RECURSION_LIMIT = 50
 # Analyst sampling temperatures, applied per sample slot for diversity; the
 # last value is reused if more samples than entries are taken (doc 05).
 ANALYST_TEMPERATURES = [0.1, 0.3, 0.5]

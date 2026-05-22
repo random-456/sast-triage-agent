@@ -78,9 +78,22 @@ Defined in `config.py`. These rarely need modification but can be adjusted for s
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `MAX_ANALYSIS_ITERATIONS` | `30` | Maximum LLM iterations per finding before timeout |
 | `MAX_SEARCH_RESULTS` | `50` | Safety cap for code search results returned to the LLM |
 | `MAX_LOG_RESULT_LENGTH` | `5000` | Maximum character length for tool results in session logs |
+
+### Per-Finding Graph Configuration
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `MAX_RESEARCH_ITERATIONS` | `5` | Research-node visits before a forced aggregate |
+| `MAX_REANALYSIS_LOOPS` | `2` | Critic to analyst reanalysis loops before aggregate |
+| `MAX_TOOL_CALLS_PER_RESEARCH` | `10` | Tool-call turns within one research-node visit |
+| `INITIAL_SAMPLES` | `2` | Self-consistency samples collected before a tiebreaker |
+| `DEFAULT_SAMPLES` | `3` | Maximum self-consistency samples per finding |
+| `ANALYST_TEMPERATURES` | `[0.1, 0.3, 0.5]` | Per-sample analyst temperatures for diversity |
+| `CRITIC_TEMPERATURE` | `0.6` | Critic temperature, higher than the analyst to defeat sycophancy |
+| `CONFIDENCE_AGREEMENT_WEIGHT` | `0.7` | Weight of agreement vs evidence strength in final confidence |
+| `GRAPH_RECURSION_LIMIT` | `50` | Safety net on per-finding graph node executions |
 
 ### Disposition Configuration
 
