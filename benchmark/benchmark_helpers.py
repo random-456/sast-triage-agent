@@ -46,6 +46,13 @@ class BenchmarkHelpers:
 
         return None
 
+    @staticmethod
+    def _classification_to_result(is_vulnerable: bool | None) -> str:
+        """Map an `is_vulnerable` classification to the analyst vocabulary."""
+        if is_vulnerable is None:
+            return "REFUSED"
+        return "CONFIRMED" if is_vulnerable else "NOT_EXPLOITABLE"
+
     @classmethod
     def enrich_dataset_with_triage_result(self, cxone_project_name: str, output_dir: str) -> Dict | None:
         """
@@ -82,9 +89,15 @@ class BenchmarkHelpers:
             enriched_dataset_data = dataset_data
             for finding in agent_assessment_data:
                 finding_id = finding["resultHash"]
-                agent_assessment_result = finding["assessment_result"]
-                agent_assessment_justification = finding["assessment_justification"]
-                agent_assessment_confidence = finding["assessment_confidence"]
+                # Compare on the classification, mapped to the analyst's
+                # vocabulary. The disposition (suggested_state) may be
+                # PROPOSED_NOT_EXPLOITABLE, which the analyst ground truth
+                # never uses, so it is kept separate for operational metrics.
+                agent_assessment_result = self._classification_to_result(
+                    finding["is_vulnerable"]
+                )
+                agent_assessment_justification = finding["justification"]
+                agent_assessment_confidence = finding["confidence"]
 
                 dataset_assessment_finding = next(
                     (finding for finding in enriched_dataset_data['findings'] if finding['id'] == finding_id),
@@ -93,7 +106,9 @@ class BenchmarkHelpers:
                 dataset_assessment_finding["agent_triage"] = {
                     "result": agent_assessment_result,
                     "justification": agent_assessment_justification,
-                    "confidence": agent_assessment_confidence
+                    "confidence": agent_assessment_confidence,
+                    "is_vulnerable": finding["is_vulnerable"],
+                    "suggested_state": finding["suggested_state"],
                 }
 
             return enriched_dataset_data

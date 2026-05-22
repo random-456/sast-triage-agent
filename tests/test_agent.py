@@ -91,9 +91,10 @@ class TestSASTTriageAgent:
 
         result1 = {
             "resultHash": "hash-001",
-            "assessment_result": "CONFIRMED",
-            "assessment_confidence": 0.9,
-            "assessment_justification": "Test justification 1",
+            "is_vulnerable": True,
+            "confidence": 0.9,
+            "suggested_state": "CONFIRMED",
+            "justification": "Test justification 1",
         }
         agent.save_incremental_result(result1)
 
@@ -107,9 +108,10 @@ class TestSASTTriageAgent:
 
         result2 = {
             "resultHash": "hash-002",
-            "assessment_result": "NOT_EXPLOITABLE",
-            "assessment_confidence": 0.8,
-            "assessment_justification": "Test justification 2",
+            "is_vulnerable": False,
+            "confidence": 0.8,
+            "suggested_state": "PROPOSED_NOT_EXPLOITABLE",
+            "justification": "Test justification 2",
         }
         agent.save_incremental_result(result2)
 
@@ -121,17 +123,18 @@ class TestSASTTriageAgent:
         # Update existing result
         result1_updated = {
             "resultHash": "hash-001",
-            "assessment_result": "NOT_EXPLOITABLE",
-            "assessment_confidence": 0.95,
-            "assessment_justification": "Updated justification",
+            "is_vulnerable": False,
+            "confidence": 0.95,
+            "suggested_state": "NOT_EXPLOITABLE",
+            "justification": "Updated justification",
         }
         agent.save_incremental_result(result1_updated)
 
         with open(assessments_file, "r") as f:
             data = json.load(f)
         assert len(data["results"]) == 2
-        assert data["results"][0]["assessment_result"] == "NOT_EXPLOITABLE"
-        assert data["results"][0]["assessment_confidence"] == 0.95
+        assert data["results"][0]["suggested_state"] == "NOT_EXPLOITABLE"
+        assert data["results"][0]["confidence"] == 0.95
     
     def test_get_pending_findings(self, agent, test_findings_path):
         """Test getting pending findings from CSV."""
@@ -162,9 +165,10 @@ class TestSASTTriageAgent:
             decision = await agent.analyze_single_finding("nonexistent-finding")
 
             assert decision.resultHash == "nonexistent-finding"
-            assert decision.assessment_result == "REFUSED"
-            assert decision.assessment_confidence == 0.0
-            assert "Could not load finding details" in decision.assessment_justification
+            assert decision.is_vulnerable is None
+            assert decision.suggested_state == "REFUSED"
+            assert decision.confidence == 0.0
+            assert "Could not load finding details" in decision.justification
 
     @pytest.mark.asyncio
     async def test_analyze_single_finding_with_mock_llm(self, agent):
@@ -185,7 +189,7 @@ class TestSASTTriageAgent:
                 "id": "call-123",
                 "name": "submit_triage_decision",
                 "args": {
-                    "is_exploitable": True,
+                    "is_vulnerable": True,
                     "confidence": 0.9,
                     "justification": "Direct SQL concatenation detected",
                 },
@@ -202,42 +206,49 @@ class TestSASTTriageAgent:
             decision = await agent.analyze_single_finding("hash-001")
 
             assert decision.resultHash == "hash-001"
-            assert decision.assessment_result == "CONFIRMED"
-            assert decision.assessment_confidence == 0.9
-            assert "Direct SQL concatenation" in decision.assessment_justification
+            assert decision.is_vulnerable is True
+            assert decision.suggested_state == "CONFIRMED"
+            assert decision.confidence == 0.9
+            assert "Direct SQL concatenation" in decision.justification
 
 
 class TestTriageDecision:
     """Test the TriageDecision model."""
-    
+
     def test_triage_decision_creation(self):
         """Test creating a TriageDecision."""
         decision = TriageDecision(
             resultHash="hash-001",
-            assessment_result="CONFIRMED",
-            assessment_confidence=0.85,
-            assessment_justification="Test justification"
+            is_vulnerable=True,
+            confidence=0.85,
+            suggested_state="CONFIRMED",
+            justification="Test justification",
         )
-        
+
         assert decision.resultHash == "hash-001"
-        assert decision.assessment_result == "CONFIRMED"
-        assert decision.assessment_confidence == 0.85
-        assert decision.assessment_justification == "Test justification"
-    
+        assert decision.is_vulnerable is True
+        assert decision.confidence == 0.85
+        assert decision.suggested_state == "CONFIRMED"
+        assert decision.justification == "Test justification"
+        assert decision.agreement_rate is None
+        assert decision.sample_count is None
+
     def test_triage_decision_dict(self):
         """Test converting TriageDecision to dict."""
         decision = TriageDecision(
             resultHash="hash-001",
-            assessment_result="NOT_EXPLOITABLE",
-            assessment_confidence=0.75,
-            assessment_justification="Not exploitable because..."
+            is_vulnerable=False,
+            confidence=0.75,
+            suggested_state="PROPOSED_NOT_EXPLOITABLE",
+            justification="Not exploitable because...",
         )
-        
+
         decision_dict = decision.model_dump()
         assert decision_dict["resultHash"] == "hash-001"
-        assert decision_dict["assessment_result"] == "NOT_EXPLOITABLE"
-        assert decision_dict["assessment_confidence"] == 0.75
-        assert decision_dict["assessment_justification"] == "Not exploitable because..."
+        assert decision_dict["is_vulnerable"] is False
+        assert decision_dict["confidence"] == 0.75
+        assert decision_dict["suggested_state"] == "PROPOSED_NOT_EXPLOITABLE"
+        assert decision_dict["justification"] == "Not exploitable because..."
 
 
 class TestBackendSelection:

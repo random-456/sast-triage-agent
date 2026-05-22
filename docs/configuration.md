@@ -82,6 +82,12 @@ Defined in `config.py`. These rarely need modification but can be adjusted for s
 | `MAX_SEARCH_RESULTS` | `50` | Safety cap for code search results returned to the LLM |
 | `MAX_LOG_RESULT_LENGTH` | `5000` | Maximum character length for tool results in session logs |
 
+### Disposition Configuration
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `CONFIDENCE_THRESHOLD` | `0.85` | A non-exploitable verdict below this confidence is routed to `PROPOSED_NOT_EXPLOITABLE` for human review instead of `NOT_EXPLOITABLE`. Conservative placeholder; calibrate against the gold-set. |
+
 ### Checkmarx Configuration
 
 | Constant | Default | Description |

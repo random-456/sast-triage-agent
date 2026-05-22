@@ -12,7 +12,11 @@ from typing import Dict, List, Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import ToolMessage
 
-from sast_triage.agent_models import TriageDecision
+from sast_triage.agent_models import (
+    SuggestedState,
+    TriageDecision,
+    derive_state,
+)
 from sast_triage.agent_tools import (
     read_file,
     search_in_files,
@@ -165,9 +169,10 @@ class SASTTriageAgent:
         if "error" in finding_details:
             decision = TriageDecision(
                 resultHash=result_hash,
-                assessment_result="REFUSED",
-                assessment_confidence=0.0,
-                assessment_justification=(
+                is_vulnerable=None,
+                confidence=0.0,
+                suggested_state=SuggestedState.REFUSED,
+                justification=(
                     f"Could not load finding details: "
                     f"{finding_details['error']}"
                 ),
@@ -233,19 +238,20 @@ class SASTTriageAgent:
 
                         if tool_name == "submit_triage_decision":
                             try:
+                                is_vulnerable = tool_args.get(
+                                    "is_vulnerable"
+                                )
+                                confidence = tool_args.get(
+                                    "confidence", 0.5
+                                )
                                 decision = TriageDecision(
                                     resultHash=result_hash,
-                                    assessment_result=(
-                                        "CONFIRMED"
-                                        if tool_args.get(
-                                            "is_exploitable"
-                                        )
-                                        else "NOT_EXPLOITABLE"
+                                    is_vulnerable=is_vulnerable,
+                                    confidence=confidence,
+                                    suggested_state=derive_state(
+                                        is_vulnerable, confidence
                                     ),
-                                    assessment_confidence=tool_args.get(
-                                        "confidence", 0.5
-                                    ),
-                                    assessment_justification=(
+                                    justification=(
                                         tool_args.get(
                                             "justification", ""
                                         )
@@ -258,9 +264,9 @@ class SASTTriageAgent:
 
                                 self.logger.info(
                                     f"Decision submitted: "
-                                    f"{decision.assessment_result} "
+                                    f"{decision.suggested_state.value} "
                                     f"(confidence: "
-                                    f"{decision.assessment_confidence:.2f})"
+                                    f"{decision.confidence:.2f})"
                                 )
                                 return decision
 
@@ -327,9 +333,10 @@ class SASTTriageAgent:
 
             decision = TriageDecision(
                 resultHash=result_hash,
-                assessment_result="REFUSED",
-                assessment_confidence=0.0,
-                assessment_justification=(
+                is_vulnerable=None,
+                confidence=0.0,
+                suggested_state=SuggestedState.REFUSED,
+                justification=(
                     f"Analysis did not complete within "
                     f"{max_iterations} iterations. "
                     f"Manual review required."
@@ -347,9 +354,10 @@ class SASTTriageAgent:
             )
             decision = TriageDecision(
                 resultHash=result_hash,
-                assessment_result="REFUSED",
-                assessment_confidence=0.0,
-                assessment_justification=(
+                is_vulnerable=None,
+                confidence=0.0,
+                suggested_state=SuggestedState.REFUSED,
+                justification=(
                     f"Analysis failed due to error: {str(e)}. "
                     f"Manual review required."
                 ),
@@ -438,20 +446,26 @@ class SASTTriageAgent:
         Returns:
             Dict with metadata and results keys
         """
+        total = len(triage_results)
         confirmed = sum(
             1
             for r in triage_results
-            if r.get("assessment_result") == "CONFIRMED"
+            if r.get("suggested_state") == "CONFIRMED"
         )
         not_exploitable = sum(
             1
             for r in triage_results
-            if r.get("assessment_result") == "NOT_EXPLOITABLE"
+            if r.get("suggested_state") == "NOT_EXPLOITABLE"
+        )
+        proposed_not_exploitable = sum(
+            1
+            for r in triage_results
+            if r.get("suggested_state") == "PROPOSED_NOT_EXPLOITABLE"
         )
         refused = sum(
             1
             for r in triage_results
-            if r.get("assessment_result") == "REFUSED"
+            if r.get("suggested_state") == "REFUSED"
         )
 
         return {
@@ -462,11 +476,15 @@ class SASTTriageAgent:
                 "branch": self.branch,
                 "model": self.model_name,
                 "timestamp": datetime.datetime.now().isoformat(),
-                "total_findings": len(triage_results),
+                "total_findings": total,
                 "summary": {
                     "confirmed": confirmed,
                     "not_exploitable": not_exploitable,
+                    "proposed_not_exploitable": proposed_not_exploitable,
                     "refused": refused,
+                    "refusal_rate": (
+                        round(refused / total, 4) if total else 0.0
+                    ),
                 },
             },
             "results": triage_results,
@@ -552,15 +570,15 @@ class SASTTriageAgent:
                 )
 
                 self.logger.info(
-                    f"Result: {decision.assessment_result}"
+                    f"Result: {decision.suggested_state.value}"
                 )
                 self.logger.info(
                     f"Confidence: "
-                    f"{decision.assessment_confidence:.2f}"
+                    f"{decision.confidence:.2f}"
                 )
                 self.logger.info(
                     f"Justification: "
-                    f"{decision.assessment_justification[:100]}..."
+                    f"{decision.justification[:100]}..."
                 )
 
             except Exception as e:
@@ -570,9 +588,10 @@ class SASTTriageAgent:
                 )
                 error_result = {
                     "resultHash": finding["resultHash"],
-                    "assessment_result": "REFUSED",
-                    "assessment_confidence": 0.0,
-                    "assessment_justification": (
+                    "is_vulnerable": None,
+                    "confidence": 0.0,
+                    "suggested_state": "REFUSED",
+                    "justification": (
                         f"Analysis failed: {str(e)}"
                     ),
                 }
@@ -597,7 +616,7 @@ class SASTTriageAgent:
         summary["high_confidence"] = sum(
             1
             for r in triage_results
-            if r["assessment_confidence"] >= 0.8
+            if r["confidence"] >= 0.8
         )
 
         self.logger.info(
@@ -608,6 +627,10 @@ class SASTTriageAgent:
         self.logger.info(f"CONFIRMED: {summary['confirmed']}")
         self.logger.info(
             f"NOT_EXPLOITABLE: {summary['not_exploitable']}"
+        )
+        self.logger.info(
+            f"PROPOSED_NOT_EXPLOITABLE: "
+            f"{summary['proposed_not_exploitable']}"
         )
         self.logger.info(f"REFUSED: {summary['refused']}")
         self.logger.info(

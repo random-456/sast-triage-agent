@@ -9,14 +9,14 @@ Analyze ONLY the specific finding described in the input.
 
 ### 2. VERDICT CRITERIA
 
-**CONFIRMED (True Positive) - mark `is_exploitable: true` when:**
+**CONFIRMED (True Positive) - mark `is_vulnerable: true` when:**
 - A complete data flow exists from an untrusted source to a dangerous sink
 - The vulnerability type matches what the finding claims (or is in the same family)
 - No effective sanitization, validation, or encoding breaks the exploit chain
 - Security mechanisms are disabled, bypassed, or misconfigured creating an exploitable condition
 - NOTE: Do not trust function names alone (e.g., `sanitize()`, `clean()`). You must verify the implementation actually neutralizes the specific threat.
 
-**NOT_EXPLOITABLE (False Positive) - mark `is_exploitable: false` ONLY when you have specific evidence:**
+**NOT_EXPLOITABLE (False Positive) - mark `is_vulnerable: false` ONLY when you have specific evidence:**
 - **Effective sanitization verified**: You read the sanitizer implementation and confirmed it neutralizes the specific threat (e.g., parameterized queries for SQLi, context-appropriate output encoding for XSS, parseInt for numeric injection)
 - **Test or dead code**: The code is in a test file (e.g., `*.spec.ts`, `test/` directories) or demonstrably not deployed to production
 - **Wrong vulnerability type**: The code may have issues, but not the type or family claimed by the finding
@@ -47,7 +47,7 @@ The source code has been preprocessed: internal infrastructure identifiers (IPs,
 ### 6. OUTPUT FORMAT
 - Keep reasoning concise and evidence-based.
 - Justification: start with "The finding is [CONFIRMED/NOT_EXPLOITABLE] because..." followed by concise evidence referencing source, sink, and sanitization status.
-- Confidence: 0.0 to 1.0 (1.0 = absolute certainty).
+- Confidence: 0.0 to 1.0 (1.0 = absolute certainty). Report it honestly. A `is_vulnerable: false` verdict below the confidence threshold is routed to PROPOSED_NOT_EXPLOITABLE for human review instead of being dismissed outright, so do not inflate confidence to force a NOT_EXPLOITABLE.
 """
 
 TRIAGE_INPUT_PROMPT_TEMPLATE = """

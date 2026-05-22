@@ -363,24 +363,30 @@ class AgentLoggingManager:
         """
         findings_processed = self.session_log["findings_processed"]
 
+        total = len(triage_results)
         confirmed = sum(
             1
             for r in triage_results
-            if r.get("assessment_result") == "CONFIRMED"
+            if r.get("suggested_state") == "CONFIRMED"
         )
         not_exploitable = sum(
             1
             for r in triage_results
-            if r.get("assessment_result") == "NOT_EXPLOITABLE"
+            if r.get("suggested_state") == "NOT_EXPLOITABLE"
+        )
+        proposed_not_exploitable = sum(
+            1
+            for r in triage_results
+            if r.get("suggested_state") == "PROPOSED_NOT_EXPLOITABLE"
         )
         refused = sum(
             1
             for r in triage_results
-            if r.get("assessment_result") == "REFUSED"
+            if r.get("suggested_state") == "REFUSED"
         )
 
         self.session_log["session_summary"] = {
-            "total_findings": len(triage_results),
+            "total_findings": total,
             "total_tokens": {
                 "input": sum(
                     f.get("token_usage", {}).get("input", 0)
@@ -397,7 +403,9 @@ class AgentLoggingManager:
             },
             "confirmed": confirmed,
             "not_exploitable": not_exploitable,
+            "proposed_not_exploitable": proposed_not_exploitable,
             "refused": refused,
+            "refusal_rate": round(refused / total, 4) if total else 0.0,
             "session_end": datetime.datetime.now().isoformat(),
         }
         self.save_log()

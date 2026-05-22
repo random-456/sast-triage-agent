@@ -227,15 +227,17 @@ class TestAssessmentOutputMetadata:
         results = [
             {
                 "resultHash": "hash-001",
-                "assessment_result": "CONFIRMED",
-                "assessment_confidence": 0.9,
-                "assessment_justification": "Exploitable",
+                "is_vulnerable": True,
+                "confidence": 0.9,
+                "suggested_state": "CONFIRMED",
+                "justification": "Exploitable",
             },
             {
                 "resultHash": "hash-002",
-                "assessment_result": "NOT_EXPLOITABLE",
-                "assessment_confidence": 0.8,
-                "assessment_justification": "Safe",
+                "is_vulnerable": False,
+                "confidence": 0.8,
+                "suggested_state": "PROPOSED_NOT_EXPLOITABLE",
+                "justification": "Likely safe",
             },
         ]
 
@@ -250,8 +252,10 @@ class TestAssessmentOutputMetadata:
         assert output["metadata"]["model"] == "test-model"
         assert output["metadata"]["total_findings"] == 2
         assert output["metadata"]["summary"]["confirmed"] == 1
-        assert output["metadata"]["summary"]["not_exploitable"] == 1
+        assert output["metadata"]["summary"]["not_exploitable"] == 0
+        assert output["metadata"]["summary"]["proposed_not_exploitable"] == 1
         assert output["metadata"]["summary"]["refused"] == 0
+        assert output["metadata"]["summary"]["refusal_rate"] == 0.0
         assert len(output["results"]) == 2
 
 
@@ -594,21 +598,21 @@ class TestCompactLogs:
 
         decision_result = {
             "status": "decision_submitted",
-            "assessment_result": "NOT_EXPLOITABLE",
+            "is_vulnerable": False,
             "confidence": 0.9,
             "justification": "input is sanitized via X.sanitize()",
         }
         mgr.log_tool_result(
             f_log,
             "submit_triage_decision",
-            {"is_exploitable": False, "confidence": 0.9},
+            {"is_vulnerable": False, "confidence": 0.9},
             decision_result,
         )
 
         with open(mgr.log_file) as f:
             log = json.load(f)
         result_entry = log["findings_processed"][0]["conversation"][0]
-        assert "NOT_EXPLOITABLE" in result_entry["result"]
+        assert "sanitized via X.sanitize()" in result_entry["result"]
         assert "_stripped" not in result_entry["result"]
 
     def test_non_compact_keeps_read_file_content(self, tmp_path):
@@ -782,9 +786,10 @@ class TestSessionSummary:
         )
         decision1 = TriageDecision(
             resultHash="hash-001",
-            assessment_result="CONFIRMED",
-            assessment_confidence=0.9,
-            assessment_justification="Exploitable",
+            is_vulnerable=True,
+            confidence=0.9,
+            suggested_state="CONFIRMED",
+            justification="Exploitable",
         )
         mgr.log_finding_complete(finding1, decision1)
 
@@ -795,9 +800,10 @@ class TestSessionSummary:
         )
         decision2 = TriageDecision(
             resultHash="hash-002",
-            assessment_result="NOT_EXPLOITABLE",
-            assessment_confidence=0.8,
-            assessment_justification="Safe",
+            is_vulnerable=False,
+            confidence=0.8,
+            suggested_state="NOT_EXPLOITABLE",
+            justification="Safe",
         )
         mgr.log_finding_complete(finding2, decision2)
 
@@ -814,7 +820,9 @@ class TestSessionSummary:
         assert summary["total_findings"] == 2
         assert summary["confirmed"] == 1
         assert summary["not_exploitable"] == 1
+        assert summary["proposed_not_exploitable"] == 0
         assert summary["refused"] == 0
+        assert summary["refusal_rate"] == 0.0
         assert summary["total_tokens"]["input"] == 300
         assert summary["total_tokens"]["output"] == 130
         assert summary["total_tokens"]["total"] == 430
