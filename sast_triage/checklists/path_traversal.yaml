@@ -1,0 +1,62 @@
+checklist_id: path_traversal
+display_name: "Path Traversal (CWE-22)"
+
+applies_to:
+  cwes:
+    - CWE-22
+  query_names: []
+
+evidence_required:
+  - description: "Source is attacker-controlled and is used to build a filesystem path"
+    examples:
+      - "request parameter used as a filename, upload name, path segment"
+  - description: "Sink is a filesystem operation that resolves the path"
+    examples:
+      - "file open/read/write, include/require, static file serving, ZIP entry extraction"
+  - description: "Whether the path is canonicalized and then checked to stay within an allowed base directory, and whether that check is correct"
+  - description: "How absolute paths and traversal sequences are handled, including encoded and platform-specific forms"
+
+sanitizer_patterns:
+  effective:
+    - "canonicalize the resolved path, then verify it stays within an allowed base directory before use (language-agnostic principle)"
+    - "File#getCanonicalPath().startsWith(canonicalBaseDir) with the base also canonicalized (Java)"
+    - "resolve then confirm containment: path.resolve(base, input) and check it is still under base (Node.js); os.path.realpath under a base (Python)"
+    - "use only the basename of the input joined to a fixed directory, discarding any directory components"
+    - "indirection: map an opaque id or allowlisted name to a known file, never using the raw input as a path"
+  ineffective:
+    - "blacklisting or stripping ../: bypassable with ....//, encoded (%2e%2e%2f), backslashes, absolute paths or null bytes"
+    - "a single non-recursive replace of ../ : ....// collapses back to ../ after one pass"
+    - "containment check performed before canonicalization, so ../ has not yet been resolved"
+    - "checking startsWith on non-canonical strings, which a symlink or .. can defeat"
+    - "allowing absolute paths or drive-letter / UNC prefixes to pass through"
+
+investigation_guidance: |
+  A correct defense has two parts that must both be present: canonicalize the
+  full path (resolving .., symlinks and encodings), then verify the canonical
+  result is inside the intended base directory. Missing either part leaves the
+  finding exploitable. A containment check done before canonicalization is
+  ineffective because the traversal has not yet been resolved. The same
+  canonical path must be used for both the check and the file operation: a path
+  re-resolved afterwards, or a symlink inside the base directory, can still
+  escape between check and use.
+
+  Treat filter-based defenses as INEFFECTIVE. Stripping or rejecting ../ is
+  defeated by ....// (which collapses to ../ after a single non-recursive
+  replace), by URL or double encoding, by backslashes on Windows, by absolute
+  paths and historically by null bytes. If the code merely searches for ".."
+  and does not canonicalize-then-contain, lean CONFIRMED.
+
+  Also check whether the input can be an absolute path or a UNC/drive-prefixed
+  path, which bypasses naive prefix joins entirely. The safest patterns reduce
+  the input to a basename joined to a fixed directory, or map an allowlisted
+  identifier to a known file: if you see one of those applied to the exact
+  tainted value, the finding is likely NOT_EXPLOITABLE. Verify the check
+  applies to the same value that reaches the sink, not a different copy.
+
+common_false_positive_patterns: |
+  The code canonicalizes and then verifies containment within a base directory
+  before the filesystem call. Only the basename is used, with directory
+  components discarded. The input is an allowlisted identifier mapped to a known
+  file rather than a raw path. The path is not actually influenced by user
+  input (fixed or derived from trusted configuration). The code path is test or
+  fixture code.

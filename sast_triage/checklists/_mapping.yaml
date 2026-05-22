@@ -7,10 +7,23 @@
 # "Reflected_XSS_All_Clients"). cweID is normalized to "CWE-<n>" before lookup,
 # so integer 89, "89" and "CWE-89" all resolve here.
 
+# Only confirmed queryName strings appear here. Sub-flavors that share one CWE
+# (the XSS variants under CWE-79) are the reason this layer exists. Command
+# injection and path traversal route on CWE alone: no queryName is confirmed
+# for them yet, and CWE is authoritative. Client_Potential_XSS (DOM/client XSS)
+# is intentionally absent until an xss_dom checklist exists; it falls through to
+# the CWE-79 default below.
 query_name_to_checklist:
   SQL_Injection: sqli
+  Reflected_XSS: xss_reflected
+  XSS_Evasion_Attack_via_Replace: xss_reflected
+  Stored_XSS: xss_stored
 
 cwe_to_checklist:
   CWE-89: sqli
+  CWE-79: xss_reflected  # default when the XSS sub-flavor is not detectable
+  CWE-78: command_injection
+  CWE-77: command_injection
+  CWE-22: path_traversal
 
 default: generic
