@@ -73,9 +73,11 @@ Computed on `is_vulnerable` (positive class = vulnerable) against the analyst gr
 
 | Metric | Description |
 |--------|-------------|
-| Precision | TP / (TP + FP) |
-| Recall | TP / (TP + FN) |
-| F1 score | Harmonic mean of precision and recall |
+| Precision | Vulnerable class: TP / (TP + FP). Equivalent to CONFIRMED precision |
+| Recall | Vulnerable class: TP / (TP + FN). Equivalent to CONFIRMED recall |
+| F1 score | Harmonic mean of vulnerable-class precision and recall |
+| `not_exploitable_precision` | Negative class: TN / (TN + FN). The dismissal-quality gate |
+| `not_exploitable_recall` | Negative class: TN / (TN + FP) |
 | TP / FP / FN / TN | Confusion counts on `is_vulnerable` |
 | Evaluated count | Findings with a non-null classification on both sides |
 | Refusal rate | Fraction of findings the agent did not classify |
@@ -94,18 +96,6 @@ Computed on `suggested_state`. They describe review burden and dismissal safety,
 ### Calibration
 
 A confidence-vs-correctness table on `is_vulnerable`. Findings are binned by confidence; each bin reports average confidence, accuracy and count. The Expected Calibration Error (`ece`) is the count-weighted mean absolute gap between confidence and accuracy across bins. A well-calibrated model has an `ece` near 0.
-
-### Classification Breakdown (three-class)
-
-A confusion matrix and per-class precision/recall/F1 over `CONFIRMED`, `NOT_EXPLOITABLE` and `REFUSED`, mapped from `is_vulnerable`. This is a per-class view of the same classification.
-
-| Metric | Description |
-|--------|-------------|
-| Confusion matrix | 3x3 matrix of actual vs predicted counts |
-| Precision | Per-class: TP / (TP + FP) |
-| Recall | Per-class: TP / (TP + FN) |
-| F1 score | Per-class: harmonic mean of precision and recall |
-| Sample count | Total number of findings evaluated |
 
 ### Legacy Metrics
 
@@ -126,7 +116,7 @@ Metrics are computed per group for each dimension:
 - **Complexity** -- EASY, MEDIUM, COMPLEX
 - **Severity** -- CRITICAL, HIGH, MEDIUM, LOW, INFO
 
-Each group includes `sample_count`, classification metrics, and legacy metrics.
+Each group includes `sample_count`, the binary classification metrics, and legacy metrics.
 
 ### Target Thresholds
 
@@ -166,6 +156,9 @@ Saved to `<output>/<project>/<timestamp>_<model>_benchmark_kpis.json`:
     "precision": 0.83,
     "recall": 0.83,
     "f1_score": 0.83,
+    "not_exploitable_precision": 0.92,
+    "not_exploitable_recall": 0.92,
+    "not_exploitable_f1": 0.92,
     "refusal_rate": 0.0952
   },
   "operational_metrics": {
@@ -179,18 +172,10 @@ Saved to `<output>/<project>/<timestamp>_<model>_benchmark_kpis.json`:
     "sample_count": 38,
     "bins": [{"range": [0.9, 1.0], "count": 20, "avg_confidence": 0.93, "accuracy": 0.9}]
   },
-  "confusion_matrix": {
-    "CONFIRMED": {"CONFIRMED": 10, "NOT_EXPLOITABLE": 2, "REFUSED": 0},
-    "NOT_EXPLOITABLE": {"CONFIRMED": 1, "NOT_EXPLOITABLE": 25, "REFUSED": 0},
-    "REFUSED": {"CONFIRMED": 0, "NOT_EXPLOITABLE": 1, "REFUSED": 3}
-  },
-  "per_class_metrics": {
-    "CONFIRMED": {"precision": 0.91, "recall": 0.83, "f1_score": 0.87}
-  },
   "average_accuracy": 90.48,
   "average_score": 2.8,
   "average_confidence": 0.85,
-  "language_kpi": [{"Java": {"sample_count": 15, "...":" "}}],
+  "language_kpi": [{"Java": {"sample_count": 15, "binary_classification": {}, "average_score": 2.7}}],
   "category_kpi": [],
   "complexity_kpi": [],
   "severity_kpi": []

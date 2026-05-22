@@ -6,8 +6,6 @@ All functions are stateless — no I/O, no logging.
 
 from typing import Dict, List, Optional
 
-TRIAGE_CLASSES = ["CONFIRMED", "NOT_EXPLOITABLE", "REFUSED"]
-
 
 def _result_to_is_vulnerable(result: str) -> Optional[bool]:
     """Map an analyst/agent result label to a binary classification.
@@ -68,97 +66,6 @@ def extract_finding_pairs(raw_dataset_data: List[Dict]) -> List[Dict]:
     return pairs
 
 
-def compute_confusion_matrix(pairs: List[Dict]) -> Dict[str, Dict[str, int]]:
-    """
-    Build a 3x3 confusion matrix from finding pairs.
-
-    Rows = actual (analyst), columns = predicted (agent).
-    All three TRIAGE_CLASSES are always present even if count is 0.
-
-    Args:
-        pairs: List of finding-pair dicts with analyst_result and agent_result.
-
-    Returns:
-        Nested dict {actual: {predicted: count}}.
-    """
-    matrix: Dict[str, Dict[str, int]] = {
-        actual: {predicted: 0 for predicted in TRIAGE_CLASSES}
-        for actual in TRIAGE_CLASSES
-    }
-    for pair in pairs:
-        actual = pair["analyst_result"]
-        predicted = pair["agent_result"]
-        if actual in matrix and predicted in matrix[actual]:
-            matrix[actual][predicted] += 1
-    return matrix
-
-
-def compute_per_class_metrics(
-    confusion_matrix: Dict[str, Dict[str, int]],
-) -> Dict[str, Dict[str, float]]:
-    """
-    Compute precision, recall, and F1 per class from a confusion matrix.
-
-    Uses safe division — returns 0.0 when the denominator is 0.
-
-    Args:
-        confusion_matrix: {actual: {predicted: count}} for all TRIAGE_CLASSES.
-
-    Returns:
-        {class_name: {precision, recall, f1_score}} for each class.
-    """
-    metrics: Dict[str, Dict[str, float]] = {}
-    for cls in TRIAGE_CLASSES:
-        tp = confusion_matrix.get(cls, {}).get(cls, 0)
-
-        # FP = other classes predicted as cls
-        fp = sum(
-            confusion_matrix.get(actual, {}).get(cls, 0)
-            for actual in TRIAGE_CLASSES
-            if actual != cls
-        )
-
-        # FN = cls predicted as other classes
-        fn = sum(
-            confusion_matrix.get(cls, {}).get(predicted, 0)
-            for predicted in TRIAGE_CLASSES
-            if predicted != cls
-        )
-
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1_score = (
-            2 * precision * recall / (precision + recall)
-            if (precision + recall) > 0
-            else 0.0
-        )
-
-        metrics[cls] = {
-            "precision": round(precision, 4),
-            "recall": round(recall, 4),
-            "f1_score": round(f1_score, 4),
-        }
-    return metrics
-
-
-def compute_classification_metrics(pairs: List[Dict]) -> Dict:
-    """
-    Combine sample_count, confusion_matrix, and per_class_metrics.
-
-    Args:
-        pairs: List of finding-pair dicts.
-
-    Returns:
-        Dict with sample_count, confusion_matrix, and per_class_metrics.
-    """
-    cm = compute_confusion_matrix(pairs)
-    return {
-        "sample_count": len(pairs),
-        "confusion_matrix": cm,
-        "per_class_metrics": compute_per_class_metrics(cm),
-    }
-
-
 def compute_legacy_metrics(pairs: List[Dict]) -> Dict[str, float]:
     """
     Compute existing legacy metrics: average_accuracy, average_score,
@@ -206,8 +113,9 @@ def compute_binary_classification_metrics(pairs: List[Dict]) -> Dict:
         pairs: List of finding-pair dicts from extract_finding_pairs.
 
     Returns:
-        Dict with tp/fp/fn/tn counts, precision, recall, f1_score,
-        evaluated_count and refusal_rate.
+        Dict with tp/fp/fn/tn counts, the vulnerable (positive) class
+        precision/recall/f1_score, the non_exploitable (negative) class
+        metrics, evaluated_count and refusal_rate.
     """
     total = len(pairs)
     refusals = sum(1 for p in pairs if p["agent_is_vulnerable"] is None)
@@ -235,13 +143,20 @@ def compute_binary_classification_metrics(pairs: List[Dict]) -> Dict:
         if not p["analyst_is_vulnerable"] and not p["agent_is_vulnerable"]
     )
 
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1_score = (
-        2 * precision * recall / (precision + recall)
-        if (precision + recall) > 0
-        else 0.0
-    )
+    def _prf(hit: int, pred_pos: int, actual_pos: int) -> tuple:
+        precision = hit / pred_pos if pred_pos > 0 else 0.0
+        recall = hit / actual_pos if actual_pos > 0 else 0.0
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
+        return round(precision, 4), round(recall, 4), round(f1, 4)
+
+    # Vulnerable (positive) class maps to CONFIRMED.
+    precision, recall, f1_score = _prf(tp, tp + fp, tp + fn)
+    # Non-exploitable (negative) class: the dismissal-quality gate.
+    ne_precision, ne_recall, ne_f1 = _prf(tn, tn + fn, tn + fp)
 
     return {
         "evaluated_count": len(evaluable),
@@ -249,9 +164,12 @@ def compute_binary_classification_metrics(pairs: List[Dict]) -> Dict:
         "false_positives": fp,
         "false_negatives": fn,
         "true_negatives": tn,
-        "precision": round(precision, 4),
-        "recall": round(recall, 4),
-        "f1_score": round(f1_score, 4),
+        "precision": precision,
+        "recall": recall,
+        "f1_score": f1_score,
+        "not_exploitable_precision": ne_precision,
+        "not_exploitable_recall": ne_recall,
+        "not_exploitable_f1": ne_f1,
         "refusal_rate": round(refusals / total, 4) if total else 0.0,
     }
 
@@ -396,10 +314,14 @@ def compute_dimensional_metrics(
 
     result: List[Dict] = []
     for group_name, group_pairs in sorted(groups.items()):
-        classification = compute_classification_metrics(group_pairs)
+        classification = compute_binary_classification_metrics(group_pairs)
         legacy = compute_legacy_metrics(group_pairs)
         result.append({
-            group_name: {**classification, **legacy},
+            group_name: {
+                "sample_count": len(group_pairs),
+                "binary_classification": classification,
+                **legacy,
+            },
         })
     return result
 
@@ -408,8 +330,9 @@ def build_full_kpi_output(raw_dataset_data: List[Dict]) -> Dict:
     """
     Build the complete KPI dict from raw dataset data.
 
-    Classification metrics appear first, then legacy average_score,
-    then dimensional KPIs (language, category, complexity, severity).
+    Classification metrics appear first, then the operational overlay and
+    calibration, then legacy averages, then dimensional KPIs (language,
+    category, complexity, severity).
 
     Args:
         raw_dataset_data: List of project dicts with enriched findings.
@@ -418,16 +341,13 @@ def build_full_kpi_output(raw_dataset_data: List[Dict]) -> Dict:
         Complete KPI output dict.
     """
     pairs = extract_finding_pairs(raw_dataset_data)
-    classification = compute_classification_metrics(pairs)
     legacy = compute_legacy_metrics(pairs)
 
     output: Dict = {
-        "sample_count": classification["sample_count"],
+        "sample_count": len(pairs),
         "binary_classification": compute_binary_classification_metrics(pairs),
         "operational_metrics": compute_operational_metrics(pairs),
         "calibration": compute_calibration(pairs),
-        "confusion_matrix": classification["confusion_matrix"],
-        "per_class_metrics": classification["per_class_metrics"],
         "average_accuracy": legacy["average_accuracy"],
         "average_score": legacy["average_score"],
         "average_confidence": legacy["average_confidence"],

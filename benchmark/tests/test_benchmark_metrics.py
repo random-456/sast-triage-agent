@@ -3,11 +3,7 @@
 import pytest
 
 from benchmark.benchmark_metrics import (
-    TRIAGE_CLASSES,
     extract_finding_pairs,
-    compute_confusion_matrix,
-    compute_per_class_metrics,
-    compute_classification_metrics,
     compute_legacy_metrics,
     compute_dimensional_metrics,
     compute_binary_classification_metrics,
@@ -161,131 +157,6 @@ class TestExtractFindingPairs:
 
 
 # ---------------------------------------------------------------------------
-# TestConfusionMatrix
-# ---------------------------------------------------------------------------
-
-class TestConfusionMatrix:
-
-    def test_perfect_classification(self, perfect_pairs_data):
-        pairs = extract_finding_pairs(perfect_pairs_data)
-        cm = compute_confusion_matrix(pairs)
-
-        assert cm["CONFIRMED"]["CONFIRMED"] == 2
-        assert cm["NOT_EXPLOITABLE"]["NOT_EXPLOITABLE"] == 2
-        assert cm["REFUSED"]["REFUSED"] == 1
-
-    def test_all_classes_present(self, perfect_pairs_data):
-        pairs = extract_finding_pairs(perfect_pairs_data)
-        cm = compute_confusion_matrix(pairs)
-
-        for cls in TRIAGE_CLASSES:
-            assert cls in cm
-            for inner_cls in TRIAGE_CLASSES:
-                assert inner_cls in cm[cls]
-
-    def test_misclassifications(self, mixed_pairs_data):
-        pairs = extract_finding_pairs(mixed_pairs_data)
-        cm = compute_confusion_matrix(pairs)
-
-        assert cm["CONFIRMED"]["NOT_EXPLOITABLE"] == 1
-        assert cm["NOT_EXPLOITABLE"]["CONFIRMED"] == 1
-        assert cm["REFUSED"]["NOT_EXPLOITABLE"] == 1
-
-    def test_empty_input(self):
-        cm = compute_confusion_matrix([])
-        for cls in TRIAGE_CLASSES:
-            for inner_cls in TRIAGE_CLASSES:
-                assert cm[cls][inner_cls] == 0
-
-    def test_off_diagonal_zeros_for_perfect(self, perfect_pairs_data):
-        pairs = extract_finding_pairs(perfect_pairs_data)
-        cm = compute_confusion_matrix(pairs)
-        for actual in TRIAGE_CLASSES:
-            for predicted in TRIAGE_CLASSES:
-                if actual != predicted:
-                    assert cm[actual][predicted] == 0
-
-
-# ---------------------------------------------------------------------------
-# TestPerClassMetrics
-# ---------------------------------------------------------------------------
-
-class TestPerClassMetrics:
-
-    def test_perfect_scores(self, perfect_pairs_data):
-        pairs = extract_finding_pairs(perfect_pairs_data)
-        cm = compute_confusion_matrix(pairs)
-        metrics = compute_per_class_metrics(cm)
-
-        for cls in TRIAGE_CLASSES:
-            assert metrics[cls]["precision"] == 1.0
-            assert metrics[cls]["recall"] == 1.0
-            assert metrics[cls]["f1_score"] == 1.0
-
-    def test_zero_division_returns_zero(self):
-        cm = {cls: {p: 0 for p in TRIAGE_CLASSES} for cls in TRIAGE_CLASSES}
-        metrics = compute_per_class_metrics(cm)
-        for cls in TRIAGE_CLASSES:
-            assert metrics[cls]["precision"] == 0.0
-            assert metrics[cls]["recall"] == 0.0
-            assert metrics[cls]["f1_score"] == 0.0
-
-    def test_precision_formula(self, mixed_pairs_data):
-        pairs = extract_finding_pairs(mixed_pairs_data)
-        cm = compute_confusion_matrix(pairs)
-        metrics = compute_per_class_metrics(cm)
-
-        # CONFIRMED: TP=1, FP=1 (NOT_EXPLOITABLE predicted as CONFIRMED)
-        # precision = 1/(1+1) = 0.5
-        assert metrics["CONFIRMED"]["precision"] == 0.5
-
-    def test_recall_formula(self, mixed_pairs_data):
-        pairs = extract_finding_pairs(mixed_pairs_data)
-        cm = compute_confusion_matrix(pairs)
-        metrics = compute_per_class_metrics(cm)
-
-        # CONFIRMED: TP=1, FN=1 (CONFIRMED predicted as NOT_EXPLOITABLE)
-        # recall = 1/(1+1) = 0.5
-        assert metrics["CONFIRMED"]["recall"] == 0.5
-
-    def test_f1_formula(self, mixed_pairs_data):
-        pairs = extract_finding_pairs(mixed_pairs_data)
-        cm = compute_confusion_matrix(pairs)
-        metrics = compute_per_class_metrics(cm)
-
-        # CONFIRMED: precision=0.5, recall=0.5 => F1 = 2*0.5*0.5/(0.5+0.5) = 0.5
-        assert metrics["CONFIRMED"]["f1_score"] == 0.5
-
-
-# ---------------------------------------------------------------------------
-# TestClassificationMetrics
-# ---------------------------------------------------------------------------
-
-class TestClassificationMetrics:
-
-    def test_sample_count(self, perfect_pairs_data):
-        pairs = extract_finding_pairs(perfect_pairs_data)
-        result = compute_classification_metrics(pairs)
-        assert result["sample_count"] == 5
-
-    def test_confusion_matrix_present(self, perfect_pairs_data):
-        pairs = extract_finding_pairs(perfect_pairs_data)
-        result = compute_classification_metrics(pairs)
-        assert "confusion_matrix" in result
-
-    def test_per_class_metrics_present(self, perfect_pairs_data):
-        pairs = extract_finding_pairs(perfect_pairs_data)
-        result = compute_classification_metrics(pairs)
-        assert "per_class_metrics" in result
-        for cls in TRIAGE_CLASSES:
-            assert cls in result["per_class_metrics"]
-
-    def test_empty_input(self):
-        result = compute_classification_metrics([])
-        assert result["sample_count"] == 0
-
-
-# ---------------------------------------------------------------------------
 # TestLegacyMetrics
 # ---------------------------------------------------------------------------
 
@@ -348,8 +219,8 @@ class TestDimensionalMetrics:
         for entry in result:
             name = list(entry.keys())[0]
             data = entry[name]
-            assert "confusion_matrix" in data
-            assert "per_class_metrics" in data
+            assert "binary_classification" in data
+            assert "precision" in data["binary_classification"]
             assert "average_accuracy" in data
             assert "average_score" in data
             assert "average_confidence" in data
@@ -371,8 +242,9 @@ class TestBuildFullKpiOutput:
         output = build_full_kpi_output(perfect_pairs_data)
 
         assert "sample_count" in output
-        assert "confusion_matrix" in output
-        assert "per_class_metrics" in output
+        assert "binary_classification" in output
+        assert "operational_metrics" in output
+        assert "calibration" in output
         assert "average_accuracy" in output
         assert "average_score" in output
         assert "average_confidence" in output
@@ -387,8 +259,8 @@ class TestBuildFullKpiOutput:
 
         # Classification keys come before legacy keys
         assert keys.index("sample_count") < keys.index("average_accuracy")
-        assert keys.index("confusion_matrix") < keys.index("average_score")
-        assert keys.index("per_class_metrics") < keys.index("average_confidence")
+        assert keys.index("binary_classification") < keys.index("average_score")
+        assert keys.index("calibration") < keys.index("average_confidence")
 
     def test_empty_input(self):
         output = build_full_kpi_output([])
@@ -426,9 +298,18 @@ class TestBinaryClassificationMetrics:
         assert m["precision"] == 1.0
         assert m["recall"] == 1.0
         assert m["f1_score"] == 1.0
+        assert m["not_exploitable_precision"] == 1.0
+        assert m["not_exploitable_recall"] == 1.0
         # 1 of 5 findings is a refusal (agent classification None).
         assert m["refusal_rate"] == 0.2
         assert m["evaluated_count"] == 4
+
+    def test_not_exploitable_class_metrics(self, mixed_pairs_data):
+        pairs = extract_finding_pairs(mixed_pairs_data)
+        m = compute_binary_classification_metrics(pairs)
+        # Negative class: TN=1, FN=1, FP=1 => precision=recall=0.5.
+        assert m["not_exploitable_precision"] == 0.5
+        assert m["not_exploitable_recall"] == 0.5
 
     def test_mixed_confusion_counts(self, mixed_pairs_data):
         pairs = extract_finding_pairs(mixed_pairs_data)
