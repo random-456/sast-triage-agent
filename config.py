@@ -32,6 +32,10 @@ MAX_RESEARCH_ITERATIONS = 5  # Research-node visits before a forced aggregate
 MAX_REANALYSIS_LOOPS = 2  # Critic -> analyst reanalysis loops before aggregate
 MAX_TOOL_CALLS_PER_RESEARCH = 10  # Tool-call turns within one research-node visit
 DEFAULT_SAMPLES = 3  # Self-consistency samples per finding (PR5 makes adaptive)
+# Analyst sampling temperatures, applied per sample slot for diversity; the
+# last value is reused if more samples than entries are taken (doc 05).
+ANALYST_TEMPERATURES = [0.1, 0.3, 0.5]
+CRITIC_TEMPERATURE = 0.6  # Higher than the analyst to defeat sycophancy
 
 # Disposition Configuration
 # A non-exploitable verdict below this confidence is routed to
