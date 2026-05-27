@@ -114,7 +114,8 @@ Each dataset under `benchmark/datasets/<name>.json` must have a matching Gitleak
 
 Detailed documentation is available in the [`docs/`](docs/) directory:
 
-- [Architecture](docs/architecture.md): system overview, component map and the per-finding graph diagram.
+- [Architecture](docs/architecture.md): system overview, the per-finding graph in detail (research, analyst, critic and aggregate nodes), state threading, routing, circuit breakers.
+- [CWE Checklists](docs/checklists.md): the checklist schema, the shipped checklists, selection logic and how to add a new one.
 - [Usage Guide](docs/usage-guide.md): CLI reference for both modes with examples, output schema and state derivation.
 - [Preprocessing](docs/preprocessing.md): obfuscation and secret masking pipeline.
 - [Configuration](docs/configuration.md): environment variables, constants and the per-finding graph configuration.
