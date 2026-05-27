@@ -38,14 +38,20 @@ def _temperature_for(slot_index: int) -> float:
 
 
 def build_analyst_messages(state: TriageState) -> List:
-    """System prompt + checklist + CODE BANK, plus any critic feedback."""
+    """System prompt + checklist + CODE BANK, plus any critic feedback.
+
+    The code bank is sent as a ``HumanMessage`` (evidence presented to the
+    model) rather than a ``SystemMessage`` so the request always carries at
+    least one non-system turn; Gemini rejects requests whose ``contents``
+    array is empty with "contents are required".
+    """
     system = (
         f"{ANALYST_SYSTEM_PROMPT}\n\n"
         f"## FINDING\n{state.finding.model_dump_json(indent=2)}"
     )
     messages = [
         SystemMessage(content=system),
-        SystemMessage(content=format_code_bank(state)),
+        HumanMessage(content=format_code_bank(state)),
     ]
     critique = state.last_critique
     if critique is not None and critique.decision in _REFINING:

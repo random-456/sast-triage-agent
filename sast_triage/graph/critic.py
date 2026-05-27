@@ -33,13 +33,18 @@ def _render_verdict(verdict: AnalystVerdict) -> str:
 
 
 def build_critic_messages(state: TriageState) -> List:
-    """Critic prompt + checklist + CODE BANK + the verdict under review."""
+    """Critic prompt + checklist + CODE BANK + the verdict under review.
+
+    The code bank is sent as a ``HumanMessage`` for consistency with the
+    research and analyst nodes; the critic already includes a verdict
+    ``HumanMessage`` at the end, so this is purely a typing alignment.
+    """
     system = (
         f"{CRITIC_SYSTEM_PROMPT}\n\n{render_checklist_section(state.checklist)}"
     )
     return [
         SystemMessage(content=system),
-        SystemMessage(content=format_code_bank(state)),
+        HumanMessage(content=format_code_bank(state)),
         HumanMessage(content=_render_verdict(state.samples[-1])),
     ]
 

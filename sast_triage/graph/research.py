@@ -10,7 +10,7 @@ how long research runs (avoids context rot on long investigations).
 import logging
 from typing import Awaitable, Callable, Dict, List, Optional
 
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from config import MAX_TOOL_CALLS_PER_RESEARCH
 from sast_triage.checklists import render_checklist_section
@@ -57,10 +57,17 @@ def format_code_bank(state: TriageState) -> str:
 
 
 def build_research_messages(state: TriageState, last_round: List) -> List:
-    """The stateless per-turn message list: system + code bank + last round."""
+    """The stateless per-turn message list: system + code bank + last round.
+
+    The code bank is sent as a ``HumanMessage`` rather than a ``SystemMessage``
+    because it is evidence presented to the model, not behavioral instructions.
+    It also ensures the request always carries at least one non-system turn,
+    which Gemini requires: requests whose ``contents`` array is empty are
+    rejected with "contents are required".
+    """
     return [
         SystemMessage(content=build_research_system_prompt(state)),
-        SystemMessage(content=format_code_bank(state)),
+        HumanMessage(content=format_code_bank(state)),
         *last_round,
     ]
 

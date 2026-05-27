@@ -141,4 +141,18 @@ class TestAnalystMessages:
             last_critique=_critique(CritiqueDecision.APPROVED),
         )
         messages = build_analyst_messages(state)
-        assert not any(isinstance(m, HumanMessage) for m in messages)
+        # The code bank itself is now a HumanMessage; what must NOT be
+        # appended on a fresh sample is a critic-feedback HumanMessage.
+        assert not any(
+            isinstance(m, HumanMessage) and "reviewer rejected" in m.content
+            for m in messages
+        )
+
+    def test_request_always_has_at_least_one_non_system_turn(self):
+        # Gemini rejects requests whose ``contents`` array is empty
+        # ("contents are required"). A fresh sample with no critic feedback
+        # must still include at least one HumanMessage so the request is
+        # accepted by the API.
+        state = _state()
+        messages = build_analyst_messages(state)
+        assert any(isinstance(m, HumanMessage) for m in messages)
