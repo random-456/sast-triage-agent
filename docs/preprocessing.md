@@ -6,8 +6,8 @@ Before findings are analyzed by the LLM, the cloned codebase goes through two pr
 
 The codebase is sent to cloud LLM services for analysis. Preprocessing prevents leaking:
 
-- Internal network infrastructure details (IPs, hostnames, MAC addresses)
-- Hardcoded secrets, API keys, and credentials
+- Internal network infrastructure details (IPs, hostnames and MAC addresses).
+- Hardcoded secrets, API keys and credentials.
 
 The LLM system prompt instructs the agent to treat preprocessed placeholders as opaque constants that do not affect exploitability analysis.
 
@@ -30,8 +30,8 @@ Obfuscation scans all text files in the codebase and replaces infrastructure pat
 
 Binary files are automatically skipped. Detection uses two methods:
 
-1. **Extension check** -- Files with known binary extensions (images, archives, executables, fonts, media, databases) are skipped immediately.
-2. **Content check** -- If the extension is not recognized, the first 8 KB is read and a UTF-8 decode is attempted. Failure indicates a binary file.
+1. **Extension check:** files with known binary extensions (images, archives, executables, fonts, media and databases) are skipped immediately.
+2. **Content check:** if the extension is not recognized, the first 8 KB is read and a UTF-8 decode is attempted. Failure indicates a binary file.
 
 ### Behavior
 

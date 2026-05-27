@@ -2,17 +2,20 @@
 
 ## Overview
 
-The SAST Triage Agent automates the triage of Checkmarx One SAST findings using LLM-powered analysis. It fetches findings from the Checkmarx API, clones the associated repository, preprocesses the codebase to remove sensitive data, and then uses a LangChain agent loop to assess each finding for exploitability.
+The SAST Triage Agent automates the triage of Checkmarx One SAST findings using LLM-powered analysis. It fetches findings from the Checkmarx API, clones the associated repository, preprocesses the codebase to remove sensitive data and then runs each finding through a per-finding LangGraph subgraph (research, analyst, critic and aggregate nodes) to produce a structured triage decision.
 
 The system is built around a CLI entry point (`run_triage.py`) that orchestrates several components:
 
 | Component | Location | Responsibility |
 |-----------|----------|---------------|
 | CLI | `run_triage.py` | Entry point, argument parsing, orchestration |
-| Agent | `sast_triage/agent.py` | LLM interaction loop, tool dispatch, decision collection |
-| Tools | `sast_triage/agent_tools.py` | File reading, code search, decision submission |
-| Prompts | `sast_triage/prompts.py` | System and input prompt templates |
-| Models | `sast_triage/agent_models.py` | Pydantic models for triage decisions |
+| Agent | `sast_triage/agent.py` | Builds the per-finding subgraph and the LLM clients; iterates findings; persists results |
+| Graph | `sast_triage/graph/` | Per-finding LangGraph state machine: research, analyst, critic and aggregate nodes plus pure routing |
+| Aggregator | `sast_triage/aggregator.py` | Self-consistency vote and confidence calibration over analyst samples |
+| Checklists | `sast_triage/checklists/` | CWE-keyed evidence checklists in YAML, selected per finding |
+| Tools | `sast_triage/agent_tools.py` | Investigation tools used by the research node (`read_file`, `search_in_files`, `list_directory`) and findings IO |
+| Prompts | `sast_triage/prompts.py` | System prompt templates for the research, analyst and critic roles |
+| Models | `sast_triage/agent_models.py` | Pydantic models for findings, verdicts, critiques and the final triage decision |
 | Preprocessing | `sast_triage/preprocessing/` | Obfuscation and secret masking |
 | Interactive | `sast_triage/interactive.py` | Guided prompt collection for interactive mode |
 | Logging | `sast_triage/agent_logging.py` | Session logging with token tracking |
@@ -29,8 +32,8 @@ flowchart LR
     B -->|run| C[Parse CLI Args] --> E
     B -->|interactive| D[Guided Prompts] --> D1{Confirm Config?}
     D1 -->|No| X[Exit]
-    D1 -->|Yes| E[Resolve Project & Fetch Findings]
-    E --> F[Clone & Preprocess Codebase]
+    D1 -->|Yes| E[Resolve Project and Fetch Findings]
+    E --> F[Clone and Preprocess Codebase]
     F --> G{Interactive?}
     G -->|No| I[Run Triage Analysis]
     G -->|Yes| H{Confirm Preprocessing?}
@@ -41,13 +44,13 @@ flowchart LR
 
 ### Step-by-step
 
-1. **CLI Input** -- The user invokes either `run` (non-interactive) or `interactive` mode via Click sub-commands.
-2. **Project Resolution** -- The Checkmarx API client authenticates, looks up the project by name, and retrieves the project ID and repository URL.
-3. **Findings Fetch** -- Findings are retrieved from the Checkmarx `/api/results` endpoint, filtered by severity. A client-side state filter is applied afterward.
-4. **Repository Clone** -- The repository is shallow-cloned (`--depth 1`) into a temporary directory.
-5. **Preprocessing** -- The cloned codebase is processed in two stages: obfuscation removes infrastructure patterns (IPs, MACs, FQDNs), and secret masking replaces secrets identified by a Gitleaks CSV report.
-6. **Analysis** -- Each finding is processed through the per-finding analysis graph (see below).
-7. **Output** -- Results are saved incrementally to a timestamped JSON file with metadata.
+1. **CLI Input:** the user invokes either `run` (non-interactive) or `interactive` mode via Click sub-commands.
+2. **Project Resolution:** the Checkmarx API client authenticates, looks up the project by name and retrieves the project ID and repository URL.
+3. **Findings Fetch:** findings are retrieved from the Checkmarx `/api/results` endpoint, filtered by severity. A client-side state filter is applied afterward.
+4. **Repository Clone:** the repository is shallow-cloned (`--depth 1`) into a temporary directory.
+5. **Preprocessing:** the cloned codebase is processed in two stages: obfuscation removes infrastructure patterns (IPs, MACs, FQDNs) and secret masking replaces secrets identified by a Gitleaks CSV report.
+6. **Analysis:** each finding is processed through the per-finding analysis graph (see below).
+7. **Output:** results are saved incrementally to a timestamped JSON file with metadata.
 
 ## Per-Finding Analysis Graph
 
@@ -89,16 +92,7 @@ Each finding's analyst prompt is augmented with a CWE-specific evidence checklis
 
 ## Preprocessing Pipeline
 
-```mermaid
-flowchart LR
-    A[Cloned Repo] --> B[Obfuscation]
-    B --> C[Secret Masking]
-    C --> D[Ready for Analysis]
-    B -->|Report| E[Session Log]
-    C -->|Report| E
-```
-
-The preprocessing pipeline runs after repository cloning and before LLM analysis. Both stages produce structured reports that are recorded in the session log. See [preprocessing.md](preprocessing.md) for details.
+The preprocessing pipeline runs after repository cloning and before LLM analysis. Obfuscation runs first and replaces infrastructure patterns (IPs, MACs, FQDNs) with typed placeholders; secret masking then replaces the secrets identified by a Gitleaks CSV report. Both stages produce structured reports that are recorded in the session log. See [preprocessing.md](preprocessing.md) for the full pipeline.
 
 ## Output Model
 
@@ -126,10 +120,10 @@ The model is controlled by the `--model` CLI flag or the interactive prompt. Bac
 
 Every triage session produces a timestamped JSON log file in the `logs/` directory containing:
 
-- **Session metadata**: model, temperature, project details, branch, repository URL
-- **Preprocessing reports**: obfuscation and masking summaries
-- **Per-finding inputs**: the finding details and selected checklist, plus the final decision
-- **Session summary**: totals for confirmed/not_exploitable/refused, aggregate token usage
+- **Session metadata:** model, temperature, project details, branch and repository URL.
+- **Preprocessing reports:** obfuscation and masking summaries.
+- **Per-finding inputs:** the finding details and selected checklist, plus the final decision.
+- **Session summary:** counts for `confirmed`, `not_exploitable`, `proposed_not_exploitable` and `refused`, plus `refusal_rate` and aggregate token usage.
 
 ## Output Structure
 
@@ -138,7 +132,7 @@ Every triage session produces a timestamped JSON log file in the `logs/` directo
     findings_assessment_<project>_<timestamp>.json   # Triage decisions with metadata
 ```
 
-The findings assessment file contains a metadata wrapper with project context and summary statistics, plus the full list of per-finding results. Results are saved incrementally after each finding is processed.
+The assessment file contains a metadata wrapper (project context and summary statistics) plus the full list of per-finding results. Results are saved incrementally after each finding is processed. See [usage-guide.md](usage-guide.md#output) for the result schema and `suggested_state` derivation.
 
 The temporary directory (`temp/`) holds intermediate data during execution:
 

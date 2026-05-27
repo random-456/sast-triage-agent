@@ -2,16 +2,9 @@
 
 ## Overview
 
-The benchmark tool evaluates the triage agent against human-reviewed findings to measure classification accuracy and justification quality. It runs the agent on each dataset, compares results to analyst ground truth, and produces per-dataset and cross-dataset KPI reports.
+The benchmark tool evaluates the triage agent against human-reviewed findings to measure classification accuracy and justification quality. It runs the agent on each dataset, compares results to analyst ground truth and produces per-dataset and cross-dataset KPI reports.
 
-```mermaid
-flowchart LR
-    A[Load Datasets] --> B[Run Triage Agent]
-    B --> C[Enrich with Agent Results]
-    C --> D[Compute Justification Scores]
-    D --> E[Generate Per-Dataset KPIs]
-    D --> F[Generate Cross-Dataset Summary]
-```
+The benchmark loads each dataset, runs the same `run_triage` pipeline that production uses (so preprocessing, the per-finding graph and structured outputs all participate), enriches each finding with the agent verdict and a justification score, then writes per-dataset KPIs and a cross-dataset summary.
 
 ## Running the Benchmark
 
@@ -99,7 +92,7 @@ A confidence-vs-correctness table on `is_vulnerable`. Findings are binned by con
 
 ### Legacy Metrics
 
-Accuracy alone is misleading for SAST data — when most findings are not exploitable, a model that dismisses everything still scores high on accuracy while missing every real vulnerability. Use per-class precision and recall above for go/no-go decisions.
+Accuracy alone is misleading for SAST data. When most findings are not exploitable, a model that dismisses everything still scores high on accuracy while missing every real vulnerability. Use the per-class precision and recall above for go/no-go decisions.
 
 | Metric | Description |
 |--------|-------------|
@@ -111,32 +104,32 @@ Accuracy alone is misleading for SAST data — when most findings are not exploi
 
 Metrics are computed per group for each dimension:
 
-- **Language** -- Java, Python, JavaScript, etc.
-- **Category** -- SQL_Injection, XSS, etc.
-- **Complexity** -- EASY, MEDIUM, COMPLEX
-- **Severity** -- CRITICAL, HIGH, MEDIUM, LOW, INFO
+- **Language:** Java, Python, JavaScript and so on.
+- **Category:** SQL_Injection, XSS and so on.
+- **Complexity:** EASY, MEDIUM, COMPLEX.
+- **Severity:** CRITICAL, HIGH, MEDIUM, LOW, INFO.
 
-Each group includes `sample_count`, the binary classification metrics, and legacy metrics.
+Each group includes `sample_count`, the binary classification metrics and the legacy metrics.
 
 ### Target Thresholds
 
-The table below defines two tiers for a production go/no-go decision. **Minimum** is the hard gate — a model that fails any minimum threshold should not run unsupervised. **Target** represents the level at which the agent can reliably replace manual first-pass triage.
+The table below defines two tiers for a production go/no-go decision. **Minimum** is the hard gate: a model that fails any minimum threshold should not run unsupervised. **Target** represents the level at which the agent can reliably replace manual first-pass triage.
 
 | Metric | Minimum | Target | Rationale |
 |--------|---------|--------|-----------|
 | CONFIRMED recall | 0.90 | 0.95 | Missing a real vulnerability is the highest-risk failure mode. |
 | CONFIRMED precision | 0.60 | 0.70 | Over-flagging is accepted to protect recall; analysts review CONFIRMED items anyway. |
-| NOT_EXPLOITABLE precision | 0.90 | 0.95 | When the agent dismisses a finding, it must be right — no silent misses. |
-| NOT_EXPLOITABLE recall | 0.60 | 0.70 | Mirrors CONFIRMED precision — both reflect the accepted over-confirmation rate. |
-| Average accuracy | 75% | 85% | Lower than typical ML targets because we deliberately accept over-confirmation. |
-| Average score | 2.0 | 2.5 | Justification quality (0-4 scale); ≥ 2.0 means reasoning is at least adequate. |
+| NOT_EXPLOITABLE precision | 0.90 | 0.95 | When the agent dismisses a finding it must be right; no silent misses. |
+| NOT_EXPLOITABLE recall | 0.60 | 0.70 | Mirrors CONFIRMED precision; both reflect the accepted over-confirmation rate. |
+| Average accuracy | 75% | 85% | Lower than typical ML targets because the agent is deliberately tuned for over-confirmation. |
+| Average score | 2.0 | 2.5 | Justification quality (0-4 scale); 2.0 or above means reasoning is at least adequate. |
 
 **Reading the thresholds:**
 
-- **CONFIRMED recall** is the single most important metric. A value below 0.90 means more than 1 in 10 real vulnerabilities are missed — unacceptable for automated post-processing.
+- **CONFIRMED recall** is the single most important metric. A value below 0.90 means more than 1 in 10 real vulnerabilities are missed, which is unacceptable for automated post-processing.
 - **NOT_EXPLOITABLE precision** is the second priority. When the agent says "not exploitable", that finding leaves the review queue. A false dismissal is a silent miss.
-- **CONFIRMED precision** is intentionally relaxed. The agent is tuned to err on the side of confirming when uncertain. This is a fail-safe trade-off: more analyst workload on false positives is preferable to missing real vulnerabilities.
-- Precision and recall for **REFUSED** are intentionally omitted. REFUSED is a safety valve — the agent should refuse rather than guess. A high REFUSED rate signals low model confidence, not poor classification.
+- **CONFIRMED precision** is intentionally relaxed. The agent errs on the side of confirming when uncertain. This is a fail-safe trade-off: more analyst workload on false positives is preferable to missing real vulnerabilities.
+- Precision and recall for **REFUSED** are intentionally omitted. REFUSED is a safety valve: the agent should refuse rather than guess. A high REFUSED rate signals low model confidence, not poor classification.
 
 ## Output Files
 
