@@ -15,7 +15,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import MAX_TOOL_CALLS_PER_RESEARCH
 from sast_triage.agent_models import CheckmarxFinding
 from sast_triage.checklists import load_checklist
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from sast_triage.graph.research import (
+    build_research_messages,
     build_research_system_prompt,
     format_code_bank,
     make_research_node,
@@ -109,6 +112,15 @@ class TestPromptBuilders:
         prompt = build_research_system_prompt(state)
         assert "DO NOT RETRY" in prompt
         assert "read_file" in prompt
+
+    def test_first_turn_request_has_a_non_system_turn(self):
+        # Gemini rejects requests whose ``contents`` array is empty
+        # ("contents are required"). The very first research turn has no prior
+        # round, so the message list must still include a HumanMessage (the
+        # code bank) to land in ``contents``.
+        messages = build_research_messages(_state(), last_round=[])
+        assert isinstance(messages[0], SystemMessage)
+        assert any(isinstance(m, HumanMessage) for m in messages)
 
 
 class TestResearchNode:
