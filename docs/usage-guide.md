@@ -60,14 +60,14 @@ python run_triage.py interactive [-v]
 
 Interactive mode presents guided prompts to collect all configuration:
 
-1. **Project name** -- Checkmarx project name (required)
-2. **Branch** -- Git branch to analyze (default: `default.SecurityPipeline`)
-3. **Analysis scope** -- Choose between filtering all findings or targeting specific hashes
-4. **States** -- Checkmarx states to include (checkbox selection)
-5. **Severities** -- Severity levels to include (checkbox selection)
-6. **Model** -- AI model name (default: `gemini-2.5-pro`)
-7. **Gitleaks report** -- Path to CSV or `none`
-8. **Output directory** -- Where to save results (default: `output`)
+1. **Project name:** Checkmarx project name (required).
+2. **Branch:** git branch to analyze (default: `default.SecurityPipeline`).
+3. **Analysis scope:** choose between filtering all findings or targeting specific hashes.
+4. **States:** Checkmarx states to include (checkbox selection).
+5. **Severities:** severity levels to include (checkbox selection).
+6. **Model:** Gemini model name (default: `gemini-2.5-pro`).
+7. **Gitleaks report:** path to CSV or `none`.
+8. **Output directory:** where to save results (default: `output`).
 
 After collecting inputs, a configuration summary is displayed for confirmation. If the codebase is cloned and preprocessed successfully, a preprocessing summary shows obfuscation and masking results before proceeding with the actual analysis.
 
@@ -126,7 +126,7 @@ The file contains:
 }
 ```
 
-Each result separates the classification (`is_vulnerable` plus `confidence`) from the advisory disposition (`suggested_state`). The tool only reads from Checkmarx One: every `suggested_state` is a recommendation written to the local output file, never written back to Checkmarx.
+Each result separates the classification (`is_vulnerable` plus `confidence`) from the advisory disposition (`suggested_state`). The tool only reads from Checkmarx One; every `suggested_state` is a recommendation written to the local output file and is never written back to Checkmarx.
 
 ### Classification
 
@@ -149,16 +149,8 @@ Each result separates the classification (`is_vulnerable` plus `confidence`) fro
 
 ### Session Logs
 
-Each run produces a session log in the `logs/` directory with the full conversation history, token usage, and preprocessing reports. See [architecture.md](architecture.md) for details on the log structure.
+Each run produces a session log in the `logs/` directory containing the per-finding inputs and selected checklist, the final decision and aggregate token usage. See [architecture.md](architecture.md#session-logging) for the log structure.
 
 ## Benchmarking
 
-A separate benchmark mode compares model accuracy against human-reviewed findings:
-
-```bash
-python run_benchmark.py --model gemini-2.5-pro --output benchmark_results -v
-```
-
-> **Note:** Each dataset under `benchmark/datasets/<name>.json` must have a matching Gitleaks CSV at `benchmark/secret-reports/<name>.csv`; datasets without a matching report are skipped.
-
-Benchmark datasets are stored in `benchmark/datasets/` as JSON files. Each file contains findings with analyst-provided ground truth decisions. See the [README](../README.md) for dataset format details.
+A separate benchmark mode compares model accuracy against human-reviewed findings. See [benchmark.md](benchmark.md) for the full runbook, dataset format, metrics and target thresholds.

@@ -1,6 +1,6 @@
 # SAST Triage Agent
 
-Automated triage of Checkmarx One SAST findings using LangChain and LLM. Fetches findings from the Checkmarx API, clones the repository, preprocesses the codebase to remove sensitive data, and analyzes dataflow paths to make exploitability decisions.
+Automated triage of Checkmarx One SAST findings. Fetches findings from the Checkmarx API, clones the repository, preprocesses the codebase to remove sensitive data and runs each finding through a per-finding research, analyst and critic graph that produces a structured exploitability verdict with a calibrated confidence.
 
 ## Quick Start
 
@@ -9,7 +9,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your Checkmarx credentials and Google GenAI backend
+# Edit .env with your Checkmarx credentials and the Google GenAI backend settings.
 ```
 
 **Prerequisites:**
@@ -92,9 +92,9 @@ Results are saved to a timestamped JSON file in the output directory:
 }
 ```
 
-Each result separates the classification (`is_vulnerable` + `confidence`) from the advisory `suggested_state`. The tool only reads from Checkmarx One: verdicts are written to the local output file, never back to Checkmarx. See [docs/usage-guide.md](docs/usage-guide.md) for the full state derivation.
+Each result separates the classification (`is_vulnerable` and `confidence`) from the advisory `suggested_state`. The tool only reads from Checkmarx One; verdicts are written to the local output file and are never written back to Checkmarx. See [docs/usage-guide.md](docs/usage-guide.md#output) for the full state derivation.
 
-Session logs with full conversation history and token usage are saved to `logs/`.
+Session logs with the per-finding inputs, the final decision and aggregate token usage are saved to `logs/`.
 
 ## Testing
 
@@ -110,36 +110,14 @@ Compare model accuracy against human-reviewed findings:
 python run_benchmark.py --model gemini-2.5-pro --output benchmark_results -v
 ```
 
-> **Note:** Each dataset under `benchmark/datasets/<name>.json` must have a matching Gitleaks CSV at `benchmark/secret-reports/<name>.csv`; datasets without a matching report are skipped.
-
-Benchmark datasets are stored in `benchmark/datasets/`. Each file contains findings with analyst-provided ground truth:
-
-```json
-{
-  "project": "CXONE PROJECT NAME",
-  "github_url": "GITHUB URL",
-  "findings": [
-    {
-      "id": "FINDING ID",
-      "language": "JavaScript",
-      "category": "SQL_Injection",
-      "severity": "HIGH",
-      "complexity": "MEDIUM",
-      "analyst_triage": {
-        "result": "CONFIRMED",
-        "justification": "Direct string concatenation in SQL query"
-      }
-    }
-  ]
-}
-```
+Each dataset under `benchmark/datasets/<name>.json` must have a matching Gitleaks CSV at `benchmark/secret-reports/<name>.csv`; datasets without a matching report are skipped. See [docs/benchmark.md](docs/benchmark.md) for the dataset format, metrics and target thresholds.
 
 ## Documentation
 
 Detailed documentation is available in the [`docs/`](docs/) directory:
 
-- [Architecture](docs/architecture.md) -- System overview, component descriptions, Mermaid diagrams
-- [Usage Guide](docs/usage-guide.md) -- CLI reference for both modes with examples
-- [Preprocessing](docs/preprocessing.md) -- Obfuscation and secret masking pipeline
-- [Configuration](docs/configuration.md) -- Environment variables, constants, model setup
-- [Benchmark](docs/benchmark.md) -- Benchmark metrics, datasets, and output format
+- [Architecture](docs/architecture.md): system overview, component map and the per-finding graph diagram.
+- [Usage Guide](docs/usage-guide.md): CLI reference for both modes with examples, output schema and state derivation.
+- [Preprocessing](docs/preprocessing.md): obfuscation and secret masking pipeline.
+- [Configuration](docs/configuration.md): environment variables, constants and the per-finding graph configuration.
+- [Benchmark](docs/benchmark.md): metrics, datasets, target thresholds and output format.
