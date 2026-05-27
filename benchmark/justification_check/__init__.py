@@ -1,7 +1,7 @@
 import logging
 import traceback
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_vertexai import ChatVertexAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
@@ -14,32 +14,25 @@ class JustificationAICheck:
 
     def __init__(
         self,
-        project: str | None,
-        location: str | None,
+        project: str,
+        location: str,
         temperature: float = 0.1
     ):
         """
         Initialize the JustificationAICheck object.
 
         Args:
-            project: GCP project ID for Vertex AI, or None for AI Studio
-            location: Vertex AI region (used only when project is set)
-            temperature: Model temperature for consistency
+            project: GCP project ID for Vertex AI.
+            location: Vertex AI region.
+            temperature: Model temperature for consistency.
         """
-        common = dict(
-            model=DEFAULT_JUSTIFICATION_COMPARISON_MODEL,
+        self.llm = ChatVertexAI(
+            model_name=DEFAULT_JUSTIFICATION_COMPARISON_MODEL,
+            project=project,
+            location=location,
             temperature=temperature,
             max_retries=3,
         )
-        if project:
-            self.llm = ChatGoogleGenerativeAI(
-                vertexai=True,
-                project=project,
-                location=location,
-                **common,
-            )
-        else:
-            self.llm = ChatGoogleGenerativeAI(**common)
 
         self.prompt_template = ChatPromptTemplate.from_template(JUSTIFICATION_COMPARISON_PROMPT_TEMPLATE)
 

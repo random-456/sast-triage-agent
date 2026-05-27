@@ -9,7 +9,7 @@ import datetime
 import logging
 from typing import Dict, List, Optional
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_vertexai import ChatVertexAI
 
 from sast_triage.agent_models import (
     AnalystVerdict,
@@ -52,9 +52,9 @@ class SASTTriageAgent:
 
     def __init__(
         self,
-        project: Optional[str],
+        project: str,
         model_name: str,
-        location: Optional[str],
+        location: str,
         temperature: float = 0.1,
         project_name: Optional[str] = None,
         project_id: Optional[str] = None,
@@ -69,17 +69,17 @@ class SASTTriageAgent:
         Initialize the SAST Triage Agent.
 
         Args:
-            project: GCP project ID for Vertex AI, or None for AI Studio
-            location: Vertex AI region (used only when project is set)
-            model_name: Gemini model name
-            temperature: Model temperature for consistency
-            project_name: Project name for reporting
-            project_id: Project identifier for reporting
-            scan_id: Scan identifier for reporting
-            checkmarx_base_url: Checkmarx base URL for report links
-            branch: Git branch being analyzed
-            repo_url: Repository URL for logging
-            output_dir: Directory for output files
+            project: GCP project ID for Vertex AI.
+            location: Vertex AI region.
+            model_name: Gemini model name.
+            temperature: Model temperature for consistency.
+            project_name: Project name for reporting.
+            project_id: Project identifier for reporting.
+            scan_id: Scan identifier for reporting.
+            checkmarx_base_url: Checkmarx base URL for report links.
+            branch: Git branch being analyzed.
+            repo_url: Repository URL for logging.
+            output_dir: Directory for output files.
             compact_logs: If True, write a reduced agent log (no input
                 prompt bodies, system prompt by hash only, tool result
                 bulk arrays dropped). For development analysis only.
@@ -90,23 +90,17 @@ class SASTTriageAgent:
         self.checkmarx_base_url = checkmarx_base_url
         self.branch = branch
 
-        # Vertex AI when a GCP project is supplied, otherwise AI Studio
-        # (GOOGLE_API_KEY). The backend is resolved by the caller; see
-        # config.resolve_genai_backend.
+        # Vertex AI via the langchain-google-vertexai client (gRPC transport).
+        # The caller resolves project and location via config.resolve_vertex_config.
         self._project = project
         self._location = location
         self.model_name = model_name
         self.temperature = temperature
         self._structured_llm_cache: Dict[float, object] = {}
 
-        if project:
-            self.logger.info(
-                f"Initializing Gemini via Vertex AI: {model_name}"
-            )
-        else:
-            self.logger.info(
-                f"Initializing Gemini via AI Studio: {model_name}"
-            )
+        self.logger.info(
+            f"Initializing Gemini via Vertex AI: {model_name}"
+        )
 
         # The per-finding flow is a LangGraph subgraph: a tool-using researcher
         # gathers evidence, structured analyst samples at varied temperature
@@ -145,19 +139,12 @@ class SASTTriageAgent:
             f"findings_assessment_{name}_{timestamp}.json",
         )
 
-    def _make_llm(self, temperature: float) -> ChatGoogleGenerativeAI:
-        """Build a Gemini client at a given temperature for the active backend."""
-        if self._project:
-            return ChatGoogleGenerativeAI(
-                model=self.model_name,
-                temperature=temperature,
-                max_retries=3,
-                vertexai=True,
-                project=self._project,
-                location=self._location,
-            )
-        return ChatGoogleGenerativeAI(
-            model=self.model_name,
+    def _make_llm(self, temperature: float) -> ChatVertexAI:
+        """Build a Gemini-on-Vertex client at the given temperature."""
+        return ChatVertexAI(
+            model_name=self.model_name,
+            project=self._project,
+            location=self._location,
             temperature=temperature,
             max_retries=3,
         )

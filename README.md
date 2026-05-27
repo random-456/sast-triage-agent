@@ -14,9 +14,7 @@ cp .env.example .env
 
 **Prerequisites:**
 - Python 3.10+
-- A Google GenAI backend, either:
-  - Vertex AI: a Google Cloud project with the Vertex AI API enabled and Application Default Credentials (`gcloud auth application-default login`), or
-  - Google AI Studio: a `GOOGLE_API_KEY` (prepaid, budget-cappable)
+- A Google Cloud project with the Vertex AI API enabled and Application Default Credentials (`gcloud auth application-default login`)
 - Access to a Checkmarx One instance with a valid refresh token
 - Git installed
 

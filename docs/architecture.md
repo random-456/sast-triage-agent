@@ -109,12 +109,14 @@ Keeping classification and disposition separate means tuning `CONFIDENCE_THRESHO
 
 ## LLM Backend
 
-The agent uses Google Gemini through the unified `ChatGoogleGenerativeAI` client from `langchain-google-genai`. The same client talks to either backend, selected by environment variable:
+The agent uses Google Gemini on Vertex AI through the `ChatVertexAI` client from `langchain-google-vertexai`. The transport is gRPC, which respects `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` and so works on corporate networks that re-sign TLS with a private CA.
 
-- **Vertex AI** (production): `GOOGLE_GENAI_USE_VERTEXAI=true` with `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`. Auth via Application Default Credentials.
-- **Google AI Studio** (local development): `GOOGLE_API_KEY`, prepaid and budget-cappable.
+Configure via environment:
 
-The model is controlled by the `--model` CLI flag or the interactive prompt. Backend resolution happens once at startup in `config.resolve_genai_backend`.
+- `GOOGLE_CLOUD_PROJECT`: GCP project ID (required).
+- `GOOGLE_CLOUD_LOCATION`: Vertex AI region (defaults to `europe-west4`).
+
+Auth is via Application Default Credentials (`gcloud auth application-default login`). The model is controlled by the `--model` CLI flag or the interactive prompt. Project and location are resolved once at startup in `config.resolve_vertex_config`.
 
 ## Session Logging
 

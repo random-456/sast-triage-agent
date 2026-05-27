@@ -11,16 +11,14 @@ The application reads configuration from a `.env` file in the project root. Copy
 | `BASE_URL` | Checkmarx One instance URL | `https://cx.example.com` |
 | `REFRESH_TOKEN` | Checkmarx API refresh token | `eyJ...` |
 
-### Google GenAI Backend
+### Vertex AI
 
-The agent uses a single Gemini client that talks to one of two backends. Configure exactly one mode.
+The agent uses Google Gemini on Vertex AI. Auth is via Application Default Credentials (`gcloud auth application-default login`).
 
-| Variable | Mode | Description |
-|----------|------|-------------|
-| `GOOGLE_GENAI_USE_VERTEXAI` | Vertex AI | Set to `true` to use Vertex AI (production). |
-| `GOOGLE_CLOUD_PROJECT` | Vertex AI | GCP project ID. Required when Vertex AI is enabled. |
-| `GOOGLE_CLOUD_LOCATION` | Vertex AI | Region. Defaults to `europe-west4`. |
-| `GOOGLE_API_KEY` | AI Studio | Google AI Studio API key (local development). |
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_CLOUD_PROJECT` | GCP project ID (required). |
+| `GOOGLE_CLOUD_LOCATION` | Vertex AI region. Defaults to `europe-west4`. |
 
 ### Optional Variables
 
@@ -35,13 +33,9 @@ The agent uses a single Gemini client that talks to one of two backends. Configu
 BASE_URL=https://
 REFRESH_TOKEN=refresh-token
 
-# Google GenAI backend: choose ONE mode.
-# Production (Vertex AI), auth via `gcloud auth application-default login`:
-GOOGLE_GENAI_USE_VERTEXAI=true
+# Vertex AI Configuration. Auth via `gcloud auth application-default login`.
 GOOGLE_CLOUD_PROJECT=gcp-project-id
 GOOGLE_CLOUD_LOCATION=europe-west4
-# Local development (Google AI Studio), prepaid and budget-cappable:
-# GOOGLE_API_KEY=AIza...
 
 # Optional: per-host GitHub access tokens used when cloning HTTPS repos.
 # Format: comma-separated "host=token" pairs. Hostname is matched
@@ -119,7 +113,7 @@ The application sets `REQUESTS_CA_BUNDLE` and `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`
 
 ## Supported Models
 
-The agent targets Google Gemini models through the unified `ChatGoogleGenerativeAI` client, on either the Vertex AI or AI Studio backend.
+The agent targets Google Gemini models on Vertex AI through the `ChatVertexAI` client.
 
 Examples:
 ```bash
@@ -135,7 +129,7 @@ Core dependencies are listed in `requirements.txt`:
 |---------|---------|
 | `langchain`, `langchain-core` | Tool definitions and message primitives |
 | `langgraph` | Per-finding subgraph state machine (research, analyst, critic and aggregate) |
-| `langchain-google-genai`, `google-genai` | Gemini integration (Vertex AI and AI Studio) |
+| `langchain-google-vertexai` | Gemini-on-Vertex client (gRPC transport) |
 | `pydantic` | Data validation and models |
 | `click` | CLI framework |
 | `questionary` | Interactive prompt library |
@@ -146,8 +140,6 @@ Core dependencies are listed in `requirements.txt`:
 ## Prerequisites
 
 - Python 3.10+
-- A Google GenAI backend, either:
-  - Vertex AI: a Google Cloud project with the Vertex AI API enabled, plus Application Default Credentials (`gcloud auth application-default login`), or
-  - Google AI Studio: a `GOOGLE_API_KEY` (prepaid, budget-cappable)
+- A Google Cloud project with the Vertex AI API enabled, plus Application Default Credentials (`gcloud auth application-default login`)
 - Access to a Checkmarx One instance with a valid refresh token
 - Git installed (for repository cloning)
