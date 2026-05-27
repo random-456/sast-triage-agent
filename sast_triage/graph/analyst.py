@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import ANALYST_TEMPERATURES
 from sast_triage.agent_models import AnalystVerdict, CritiqueDecision
+from sast_triage.checklists import render_checklist_section
 from sast_triage.graph.research import format_code_bank
 from sast_triage.graph.state import TriageState
 from sast_triage.prompts import ANALYST_SYSTEM_PROMPT
@@ -38,7 +39,12 @@ def _temperature_for(slot_index: int) -> float:
 
 
 def build_analyst_messages(state: TriageState) -> List:
-    """System prompt + checklist + CODE BANK, plus any critic feedback.
+    """System prompt + finding + CWE checklist, then CODE BANK and any feedback.
+
+    The CWE checklist is rendered into the system prompt (matching the research
+    and critic nodes) so the analyst sees the same per-CWE evidence
+    requirements and effective/ineffective control lists that the prompt
+    references in step 4 of the analysis protocol.
 
     The code bank is sent as a ``HumanMessage`` (evidence presented to the
     model) rather than a ``SystemMessage`` so the request always carries at
@@ -47,7 +53,8 @@ def build_analyst_messages(state: TriageState) -> List:
     """
     system = (
         f"{ANALYST_SYSTEM_PROMPT}\n\n"
-        f"## FINDING\n{state.finding.model_dump_json(indent=2)}"
+        f"## FINDING\n{state.finding.model_dump_json(indent=2)}\n\n"
+        f"{render_checklist_section(state.checklist)}"
     )
     messages = [
         SystemMessage(content=system),

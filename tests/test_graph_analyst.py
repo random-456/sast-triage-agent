@@ -156,3 +156,16 @@ class TestAnalystMessages:
         state = _state()
         messages = build_analyst_messages(state)
         assert any(isinstance(m, HumanMessage) for m in messages)
+
+    def test_system_prompt_includes_cwe_checklist(self):
+        # The analyst's step 4 references "the CWE-specific checklist below";
+        # the rendered checklist must actually be in the system message. The
+        # fixture loads the SQLi checklist; verify its display name and the
+        # block markers produced by render_checklist_section show up.
+        state = _state()
+        messages = build_analyst_messages(state)
+        system_text = messages[0].content
+        assert "SQL Injection (CWE-89)" in system_text
+        assert "REQUIRED EVIDENCE" in system_text
+        assert "EFFECTIVE CONTROLS" in system_text
+        assert "INEFFECTIVE / BYPASSABLE" in system_text
