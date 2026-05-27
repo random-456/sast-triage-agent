@@ -26,7 +26,7 @@ class TestSASTTriageAgent:
     @pytest.fixture
     def agent(self):
         """Create an agent instance for testing."""
-        with patch('sast_triage.agent.ChatGoogleGenerativeAI') as mock_chat:
+        with patch('sast_triage.agent.ChatVertexAI') as mock_chat:
             # Mock the LLM
             mock_llm = Mock()
             mock_llm.bind_tools = Mock(return_value=mock_llm)
@@ -252,36 +252,23 @@ class TestTriageDecision:
         assert decision_dict["justification"] == "Not exploitable because..."
 
 
-class TestBackendSelection:
-    """The LLM client backend is chosen from the presence of a GCP project."""
+class TestVertexClient:
+    """The agent builds a Vertex AI client from project + location."""
 
-    def _build_agent(self, project, location):
-        with patch("sast_triage.agent.ChatGoogleGenerativeAI") as mock_chat:
+    def test_agent_builds_vertex_client_with_project_and_location(self):
+        with patch("sast_triage.agent.ChatVertexAI") as mock_chat:
             mock_llm = Mock()
             mock_llm.bind_tools = Mock(return_value=mock_llm)
             mock_chat.return_value = mock_llm
             SASTTriageAgent(
-                project=project,
-                location=location,
+                project="proj-x",
+                location="europe-west4",
                 model_name="gemini-2.5-pro",
             )
-            return mock_chat
-
-    def test_agent_with_project_builds_vertex_client(self):
-        """A GCP project routes the client to the Vertex AI backend."""
-        _, kwargs = self._build_agent("proj-x", "europe-west4").call_args
-        assert kwargs["vertexai"] is True
+        _, kwargs = mock_chat.call_args
         assert kwargs["project"] == "proj-x"
         assert kwargs["location"] == "europe-west4"
-        assert kwargs["model"] == "gemini-2.5-pro"
-
-    def test_agent_without_project_builds_ai_studio_client(self):
-        """No GCP project routes the client to the AI Studio backend."""
-        _, kwargs = self._build_agent(None, None).call_args
-        assert "vertexai" not in kwargs
-        assert "project" not in kwargs
-        assert "location" not in kwargs
-        assert kwargs["model"] == "gemini-2.5-pro"
+        assert kwargs["model_name"] == "gemini-2.5-pro"
 
 
 if __name__ == "__main__":

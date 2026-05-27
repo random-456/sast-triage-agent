@@ -1,7 +1,6 @@
 # Core LangChain packages
 langchain>=0.3.0
-langchain-google-genai>=4.0  # Unified Gemini client (Vertex AI + AI Studio)
-google-genai
+langchain-google-vertexai>=2.0.0  # Vertex AI Gemini client (gRPC transport)
 langchain-community>=0.3.0
 langchain-core>=0.3.0  # Core functionality and tools
 langgraph>=1.2,<2.0  # Per-finding triage subgraph; upgrades go through a benchmark check
