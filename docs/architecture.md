@@ -79,6 +79,46 @@ A single `TriageState` (`sast_triage/graph/state.py`) is threaded through every 
 | `stop_reason` | `StopReason` | aggregate | diagnostic, logged |
 | `verdict` | `TriageDecision` | aggregate | agent (returned) |
 
+### The CODE BANK
+
+The CODE BANK is the shared working memory of the per-finding subgraph. The research node appends to it; all three LLM-calling nodes (research, analyst and critic) read it as a `HumanMessage`. It lives on `TriageState` as an `EvidenceBundle`:
+
+```python
+class EvidenceBundle(BaseModel):
+    items: List[CodeEvidence]            # ordered, no deduplication
+
+class CodeEvidence(BaseModel):
+    file_path: str                       # see "Label semantics" below
+    start_line: Optional[int] = None     # metadata, not rendered into the prompt
+    end_line: Optional[int] = None       # metadata, not rendered into the prompt
+    content: str                         # the raw text returned by the tool
+    relevance: str = ""                  # which tool produced the entry
+```
+
+**Label semantics.** The `file_path` doubles as a tag for the kind of evidence the entry holds. The research node's `_evidence_from_result` sets it from the tool that produced the entry:
+
+| Tool | `file_path` value | `relevance` value |
+|------|-------------------|--------------------|
+| `read_file` | the file path argument | `"read_file"` |
+| `search_in_files` | `"search:<pattern>"` | `"search_in_files"` |
+| `list_directory` | `"dir:<path>"` | `"list_directory"` |
+
+**Render shape (`format_code_bank`).** Items are concatenated in insertion order. When the bundle is empty the bank is rendered as `"## CODE BANK\nNo evidence gathered yet."` so the prompt always carries at least one non-empty `HumanMessage` (Gemini rejects requests whose `contents` array is empty):
+
+```
+## CODE BANK
+=== src/main/java/com/example/api/UserController.java (read_file) ===
+@GetMapping("/users/{id}")
+public User getUser(@PathVariable String id) { ... }
+
+=== search:queryForObject (search_in_files) ===
+src/main/java/com/example/repo/UserRepository.java:88: jdbcTemplate.queryForObject(sql, User.class);
+```
+
+**No deduplication at the data layer.** Entries are appended; the bundle does not check whether a file is already present. The research system prompt instructs the model not to re-read a file already in the CODE BANK, and failed tool calls are surfaced in a `DO NOT RETRY` block. This is a prompt-level guarantee, not a structural one: the only structural cap is `MAX_TOOL_CALLS_PER_RESEARCH` per research-node visit.
+
+The bank is rendered identically by every node so the analyst and critic see exactly the shape the researcher built. There is no per-node filtering or summarization layer.
+
 ### Research node
 
 **Purpose:** assemble enough code into the CODE BANK that the analyst can classify the finding against every checklist item.
@@ -92,15 +132,18 @@ A single `TriageState` (`sast_triage/graph/state.py`) is threaded through every 
 3. If the response carries no tool calls, the node returns and the analyst gets to run next.
 4. If it carries tool calls, each call is dispatched; the result is folded into either `evidence` (success) or `failed_tool_calls` (error). The model's response and the tool messages form `last_round`, which feeds the next iteration.
 
-**Stateless rebuild.** Each turn is rebuilt fresh from state rather than appended to a growing chat transcript:
+**Stateless rebuild.** Each turn is rebuilt fresh from state rather than appended to a growing chat transcript. The per-turn message stack:
 
+```mermaid
+flowchart TB
+    sys["<b>SystemMessage</b><br/>build_research_system_prompt(state):<br/>RESEARCH_SYSTEM_PROMPT<br/>+ ## FINDING (finding.model_dump_json)<br/>+ render_checklist_section(checklist)<br/>+ ## DO NOT RETRY (only when failed_tool_calls non-empty)"]
+    bank["<b>HumanMessage</b><br/>format_code_bank(state) -- the current CODE BANK"]
+    ai["<b>AIMessage</b><br/>the prior turn's response, including tool_calls<br/>(absent on turn 1)"]
+    tm["<b>ToolMessage</b> (one per prior-turn tool call)<br/>content = str(tool result)<br/>(absent on turn 1)"]
+    sys --> bank --> ai --> tm
 ```
-turn N message list = [
-    SystemMessage(research-system-prompt + FINDING + checklist + DO NOT RETRY block),
-    HumanMessage(CODE BANK rendered from evidence),
-    *last_round_from_turn_N_minus_1   # one AIMessage with tool_calls plus the matching ToolMessages
-]
-```
+
+`build_research_messages` returns `[SystemMessage, HumanMessage, *last_round]` where `last_round` is the prior turn's `[AIMessage, ToolMessage, ToolMessage, ...]`. Older turns are never replayed.
 
 Two consequences:
 
@@ -125,7 +168,17 @@ The CODE BANK that the model sees on each turn is rendered by `format_code_bank`
 
 **LLM client.** Structured-output Gemini via `ChatVertexAI.with_structured_output(AnalystVerdict)`. The analyst has no tools; it reasons from the evidence on hand and emits a typed object.
 
-**Inputs.** The system prompt is `ANALYST_SYSTEM_PROMPT` followed by the FINDING (as JSON) and the rendered CWE checklist. The CODE BANK is sent as a `HumanMessage`. When the previous critic round demanded a reanalysis or more research, a refinement `HumanMessage` is appended carrying the critic's `reanalysis_feedback` and any newly required information.
+**Prompt anatomy.** `build_analyst_messages` returns:
+
+```mermaid
+flowchart TB
+    sys["<b>SystemMessage</b><br/>ANALYST_SYSTEM_PROMPT<br/>+ ## FINDING (finding.model_dump_json)<br/>+ render_checklist_section(checklist)"]
+    bank["<b>HumanMessage</b><br/>format_code_bank(state)"]
+    fb["<b>HumanMessage</b> (only on refinement)<br/>'A reviewer rejected your previous analysis. Address this<br/>and produce a corrected verdict:'<br/>+ reanalysis_feedback (or rationale as fallback)<br/>+ 'Missing information that has now been gathered: ...'<br/>(only when required_information is non-empty)"]
+    sys --> bank --> fb
+```
+
+The refinement message is appended when the previous `last_critique.decision` is `REANALYZE` or `NEEDS_MORE_RESEARCH` and at least one sample already exists. The checklist is included in the system prompt (not in the human-side context) for symmetry with the research and critic prompts: every node reasons against the same per-CWE evidence requirements and effective/ineffective control lists.
 
 **Five-step analysis protocol** (enforced by the system prompt):
 
@@ -135,16 +188,17 @@ The CODE BANK that the model sees on each turn is rendered by `format_code_bank`
 4. **Guards:** classify every guard as `EFFECTIVE` or `INEFFECTIVE` for this specific vulnerability type, using the checklist's effective/ineffective lists.
 5. **Verdict:** `is_vulnerable=true` if reachable, `is_vulnerable=false` if provably blocked, `is_vulnerable=null` if the evidence is insufficient. When torn between exploitable and not, the analyst chooses exploitable: missing a real vulnerability is worse than a false alarm.
 
-**Output (`AnalystVerdict`).**
+**Output.** Structured output binds the LLM to this Pydantic schema:
 
-| Field | Type | Meaning |
-|-------|------|---------|
-| `is_vulnerable` | `bool` or `null` | True (exploitable), False (not exploitable), null (undecided) |
-| `confidence` | `float` in 0.0-1.0 | Self-reported confidence, before calibration |
-| `reasoning` | `str` | The analyst's justification |
-| `citation_lines` | `list[str]` | `file:line` references behind each claim |
-| `evidence_refs` | `list[str]` | Files or evidence items relied upon |
-| `sample_temperature` | `float` | Temperature that produced this sample (set by the node, not the model) |
+```python
+class AnalystVerdict(BaseModel):
+    is_vulnerable: Optional[bool]            # True (exploitable), False (not), None (undecided)
+    confidence: float                        # ge=0.0, le=1.0; self-report, before calibration
+    reasoning: str
+    citation_lines: List[str] = []           # "file:line" per claim
+    evidence_refs: List[str] = []            # files or evidence items relied upon
+    sample_temperature: Optional[float] = None  # set by the node, not the model
+```
 
 The self-reported `confidence` is recorded but is not the number that ends up in the final `TriageDecision`. Calibration is done by the aggregator.
 
@@ -165,19 +219,35 @@ The self-reported `confidence` is recorded but is not the number that ends up in
 
 **LLM client.** A separate `ChatVertexAI.with_structured_output(CritiqueResult)` at `CRITIC_TEMPERATURE = 0.6`, higher than the analyst's slot temperature so the critic is less likely to mirror the analyst's reasoning.
 
-**Inputs.** The critic's system prompt is the adversarial-review prompt plus the rendered checklist. The CODE BANK is appended as a `HumanMessage`. The analyst's last verdict (rendered as the `is_vulnerable`, `confidence`, `reasoning` and `citation_lines`) is appended as another `HumanMessage` so it lands in the request `contents` rather than only in `system_instruction`.
+**Prompt anatomy.** `build_critic_messages` returns:
 
-**Output (`CritiqueResult`).**
+```mermaid
+flowchart TB
+    sys["<b>SystemMessage</b><br/>CRITIC_SYSTEM_PROMPT<br/>+ render_checklist_section(checklist)"]
+    bank["<b>HumanMessage</b><br/>format_code_bank(state)"]
+    v["<b>HumanMessage</b><br/>## ANALYST VERDICT TO CRITIQUE<br/>is_vulnerable, confidence, reasoning, citations<br/>(from state.samples[-1])"]
+    sys --> bank --> v
+```
 
-| Field | Type | Meaning |
-|-------|------|---------|
-| `decision` | `CritiqueDecision` enum | `APPROVED`, `NEEDS_MORE_RESEARCH` or `REANALYZE` |
-| `rationale` | `str` | One-paragraph explanation |
-| `weakest_point` | `str` (required) | The single most fragile part of the verdict; required even on `APPROVED` |
-| `gaps` | `list[str]` | Free-form list of weak spots |
-| `required_information` | `list[str]` | Used when `NEEDS_MORE_RESEARCH`: what the next research round must collect |
-| `reanalysis_feedback` | `str` | Used when `REANALYZE`: the specific correction the analyst must apply |
-| `citation_lines` | `list[str]` | `file:line` references for the critique |
+The verdict-block content is rendered by `_render_verdict` from the most recent `AnalystVerdict`. Sending it as a `HumanMessage` keeps it in the request `contents` rather than only the `system_instruction`, so the critic always has at least one non-system turn (Gemini constraint).
+
+**Output.** Structured output binds the LLM to this Pydantic schema:
+
+```python
+class CritiqueDecision(str, Enum):
+    APPROVED = "APPROVED"
+    NEEDS_MORE_RESEARCH = "NEEDS_MORE_RESEARCH"
+    REANALYZE = "REANALYZE"
+
+class CritiqueResult(BaseModel):
+    decision: CritiqueDecision
+    rationale: str
+    weakest_point: str                # required even on APPROVED
+    gaps: List[str] = []
+    required_information: List[str] = []   # populated when NEEDS_MORE_RESEARCH
+    reanalysis_feedback: str = ""          # populated when REANALYZE
+    citation_lines: List[str] = []
+```
 
 **Decision semantics.**
 
@@ -217,6 +287,54 @@ with `CONFIDENCE_AGREEMENT_WEIGHT = 0.7`. The `agreement_rate` is the fraction o
 **State writes.** `verdict` (the `TriageDecision`) and `stop_reason`.
 
 The `suggested_state` on the returned `TriageDecision` is derived from the classification and confidence by `derive_state` (`sast_triage/agent_models.py`); see "Output model" below.
+
+### Sampling-loop scenarios
+
+How the analyst, critic and routing interact to produce a self-consistent sample set. Three representative patterns:
+
+**A. Clean majority at `INITIAL_SAMPLES`.** The first two samples agree; the run stops at two.
+
+```
+research                                                  evidence accumulates
+analyst   T=0.1   append   vote=True        samples=[T]
+critic    APPROVED                          target=INITIAL_SAMPLES=2
+                                            len(samples)=1 < 2 -> analyst
+analyst   T=0.3   append   vote=True        samples=[T, T]
+critic    APPROVED                          has_majority(T,T) -> target stays 2
+                                            len(samples)=2 >= 2 -> aggregate
+aggregate                                   agreement_rate=1.0, classification=True
+```
+
+**B. Adaptive tiebreak to `DEFAULT_SAMPLES`.** Samples 1 and 2 disagree; a third sample breaks the tie.
+
+```
+research
+analyst   T=0.1   append   vote=True        samples=[T]
+critic    APPROVED                          target=2, len(samples)=1 < 2 -> analyst
+analyst   T=0.3   append   vote=False       samples=[T, F]
+critic    APPROVED                          no majority -> target rises to 3
+                                            len(samples)=2 < 3 -> analyst
+analyst   T=0.5   append   vote=True        samples=[T, F, T]
+critic    APPROVED                          has_majority(T,F,T) -> target=3
+                                            len(samples)=3 >= 3 -> aggregate
+aggregate                                   agreement_rate=2/3, classification=True
+```
+
+**C. Reanalysis loop.** The critic rejects the analyst's reasoning; the analyst rewrites the slot rather than appending.
+
+```
+research
+analyst   T=0.1   append   vote=True        samples=[T], reanalysis_count=0
+critic    REANALYZE                         reanalysis_count < MAX_REANALYSIS_LOOPS=2 -> analyst
+analyst   T=0.1   REPLACE  vote=False       samples=[F], reanalysis_count=1
+                                            (slot_index stays 0, so temperature stays 0.1)
+critic    APPROVED                          target=2, len(samples)=1 < 2 -> analyst
+analyst   T=0.3   append   vote=False       samples=[F, F]
+critic    APPROVED                          has_majority(F,F) -> aggregate
+aggregate                                   agreement_rate=1.0, classification=False
+```
+
+A third consecutive `REANALYZE` would hit `MAX_REANALYSIS_LOOPS`, route to aggregate and record `stop_reason="max_reanalysis"`. A `NEEDS_MORE_RESEARCH` instead would route back to research and replace the in-progress slot the next time the analyst runs; only `REANALYZE` increments `reanalysis_count`.
 
 ### Routing rules
 
@@ -272,6 +390,124 @@ The research node has these tools and only these tools. The analyst and critic u
 
 The codebase root used by these tools is `temp/codebase/` (the cloned, preprocessed repository).
 
+### Worked example: a SQL injection finding
+
+A short end-to-end trace through one finding. The shapes here mirror the per-node prompt-anatomy diagrams above; values are illustrative.
+
+**Finding (as seen at state construction).**
+
+```json
+{
+  "resultHash": "8ac6484c12c49772",
+  "queryName": "SQL_Injection",
+  "cweID": "89",
+  "severity": "HIGH",
+  "state": "TO_VERIFY",
+  "languageName": "Java",
+  "dataflow": [
+    {"fileName": "src/main/java/com/example/api/UserController.java",
+     "line": 42, "method": "getUser", "name": "id"},
+    {"fileName": "src/main/java/com/example/repo/UserRepository.java",
+     "line": 88, "method": "findById", "name": "userId"}
+  ]
+}
+```
+
+**Checklist selection.** `select_checklist(query_name="SQL_Injection", cwe="89")` matches the `queryName` layer of `_mapping.yaml`. The selected checklist is `sqli` (display name "SQL Injection (CWE-89)"). The renderer produces the `### CWE-SPECIFIC CHECKLIST` block that is appended to every LLM-calling node's system prompt.
+
+**After the first research-node visit.** A few tool calls have run. The CODE BANK now contains:
+
+```
+## CODE BANK
+=== src/main/java/com/example/api/UserController.java (read_file) ===
+@GetMapping("/users/{id}")
+public User getUser(@PathVariable String id) {
+    return userRepository.findById(id);
+}
+
+=== src/main/java/com/example/repo/UserRepository.java (read_file) ===
+public User findById(String userId) {
+    String sql = "SELECT * FROM users WHERE id = " + userId;
+    return jdbcTemplate.queryForObject(sql, User.class);
+}
+```
+
+The research LLM emits a response with no tool calls, so routing sends the state to the analyst.
+
+**Analyst call.** The analyst LLM sees the analyst message stack:
+
+- `SystemMessage` = `ANALYST_SYSTEM_PROMPT` + the `## FINDING` block (the JSON above) + the rendered SQL Injection checklist (REQUIRED EVIDENCE, EFFECTIVE CONTROLS, INEFFECTIVE / BYPASSABLE, INVESTIGATION GUIDANCE, COMMON FALSE-POSITIVE PATTERNS).
+- `HumanMessage` = the CODE BANK above.
+
+`state.last_critique is None` on the first analyst run, so no refinement message is appended. The analyst returns an `AnalystVerdict`:
+
+```json
+{
+  "is_vulnerable": true,
+  "confidence": 0.92,
+  "reasoning": "UserRepository.java:88 concatenates `userId` into the SQL string with no parameter binding; jdbcTemplate.queryForObject executes that exact string. The path from @PathVariable in UserController.java:42 is unguarded. Classified INEFFECTIVE: string concatenation in value position matches the checklist's ineffective list.",
+  "citation_lines": [
+    "src/main/java/com/example/api/UserController.java:42",
+    "src/main/java/com/example/repo/UserRepository.java:88"
+  ],
+  "evidence_refs": [
+    "src/main/java/com/example/api/UserController.java",
+    "src/main/java/com/example/repo/UserRepository.java"
+  ],
+  "sample_temperature": null
+}
+```
+
+The node assigns `sample_temperature=0.1` (first slot) and appends the verdict to `state.samples`.
+
+**Critic call.** The critic sees:
+
+- `SystemMessage` = `CRITIC_SYSTEM_PROMPT` + the rendered checklist.
+- `HumanMessage` = the same CODE BANK as above.
+- `HumanMessage` = the rendered verdict:
+
+```
+## ANALYST VERDICT TO CRITIQUE
+is_vulnerable: True
+confidence: 0.92
+reasoning: UserRepository.java:88 concatenates `userId`...
+citations: ['src/.../UserController.java:42', 'src/.../UserRepository.java:88']
+```
+
+The critic returns a `CritiqueResult`:
+
+```json
+{
+  "decision": "APPROVED",
+  "rationale": "The exact concatenation at UserRepository.java:88 is cited; no bound-parameter call appears in the evidence. The verdict matches the checklist's first ineffective pattern.",
+  "weakest_point": "The evidence reads only the controller and repository; a wrapper higher in the call stack could in principle bind parameters before reaching this method. Judged unlikely given the call site, but not proven.",
+  "gaps": [],
+  "required_information": [],
+  "reanalysis_feedback": "",
+  "citation_lines": ["src/main/java/com/example/repo/UserRepository.java:88"]
+}
+```
+
+Routing: `decision == APPROVED`, `len(state.samples)=1`, `target_samples_for(state)=INITIAL_SAMPLES=2`, so `1 < 2`: back to the analyst for a second sample at `T=0.3`.
+
+**Second analyst sample.** The second run sees the same CODE BANK; the temperature differs. It returns another `is_vulnerable=true` verdict. `samples` is now length 2, both `true`. `has_majority` is true; `target_samples_for` returns 2; routing sends the state to aggregate.
+
+**Aggregate.** Two samples, both `is_vulnerable=true`. `compute_stop_reason(state)` returns `"approved"`. `aggregate_samples` produces:
+
+```json
+{
+  "resultHash": "8ac6484c12c49772",
+  "is_vulnerable": true,
+  "confidence": 0.82,
+  "suggested_state": "CONFIRMED",
+  "justification": "Self-consistency over 2 samples: 100% agreed is_vulnerable=True. UserRepository.java:88 concatenates `userId`...",
+  "agreement_rate": 1.0,
+  "sample_count": 2
+}
+```
+
+The `0.82` figure comes out of `0.7 * 1.0 + 0.3 * evidence_strength`, with `evidence_strength = 0.5 * 0.4 + 0.5 * 0.4 = 0.4` (two distinct files cited; an average of two citations per sample, both saturating at `_EVIDENCE_SATURATION=5`). `derive_state(true, 0.82)` returns `CONFIRMED`: a positive classification is always surfaced regardless of confidence.
+
 ## CWE checklists
 
 Each finding's analyst and critic prompts are augmented with a CWE-specific evidence checklist. A checklist supplies the required evidence, the controls that genuinely neutralize this vulnerability class, those that look like controls but do not, investigation guidance and common false-positive patterns.
@@ -293,34 +529,30 @@ Each finding's output separates two concerns:
 - **Classification** (`is_vulnerable: true | false | null`, plus a `confidence` in 0.0-1.0): what the agent believes about exploitability.
 - **Disposition** (`suggested_state`): what to do about it, derived deterministically from the classification and confidence by `derive_state` in `sast_triage/agent_models.py`.
 
-The derivation, briefly: a positive (`is_vulnerable=true`) is always `CONFIRMED` regardless of confidence; a negative at or above `CONFIDENCE_THRESHOLD` is `NOT_EXPLOITABLE`; below it, `PROPOSED_NOT_EXPLOITABLE`; an undecided classification (`null`) is `REFUSED`. The full table and per-state rationale lives in [usage-guide.md](usage-guide.md#suggested-state).
+The structured per-finding result:
+
+```python
+class SuggestedState(str, Enum):
+    CONFIRMED = "CONFIRMED"
+    NOT_EXPLOITABLE = "NOT_EXPLOITABLE"
+    PROPOSED_NOT_EXPLOITABLE = "PROPOSED_NOT_EXPLOITABLE"
+    REFUSED = "REFUSED"
+
+class TriageDecision(BaseModel):
+    resultHash: str                                  # Checkmarx result identifier
+    is_vulnerable: Optional[bool]                    # True | False | None
+    confidence: float                                # ge=0.0, le=1.0; calibrated
+    suggested_state: SuggestedState                  # derived from the two above
+    justification: str
+    agreement_rate: Optional[float] = None           # self-consistency diagnostic
+    sample_count: Optional[int] = None               # self-consistency diagnostic
+```
+
+The derivation: a positive (`is_vulnerable=true`) is always `CONFIRMED` regardless of confidence; a negative at or above `CONFIDENCE_THRESHOLD` is `NOT_EXPLOITABLE`; below it, `PROPOSED_NOT_EXPLOITABLE`; an undecided classification (`null`) is `REFUSED`. The full table and per-state rationale lives in [usage-guide.md](usage-guide.md#suggested-state).
 
 Keeping classification and disposition separate means tuning `CONFIDENCE_THRESHOLD` shifts findings between `NOT_EXPLOITABLE` and `PROPOSED_NOT_EXPLOITABLE` without changing the classification metrics the benchmark gates on.
 
 **Read-only constraint:** the tool only reads from Checkmarx One. Every `suggested_state` is advisory and is stored only in the local output file. No triage state is ever written back to Checkmarx.
-
-## Outer pipeline
-
-The outer pipeline is plain Python around the per-finding graph. Interactive mode adds two confirmation prompts but the data flow is the same.
-
-```mermaid
-flowchart LR
-    A[CLI input] --> B[Resolve project and<br/>fetch findings]
-    B --> C[Clone repository]
-    C --> D[Preprocess codebase]
-    D --> E[For each pending finding:<br/>per-finding graph]
-    E --> F[Save results and logs]
-```
-
-Step-by-step:
-
-1. **CLI input:** the user invokes `run` (non-interactive) or `interactive`. Interactive mode collects all configuration via guided prompts and shows a confirmation before continuing.
-2. **Project resolution:** the Checkmarx API client authenticates, looks up the project by name and retrieves the project ID and repository URL.
-3. **Findings fetch:** findings are retrieved from the Checkmarx `/api/results` endpoint, filtered by severity. A client-side state filter is applied afterward.
-4. **Repository clone:** the repository is shallow-cloned (`--depth 1`) into a temporary directory.
-5. **Preprocessing:** obfuscation removes infrastructure patterns (IPs, MACs, FQDNs) and secret masking replaces secrets identified by a Gitleaks CSV report. In interactive mode a preprocessing summary is shown and the user can cancel.
-6. **Analysis:** each pending finding runs through the per-finding analysis graph described above.
-7. **Output:** results are saved incrementally to a timestamped JSON file with metadata.
 
 ## Preprocessing
 
