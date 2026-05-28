@@ -13,7 +13,7 @@ gets guidance.
 import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import yaml
 from pydantic import BaseModel, Field
@@ -128,22 +128,41 @@ def select_checklist(
     CWE, then the configured default. A mapped-but-unloadable checklist falls
     back to the default with a warning; the default itself failing is fatal.
     """
+    checklist, _ = select_checklist_with_method(query_name, cwe)
+    return checklist
+
+
+def select_checklist_with_method(
+    query_name: Optional[str], cwe: Optional[object]
+) -> Tuple[ChecklistDocument, str]:
+    """Like ``select_checklist`` but also returns the resolution layer that
+    matched: ``"query_name"``, ``"cwe"`` or ``"default"``.
+
+    When a mapped (non-default) checklist fails to load and the loader
+    falls back to the default, the returned method is ``"default"``: the
+    label reflects the checklist that was actually applied.
+    """
     mapping = _load_mapping()
 
-    checklist_id = None
+    checklist_id: Optional[str] = None
+    method = "default"
     if query_name:
         checklist_id = mapping["query_name_to_checklist"].get(
             query_name.strip().lower()
         )
+        if checklist_id is not None:
+            method = "query_name"
     if checklist_id is None:
         normalized = normalize_cwe(cwe)
         if normalized:
             checklist_id = mapping["cwe_to_checklist"].get(normalized)
+            if checklist_id is not None:
+                method = "cwe"
     if checklist_id is None:
         checklist_id = mapping["default"]
 
     try:
-        return load_checklist(checklist_id)
+        return load_checklist(checklist_id), method
     except ChecklistError:
         if checklist_id == mapping["default"]:
             raise
@@ -152,7 +171,7 @@ def select_checklist(
             checklist_id,
             mapping["default"],
         )
-        return load_checklist(mapping["default"])
+        return load_checklist(mapping["default"]), "default"
 
 
 def render_checklist_section(checklist: ChecklistDocument) -> str:

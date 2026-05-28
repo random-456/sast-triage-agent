@@ -7,7 +7,8 @@ import csv
 import json
 import datetime
 import logging
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from langchain_google_vertexai import ChatVertexAI
 
@@ -26,7 +27,7 @@ from sast_triage.agent_tools import (
     get_finding_details,
 )
 from sast_triage.agent_logging import AgentLoggingManager
-from sast_triage.checklists import select_checklist
+from sast_triage.checklists import select_checklist_with_method
 from sast_triage.graph import (
     TriageState,
     aggregate_node,
@@ -35,13 +36,22 @@ from sast_triage.graph import (
     make_critic_node,
     make_research_node,
 )
+from sast_triage.session_log import LogMode, SessionLogger
 from config import (
+    ANALYST_TEMPERATURES,
     CODEBASE_DIR,
-    FINDINGS_JSON_FILE,
-    FINDINGS_CSV_FILE,
+    CONFIDENCE_AGREEMENT_WEIGHT,
+    CONFIDENCE_THRESHOLD,
     CRITIC_TEMPERATURE,
-    GRAPH_RECURSION_LIMIT,
     DEFAULT_OUTPUT_DIR,
+    DEFAULT_SAMPLES,
+    FINDINGS_CSV_FILE,
+    FINDINGS_JSON_FILE,
+    GRAPH_RECURSION_LIMIT,
+    INITIAL_SAMPLES,
+    MAX_REANALYSIS_LOOPS,
+    MAX_RESEARCH_ITERATIONS,
+    MAX_TOOL_CALLS_PER_RESEARCH,
 )
 
 
@@ -64,6 +74,7 @@ class SASTTriageAgent:
         repo_url: Optional[str] = None,
         output_dir: str = DEFAULT_OUTPUT_DIR,
         compact_logs: bool = False,
+        log_mode: LogMode = LogMode.RICH,
     ):
         """
         Initialize the SAST Triage Agent.
@@ -83,6 +94,12 @@ class SASTTriageAgent:
             compact_logs: If True, write a reduced agent log (no input
                 prompt bodies, system prompt by hash only, tool result
                 bulk arrays dropped). For development analysis only.
+                Legacy logger; runs in parallel with the new session log
+                during PR 1.
+            log_mode: ``LogMode.RICH`` (default) captures every LLM
+                prompt and response in the new JSONL session log;
+                ``LogMode.OBSERVABILITY`` replaces content with hashes
+                and lengths.
         """
         self.project_name = project_name
         self.project_id = project_id
@@ -102,21 +119,45 @@ class SASTTriageAgent:
             f"Initializing Gemini via Vertex AI: {model_name}"
         )
 
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # New structured session log. Lives alongside AgentLoggingManager
+        # during PR 1 of the logging cutover.
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        self.session_logger = SessionLogger(
+            log_path=log_dir / f"v3_sast_triage_{timestamp}.jsonl",
+            log_mode=log_mode,
+        )
+
         # The per-finding flow is a LangGraph subgraph: a tool-using researcher
         # gathers evidence, structured analyst samples at varied temperature
         # produce verdicts, an adversarial critic reviews them, and the results
         # are aggregated by self-consistency.
         self.research_tools = [read_file, search_in_files, list_directory]
-        research_llm = self._make_llm(temperature).bind_tools(self.research_tools)
+        research_llm = (
+            self._make_llm(temperature)
+            .bind_tools(self.research_tools)
+            .with_config({"tags": ["session_log:mode=with_tools"]})
+        )
+        critic_llm = (
+            self._make_llm(CRITIC_TEMPERATURE)
+            .with_structured_output(CritiqueResult)
+            .with_config(
+                {
+                    "tags": [
+                        "session_log:mode=structured",
+                        "session_log:schema=CritiqueResult",
+                    ]
+                }
+            )
+        )
         self.per_finding_graph = build_per_finding_graph(
             research_node=make_research_node(research_llm, self.research_tools),
             analyst_node=make_analyst_node(self._analyst_llm_for),
-            critic_node=make_critic_node(
-                self._make_llm(CRITIC_TEMPERATURE).with_structured_output(
-                    CritiqueResult
-                )
-            ),
+            critic_node=make_critic_node(critic_llm),
             aggregate_node=aggregate_node,
+            session_logger=self.session_logger,
         )
 
         # Setup agent logging with session context
@@ -131,13 +172,38 @@ class SASTTriageAgent:
             compact_logs=compact_logs,
         )
 
+        self.session_logger.emit_session_start(
+            model=model_name,
+            agent_config=self._agent_config_snapshot(),
+            project_name=project_name,
+            project_id=project_id,
+            scan_id=scan_id,
+            repo_url=repo_url,
+            branch=branch,
+        )
+
         # File to store assessment results (with timestamp)
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         name = project_name or "unknown"
         self.assessments_file = os.path.join(
             output_dir,
             f"findings_assessment_{name}_{timestamp}.json",
         )
+
+    @staticmethod
+    def _agent_config_snapshot() -> Dict[str, Any]:
+        """Constants snapshot for the ``session_start`` event."""
+        return {
+            "INITIAL_SAMPLES": INITIAL_SAMPLES,
+            "DEFAULT_SAMPLES": DEFAULT_SAMPLES,
+            "MAX_RESEARCH_ITERATIONS": MAX_RESEARCH_ITERATIONS,
+            "MAX_REANALYSIS_LOOPS": MAX_REANALYSIS_LOOPS,
+            "MAX_TOOL_CALLS_PER_RESEARCH": MAX_TOOL_CALLS_PER_RESEARCH,
+            "GRAPH_RECURSION_LIMIT": GRAPH_RECURSION_LIMIT,
+            "ANALYST_TEMPERATURES": list(ANALYST_TEMPERATURES),
+            "CRITIC_TEMPERATURE": CRITIC_TEMPERATURE,
+            "CONFIDENCE_AGREEMENT_WEIGHT": CONFIDENCE_AGREEMENT_WEIGHT,
+            "CONFIDENCE_THRESHOLD": CONFIDENCE_THRESHOLD,
+        }
 
     def _make_llm(self, temperature: float) -> ChatVertexAI:
         """Build a Gemini-on-Vertex client at the given temperature."""
@@ -152,9 +218,18 @@ class SASTTriageAgent:
     def _analyst_llm_for(self, temperature: float):
         """Structured-output analyst LLM for a temperature, cached per value."""
         if temperature not in self._structured_llm_cache:
-            self._structured_llm_cache[temperature] = self._make_llm(
-                temperature
-            ).with_structured_output(AnalystVerdict)
+            self._structured_llm_cache[temperature] = (
+                self._make_llm(temperature)
+                .with_structured_output(AnalystVerdict)
+                .with_config(
+                    {
+                        "tags": [
+                            "session_log:mode=structured",
+                            "session_log:schema=AnalystVerdict",
+                        ]
+                    }
+                )
+            )
         return self._structured_llm_cache[temperature]
 
     async def analyze_single_finding(
@@ -190,9 +265,12 @@ class SASTTriageAgent:
 
         try:
             finding = CheckmarxFinding(**finding_details)
-            checklist = select_checklist(finding.queryName, finding.cweID)
+            checklist, checklist_method = select_checklist_with_method(
+                finding.queryName, finding.cweID
+            )
             self.logger.debug(
-                f"Selected checklist '{checklist.checklist_id}' for finding"
+                f"Selected checklist '{checklist.checklist_id}' "
+                f"(method={checklist_method})"
             )
 
             self.agent_logger.log_initial_inputs(
@@ -204,13 +282,40 @@ class SASTTriageAgent:
                 finding.model_dump_json(indent=2),
             )
 
-            state = TriageState(finding=finding, checklist=checklist)
-            result = await self.per_finding_graph.ainvoke(
-                state, config={"recursion_limit": GRAPH_RECURSION_LIMIT}
+            self.session_logger.emit_finding_start(
+                finding_id=result_hash,
+                finding=finding.model_dump(),
+                checklist_id=checklist.checklist_id,
+                checklist_selection_method=checklist_method,
             )
+
+            state = TriageState(finding=finding, checklist=checklist)
+            invoke_config = self.session_logger.attach_to_graph_config(
+                {"recursion_limit": GRAPH_RECURSION_LIMIT}
+            )
+            self.session_logger.emit_graph_invoke_start(
+                finding_id=result_hash,
+                recursion_limit=GRAPH_RECURSION_LIMIT,
+            )
+            try:
+                result = await self.per_finding_graph.ainvoke(
+                    state, config=invoke_config
+                )
+            finally:
+                self.session_logger.emit_graph_invoke_end(
+                    finding_id=result_hash
+                )
             decision = result["verdict"]
+            stop_reason = result.get("stop_reason") if isinstance(
+                result, dict
+            ) else None
 
             self.agent_logger.log_finding_complete(finding_log, decision)
+            self.session_logger.emit_finding_complete(
+                finding_id=result_hash,
+                stop_reason=stop_reason,
+                final_decision=decision.model_dump(),
+            )
             self.logger.info(
                 f"Decision: {decision.suggested_state.value} "
                 f"(confidence: {decision.confidence:.2f})"
@@ -233,6 +338,11 @@ class SASTTriageAgent:
             )
             self.agent_logger.log_finding_complete(
                 finding_log, decision
+            )
+            self.session_logger.emit_finding_complete(
+                finding_id=result_hash,
+                stop_reason=None,
+                final_decision=decision.model_dump(),
             )
             return decision
 
@@ -478,6 +588,8 @@ class SASTTriageAgent:
 
         # Finalize session log with summary
         self.agent_logger.finalize_session(triage_results)
+        self.session_logger.emit_session_end()
+        self.session_logger.finalize()
 
         # Generate summary for display
         summary = output["metadata"]["summary"]

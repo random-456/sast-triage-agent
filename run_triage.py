@@ -62,6 +62,7 @@ async def _run_triage_analysis(
     obfuscation_report=None,
     masking_report=None,
     compact_logs: bool = False,
+    log_mode: str = "rich",
 ) -> int:
     """
     Run the triage analysis on the fetched data.
@@ -90,6 +91,8 @@ async def _run_triage_analysis(
         )
         logger.info(f"Using model: {model_name}")
 
+        from sast_triage.session_log import LogMode
+
         agent = SASTTriageAgent(
             project=gcp_project,
             location=gcp_location,
@@ -102,6 +105,7 @@ async def _run_triage_analysis(
             repo_url=repo_url,
             output_dir=output_dir,
             compact_logs=compact_logs,
+            log_mode=LogMode(log_mode),
         )
 
         # Log preprocessing reports in the session log
@@ -109,6 +113,20 @@ async def _run_triage_analysis(
             agent.agent_logger.log_preprocessing(
                 obfuscation_report=obfuscation_report,
                 masking_report=masking_report,
+            )
+            agent.session_logger.emit_preprocessing_complete(
+                obfuscation_report=(
+                    obfuscation_report.model_dump()
+                    if obfuscation_report is not None
+                    and hasattr(obfuscation_report, "model_dump")
+                    else obfuscation_report
+                ),
+                masking_report=(
+                    masking_report.model_dump()
+                    if masking_report is not None
+                    and hasattr(masking_report, "model_dump")
+                    else masking_report
+                ),
             )
 
         await agent.process_all_findings(output_dir)
@@ -169,6 +187,7 @@ def execute_triage(
     finding_hashes: Optional[List[str]],
     interactive: bool = False,
     compact_logs: bool = False,
+    log_mode: str = "rich",
 ) -> None:
     """
     Shared triage execution logic used by both run and interactive commands.
@@ -338,6 +357,7 @@ def execute_triage(
                 obfuscation_report=obfuscation_report,
                 masking_report=masking_report,
                 compact_logs=compact_logs,
+                log_mode=log_mode,
             )
         )
 
@@ -433,9 +453,21 @@ def cli():
     "--compact-logs",
     is_flag=True,
     help=(
-        "Write a reduced agent log: omit input prompt bodies, store the "
-        "system prompt by sha256 hash only, and drop bulk arrays from "
-        "tool results. For development/analysis runs only."
+        "Legacy logger: write a reduced agent log (omit input prompt "
+        "bodies, store the system prompt by sha256 hash only, drop bulk "
+        "arrays from tool results). The new --log-mode flag drives the "
+        "structured session log independently."
+    ),
+)
+@click.option(
+    "--log-mode",
+    type=click.Choice(["rich", "observability"], case_sensitive=False),
+    default="rich",
+    show_default=True,
+    help=(
+        "Session log capture mode. 'rich' records every LLM prompt and "
+        "response and every tool call payload (needed for replay). "
+        "'observability' replaces content with hashes and lengths."
     ),
 )
 def run(
@@ -450,6 +482,7 @@ def run(
     finding_hashes: List,
     verbose: bool,
     compact_logs: bool,
+    log_mode: str,
 ) -> None:
     """
     Run triage in non-interactive mode.
@@ -474,6 +507,7 @@ def run(
         finding_hashes=finding_hashes,
         interactive=False,
         compact_logs=compact_logs,
+        log_mode=log_mode,
     )
 
 
@@ -487,12 +521,24 @@ def run(
     "--compact-logs",
     is_flag=True,
     help=(
-        "Write a reduced agent log: omit input prompt bodies, store the "
-        "system prompt by sha256 hash only, and drop bulk arrays from "
-        "tool results. For development/analysis runs only."
+        "Legacy logger: write a reduced agent log (omit input prompt "
+        "bodies, store the system prompt by sha256 hash only, drop bulk "
+        "arrays from tool results). The new --log-mode flag drives the "
+        "structured session log independently."
     ),
 )
-def interactive(verbose: bool, compact_logs: bool) -> None:
+@click.option(
+    "--log-mode",
+    type=click.Choice(["rich", "observability"], case_sensitive=False),
+    default="rich",
+    show_default=True,
+    help=(
+        "Session log capture mode. 'rich' records every LLM prompt and "
+        "response and every tool call payload (needed for replay). "
+        "'observability' replaces content with hashes and lengths."
+    ),
+)
+def interactive(verbose: bool, compact_logs: bool, log_mode: str) -> None:
     """Run triage in interactive mode with guided prompts."""
     display_banner(APP_NAME)
     setup_logging(logging.DEBUG) if verbose else setup_logging(logging.INFO)
@@ -522,6 +568,7 @@ def interactive(verbose: bool, compact_logs: bool) -> None:
         finding_hashes=config["finding_hashes"],
         interactive=True,
         compact_logs=compact_logs,
+        log_mode=log_mode,
     )
 
 
