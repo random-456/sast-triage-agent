@@ -16,7 +16,7 @@ python run_benchmark.py [OPTIONS]
 |--------|---------|-------------|
 | `--model` | `gemini-2.5-pro` | AI model used for triage |
 | `--output` | `output` | Root output directory |
-| `--compact-logs` | `false` | Forward `--compact-logs` to each `run_triage` invocation. Dev analysis only. |
+| `--log-mode` | `rich` | Forward `--log-mode` to each `run_triage` invocation. `observability` skips raw prompt/response capture in the session log. |
 | `-v, --verbose` | `false` | Enable debug-level logging |
 
 Each dataset is paired with a Gitleaks CSV report so that secret masking runs as part of the benchmark, mirroring production preprocessing. See [Secret Reports](#secret-reports) below.

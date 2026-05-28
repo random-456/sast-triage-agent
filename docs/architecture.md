@@ -571,14 +571,20 @@ Auth is via Application Default Credentials (`gcloud auth application-default lo
 
 ## Session logging
 
-Every triage session produces a timestamped JSON log file in the `logs/` directory containing:
+Every triage session writes a JSONL event stream to `logs/sast_triage_<timestamp>.jsonl`. One event per line, append-only, flushed per write so a process crash leaves a clean prefix of complete events.
 
-- **Session metadata:** model, temperature, project details, branch and repository URL.
-- **Preprocessing reports:** obfuscation and masking summaries.
-- **Per-finding inputs:** the finding details, the selected checklist id and the final decision.
-- **Session summary:** counts for `confirmed`, `not_exploitable`, `proposed_not_exploitable` and `refused`, plus `refusal_rate` and aggregate token usage.
+Each event has a small envelope: `type` (discriminator), `v` (per-type schema version), `ts` (ISO-8601 UTC), `seq` (monotonic per-session integer), `session_id`. Per-finding events additionally carry `finding_id`; node, LLM and tool events also carry `run_id` and `parent_run_id` so a viewer can reconstruct the natural tree (`session → finding → node visit → llm_call → tool_call`).
 
-The system prompt is recorded once at the session level and referenced by hash from each per-finding entry so it is not duplicated N times in long runs. The `--compact-logs` flag further strips bulk arrays (file contents, search hits, directory listings) from logged tool results for development analysis.
+Thirteen event types: `session_start`, `preprocessing_complete`, `finding_start`, `graph_invoke_start`, `node_enter`, `node_exit`, `llm_call`, `tool_call`, `route_decision`, `error`, `graph_invoke_end`, `finding_complete`, `session_end`. Each is a Pydantic model in `sast_triage/session_log/events.py`; the discriminated union `SessionLogEvent` parses any log line via `TypeAdapter`. The full schema, field reference and a worked example are in [session-log.md](session-log.md).
+
+Capture is hybrid. One `AsyncCallbackHandler` (`TriageLoggingCallback`) is attached at graph-invoke time and propagates through every node, every `bind_tools` / `with_structured_output` wrapper and every tool; it emits the node, LLM, tool and error events. The three pure routing functions in `sast_triage/graph/routing.py` are wrapped at build time with a `log_route` decorator that emits `route_decision` (LangGraph's conditional edges do not surface as chain callbacks). The agent emits the session-level and finding-level events directly.
+
+Two capture modes, selectable via `--log-mode {rich,observability}` (default `rich`):
+
+- **`rich`:** every `llm_call` records the full `messages_in` (LangChain messages as dicts) and the raw `LLMResult` as `response`. Sufficient to replay a finding against a stub LLM without re-calling Vertex.
+- **`observability`:** the same events with `messages_in` / `response` / tool `result` replaced by a SHA-256 hash prefix and a character count. Token usage, durations and structural fields are always recorded.
+
+Token usage is captured per `llm_call` from `AIMessage.usage_metadata` and aggregated into `finding_complete.total_tokens` and `session_end.total_tokens`.
 
 ## Output structure
 

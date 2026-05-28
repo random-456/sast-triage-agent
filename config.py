@@ -24,7 +24,6 @@ DEFAULT_GCP_LOCATION = "europe-west4"  # Default Vertex AI region
 
 # Analysis Configuration
 MAX_SEARCH_RESULTS = 50  # Safety cap for search results
-MAX_LOG_RESULT_LENGTH = 5000  # Maximum length for logging tool results
 
 # Per-finding graph circuit breakers (Phase 2 LangGraph subgraph)
 MAX_RESEARCH_ITERATIONS = 5  # Research-node visits before a forced aggregate
