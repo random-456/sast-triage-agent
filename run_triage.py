@@ -61,7 +61,6 @@ async def _run_triage_analysis(
     repo_url: Optional[str] = None,
     obfuscation_report=None,
     masking_report=None,
-    compact_logs: bool = False,
     log_mode: str = "rich",
 ) -> int:
     """
@@ -104,16 +103,11 @@ async def _run_triage_analysis(
             branch=branch,
             repo_url=repo_url,
             output_dir=output_dir,
-            compact_logs=compact_logs,
             log_mode=LogMode(log_mode),
         )
 
-        # Log preprocessing reports in the session log
+        # Record preprocessing reports in the session log.
         if obfuscation_report or masking_report:
-            agent.agent_logger.log_preprocessing(
-                obfuscation_report=obfuscation_report,
-                masking_report=masking_report,
-            )
             agent.session_logger.emit_preprocessing_complete(
                 obfuscation_report=(
                     obfuscation_report.model_dump()
@@ -186,7 +180,6 @@ def execute_triage(
     keep_temp: bool,
     finding_hashes: Optional[List[str]],
     interactive: bool = False,
-    compact_logs: bool = False,
     log_mode: str = "rich",
 ) -> None:
     """
@@ -356,7 +349,6 @@ def execute_triage(
                 repo_url=repo_url,
                 obfuscation_report=obfuscation_report,
                 masking_report=masking_report,
-                compact_logs=compact_logs,
                 log_mode=log_mode,
             )
         )
@@ -450,16 +442,6 @@ def cli():
     help="Enable verbose output",
 )
 @click.option(
-    "--compact-logs",
-    is_flag=True,
-    help=(
-        "Legacy logger: write a reduced agent log (omit input prompt "
-        "bodies, store the system prompt by sha256 hash only, drop bulk "
-        "arrays from tool results). The new --log-mode flag drives the "
-        "structured session log independently."
-    ),
-)
-@click.option(
     "--log-mode",
     type=click.Choice(["rich", "observability"], case_sensitive=False),
     default="rich",
@@ -481,7 +463,6 @@ def run(
     keep_temp: bool,
     finding_hashes: List,
     verbose: bool,
-    compact_logs: bool,
     log_mode: str,
 ) -> None:
     """
@@ -506,7 +487,6 @@ def run(
         keep_temp=keep_temp,
         finding_hashes=finding_hashes,
         interactive=False,
-        compact_logs=compact_logs,
         log_mode=log_mode,
     )
 
@@ -516,16 +496,6 @@ def run(
     "-v", "--verbose",
     is_flag=True,
     help="Enable verbose output",
-)
-@click.option(
-    "--compact-logs",
-    is_flag=True,
-    help=(
-        "Legacy logger: write a reduced agent log (omit input prompt "
-        "bodies, store the system prompt by sha256 hash only, drop bulk "
-        "arrays from tool results). The new --log-mode flag drives the "
-        "structured session log independently."
-    ),
 )
 @click.option(
     "--log-mode",
@@ -538,7 +508,7 @@ def run(
         "'observability' replaces content with hashes and lengths."
     ),
 )
-def interactive(verbose: bool, compact_logs: bool, log_mode: str) -> None:
+def interactive(verbose: bool, log_mode: str) -> None:
     """Run triage in interactive mode with guided prompts."""
     display_banner(APP_NAME)
     setup_logging(logging.DEBUG) if verbose else setup_logging(logging.INFO)
@@ -567,7 +537,6 @@ def interactive(verbose: bool, compact_logs: bool, log_mode: str) -> None:
         keep_temp=False,
         finding_hashes=config["finding_hashes"],
         interactive=True,
-        compact_logs=compact_logs,
         log_mode=log_mode,
     )
 

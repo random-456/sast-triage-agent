@@ -22,7 +22,7 @@ python run_triage.py run PROJECT_NAME --gitleaks-report <path|none> [OPTIONS]
 | `--gitleaks-report` | -- | Path to Gitleaks CSV, or `none` (required) |
 | `--output` | `output` | Output directory |
 | `--keep-temp` | `false` | Preserve temp directory after execution |
-| `--compact-logs` | `false` | Reduced agent log (no input prompt bodies, system prompt by hash, tool result bulk arrays dropped). Dev analysis only. |
+| `--log-mode` | `rich` | Session log capture: `rich` records every LLM prompt and response (sufficient for replay); `observability` replaces content with hashes and lengths. |
 | `-v, --verbose` | `false` | Enable debug-level logging |
 
 ### Examples

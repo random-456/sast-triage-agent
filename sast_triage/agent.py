@@ -26,7 +26,6 @@ from sast_triage.agent_tools import (
     parse_csv_findings,
     get_finding_details,
 )
-from sast_triage.agent_logging import AgentLoggingManager
 from sast_triage.checklists import select_checklist_with_method
 from sast_triage.graph import (
     TriageState,
@@ -73,7 +72,6 @@ class SASTTriageAgent:
         branch: Optional[str] = None,
         repo_url: Optional[str] = None,
         output_dir: str = DEFAULT_OUTPUT_DIR,
-        compact_logs: bool = False,
         log_mode: LogMode = LogMode.RICH,
     ):
         """
@@ -91,13 +89,8 @@ class SASTTriageAgent:
             branch: Git branch being analyzed.
             repo_url: Repository URL for logging.
             output_dir: Directory for output files.
-            compact_logs: If True, write a reduced agent log (no input
-                prompt bodies, system prompt by hash only, tool result
-                bulk arrays dropped). For development analysis only.
-                Legacy logger; runs in parallel with the new session log
-                during PR 1.
             log_mode: ``LogMode.RICH`` (default) captures every LLM
-                prompt and response in the new JSONL session log;
+                prompt and response verbatim in the JSONL session log;
                 ``LogMode.OBSERVABILITY`` replaces content with hashes
                 and lengths.
         """
@@ -121,12 +114,12 @@ class SASTTriageAgent:
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # New structured session log. Lives alongside AgentLoggingManager
-        # during PR 1 of the logging cutover.
+        # Structured JSONL session log; see docs/session-log.md for the
+        # event schema.
         log_dir = Path("logs")
         log_dir.mkdir(exist_ok=True)
         self.session_logger = SessionLogger(
-            log_path=log_dir / f"v3_sast_triage_{timestamp}.jsonl",
+            log_path=log_dir / f"sast_triage_{timestamp}.jsonl",
             log_mode=log_mode,
         )
 
@@ -158,18 +151,6 @@ class SASTTriageAgent:
             critic_node=make_critic_node(critic_llm),
             aggregate_node=aggregate_node,
             session_logger=self.session_logger,
-        )
-
-        # Setup agent logging with session context
-        self.agent_logger = AgentLoggingManager(
-            model_name=model_name,
-            temperature=temperature,
-            project_name=project_name,
-            project_id=project_id,
-            scan_id=scan_id,
-            repo_url=repo_url,
-            branch=branch,
-            compact_logs=compact_logs,
         )
 
         self.session_logger.emit_session_start(
@@ -244,8 +225,6 @@ class SASTTriageAgent:
         Returns:
             TriageDecision with analysis results
         """
-        finding_log = self.agent_logger.log_finding_start(result_hash)
-
         finding_details = get_finding_details.invoke(
             {"result_hash": result_hash}
         )
@@ -260,7 +239,6 @@ class SASTTriageAgent:
                     f"{finding_details['error']}"
                 ),
             )
-            self.agent_logger.log_finding_complete(finding_log, decision)
             return decision
 
         try:
@@ -271,15 +249,6 @@ class SASTTriageAgent:
             self.logger.debug(
                 f"Selected checklist '{checklist.checklist_id}' "
                 f"(method={checklist_method})"
-            )
-
-            self.agent_logger.log_initial_inputs(
-                finding_log,
-                (
-                    "Per-finding graph: researcher + structured analyst "
-                    f"samples + critic. Checklist: {checklist.checklist_id}"
-                ),
-                finding.model_dump_json(indent=2),
             )
 
             self.session_logger.emit_finding_start(
@@ -310,7 +279,6 @@ class SASTTriageAgent:
                 result, dict
             ) else None
 
-            self.agent_logger.log_finding_complete(finding_log, decision)
             self.session_logger.emit_finding_complete(
                 finding_id=result_hash,
                 stop_reason=stop_reason,
@@ -335,9 +303,6 @@ class SASTTriageAgent:
                     f"Analysis failed due to error: {str(e)}. "
                     f"Manual review required."
                 ),
-            )
-            self.agent_logger.log_finding_complete(
-                finding_log, decision
             )
             self.session_logger.emit_finding_complete(
                 finding_id=result_hash,
@@ -587,7 +552,6 @@ class SASTTriageAgent:
             json.dump(output, f, indent=2)
 
         # Finalize session log with summary
-        self.agent_logger.finalize_session(triage_results)
         self.session_logger.emit_session_end()
         self.session_logger.finalize()
 

@@ -15,14 +15,17 @@ from config import DEFAULT_OUTPUT_DIR, APP_NAME, BENCHMARK_DATASETS_DIR, BENCHMA
 @click.option("--output", "output_dir", default=DEFAULT_OUTPUT_DIR, help="Output directory")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
 @click.option(
-    "--compact-logs",
-    is_flag=True,
+    "--log-mode",
+    type=click.Choice(["rich", "observability"], case_sensitive=False),
+    default="rich",
+    show_default=True,
     help=(
-        "Forward --compact-logs to each run_triage invocation. "
-        "Reduced agent log; for development analysis only."
+        "Forward --log-mode to each run_triage invocation. 'rich' "
+        "captures full prompts and responses; 'observability' replaces "
+        "content with hashes and lengths."
     ),
 )
-def run_benchmark(model_name: str, output_dir: str, verbose: bool, compact_logs: bool):
+def run_benchmark(model_name: str, output_dir: str, verbose: bool, log_mode: str):
     """
     Run a benchmark based on a defined set of CheckmarxOne findings. Results are saved to the chosen output directory.
     """
@@ -60,9 +63,7 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool, compact_logs:
             project_output_dir = os.path.join(output_dir, project_name)
             os.makedirs(project_output_dir, exist_ok=True)
 
-            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", gitleaks_report]
-            if compact_logs:
-                parameters.append("--compact-logs")
+            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", gitleaks_report, "--log-mode", log_mode]
 
             logger.debug(f"Launching run_triage command with parameters : {' '.join(parameters)}")
             result = runner.invoke(cli, ["run"] + parameters)

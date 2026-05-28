@@ -58,7 +58,7 @@ Guided prompts collect all configuration. A summary is displayed for confirmatio
 | `--branch` | `default.SecurityPipeline` | Git branch to analyze |
 | `--findings` | -- | Specific result hashes (bypasses filters) |
 | `--model` | `gemini-2.5-pro` | AI model for analysis |
-| `--compact-logs` | `false` | Reduced agent log (no input prompt bodies, system prompt by hash, tool result bulk arrays dropped). Dev analysis only. |
+| `--log-mode` | `rich` | Session log capture mode: `rich` records every LLM prompt and response (needed for replay); `observability` replaces content with hashes and lengths. |
 | `-v, --verbose` | `false` | Enable debug-level logging |
 
 ## Output
@@ -116,6 +116,7 @@ Detailed documentation is available in the [`docs/`](docs/) directory:
 
 - [Architecture](docs/architecture.md): system overview, the per-finding graph in detail (research, analyst, critic and aggregate nodes), state threading, routing, circuit breakers.
 - [CWE Checklists](docs/checklists.md): the checklist schema, the shipped checklists, selection logic and how to add a new one.
+- [Session Log](docs/session-log.md): JSONL event schema written per session; the reference for downstream tooling and the viewer.
 - [Usage Guide](docs/usage-guide.md): CLI reference for both modes with examples, output schema and state derivation.
 - [Preprocessing](docs/preprocessing.md): obfuscation and secret masking pipeline.
 - [Configuration](docs/configuration.md): environment variables, constants and the per-finding graph configuration.

@@ -73,7 +73,6 @@ Defined in `config.py`. These rarely need modification but can be adjusted for s
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `MAX_SEARCH_RESULTS` | `50` | Safety cap for code search results returned to the LLM |
-| `MAX_LOG_RESULT_LENGTH` | `5000` | Maximum character length for tool results in session logs |
 
 ### Per-Finding Graph Configuration
 
