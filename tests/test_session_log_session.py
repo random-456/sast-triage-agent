@@ -4,11 +4,20 @@ Exercise the emit methods directly and check what lands on disk. These
 do not run the graph; the integration test does that.
 """
 
+import dataclasses
 import json
 
 import pytest
 from pydantic import TypeAdapter
 
+from sast_triage.preprocessing.obfuscation import (
+    ObfuscationEntry,
+    ObfuscationReport,
+)
+from sast_triage.preprocessing.secret_masking import (
+    MaskingEntry,
+    MaskingReport,
+)
 from sast_triage.session_log.events import (
     LogMode,
     SessionLogEvent,
@@ -56,6 +65,61 @@ def test_session_start_event_is_written(logger_rich, tmp_path):
     assert e.model == "gemini-2.5-pro"
     assert e.agent_config["INITIAL_SAMPLES"] == 2
     assert e.seq == 1
+
+
+def test_preprocessing_complete_accepts_asdict_of_preprocessing_dataclasses(
+    logger_rich,
+):
+    """ObfuscationReport and MaskingReport are dataclasses, not Pydantic
+    models, so the run_triage entry point feeds dataclasses.asdict output
+    to emit_preprocessing_complete. Lock that path down end to end: build
+    realistic reports, asdict them, emit, parse back from disk and assert
+    the nested entries round-trip.
+    """
+    obf = ObfuscationReport(
+        total_files_processed=17,
+        total_files_modified=17,
+        total_replacements=65,
+        replacements_by_type={"IPV4": 22, "IPV6": 36, "FQDN": 7},
+        entries=[
+            ObfuscationEntry(
+                file="a.py",
+                line=10,
+                pattern_type="IPV4",
+                original="192.168.56.110",
+            )
+        ],
+    )
+    msk = MaskingReport(
+        csv_path="report.csv",
+        total_entries_in_csv=3,
+        total_secrets_masked=2,
+        files_modified=1,
+        entries=[
+            MaskingEntry(
+                file="b.py",
+                start_line=1,
+                end_line=1,
+                start_column=10,
+                end_column=20,
+                description="AWS key",
+                secret_preview="AKIA***",
+            )
+        ],
+    )
+    logger_rich.emit_preprocessing_complete(
+        obfuscation_report=dataclasses.asdict(obf),
+        masking_report=dataclasses.asdict(msk),
+    )
+    events = _read_events(logger_rich.log_path)
+    assert len(events) == 1
+    e = events[0]
+    assert e.type == "preprocessing_complete"
+    assert e.obfuscation_report["total_replacements"] == 65
+    assert e.obfuscation_report["replacements_by_type"]["IPV4"] == 22
+    assert e.obfuscation_report["entries"][0]["original"] == "192.168.56.110"
+    assert e.masking_report["csv_path"] == "report.csv"
+    assert e.masking_report["entries"][0]["secret_preview"] == "AKIA***"
 
 
 def test_seq_is_strictly_monotonic(logger_rich):
