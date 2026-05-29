@@ -4,7 +4,8 @@ Every triage session writes a JSONL event stream to
 `logs/sast_triage_<timestamp>.jsonl`. One JSON object per line,
 append-only, flushed per write so a crash leaves a clean prefix of
 complete events. This document is the reference for downstream tooling:
-the replay harness, the future viewer, ad-hoc analysis scripts.
+the replay harness, the [Session Log Viewer](session-log-viewer.md) under
+`viewer/`, and ad-hoc analysis scripts.
 
 ## File shape
 
