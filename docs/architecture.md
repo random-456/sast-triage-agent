@@ -586,6 +586,8 @@ Two capture modes, selectable via `--log-mode {rich,observability}` (default `ri
 
 Token usage is captured per `llm_call` from `AIMessage.usage_metadata` and aggregated into `finding_complete.total_tokens` and `session_end.total_tokens`.
 
+A local browser-based viewer for these logs lives under `viewer/`; see [session-log-viewer.md](session-log-viewer.md). The viewer reads the event schema and the graph topology, so substantial changes to either need a corresponding viewer update.
+
 ## Output structure
 
 ```
