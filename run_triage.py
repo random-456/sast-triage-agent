@@ -8,6 +8,7 @@ Usage:
 """
 
 import asyncio
+import dataclasses
 import logging
 import os
 import sys
@@ -106,20 +107,20 @@ async def _run_triage_analysis(
             log_mode=LogMode(log_mode),
         )
 
-        # Record preprocessing reports in the session log.
+        # Record preprocessing reports in the session log. The reports are
+        # dataclasses (see sast_triage/preprocessing), so use dataclasses.asdict
+        # to coerce them to the dict shape PreprocessingCompleteEvent expects.
         if obfuscation_report or masking_report:
             agent.session_logger.emit_preprocessing_complete(
                 obfuscation_report=(
-                    obfuscation_report.model_dump()
+                    dataclasses.asdict(obfuscation_report)
                     if obfuscation_report is not None
-                    and hasattr(obfuscation_report, "model_dump")
-                    else obfuscation_report
+                    else None
                 ),
                 masking_report=(
-                    masking_report.model_dump()
+                    dataclasses.asdict(masking_report)
                     if masking_report is not None
-                    and hasattr(masking_report, "model_dump")
-                    else masking_report
+                    else None
                 ),
             )
 
