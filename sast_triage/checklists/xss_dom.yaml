@@ -1,0 +1,74 @@
+checklist_id: xss_dom
+display_name: "DOM-based Cross-Site Scripting (CWE-79, client-side)"
+
+applies_to:
+  cwes:
+    - CWE-79
+  query_names:
+    - Client_Potential_XSS
+
+evidence_required:
+  - description: "Source is a client-side, attacker-influenced value read by JavaScript in the browser"
+    examples:
+      - "location.href, location.search, location.hash, location.pathname, document.URL, document.referrer, document.cookie"
+      - "window.name, a postMessage payload, a value read from storage or a backend response and rendered client-side"
+  - description: "The client-side sink that writes the value into the DOM, navigates, or executes it (this list is common, not exhaustive: any HTML-parsing, navigation or code sink counts)"
+    examples:
+      - "HTML parsing: innerHTML, outerHTML, insertAdjacentHTML, document.write/writeln, jQuery .html(), Range.createContextualFragment, iframe/element srcdoc"
+      - "navigation/URL: assigning location, location.href, location.assign/replace, window.open, an anchor href, or script.src (javascript: and data: URLs execute); a direct property assignment (el.src = x) is equivalent to setAttribute"
+      - "code execution: eval, Function, setTimeout/setInterval with a string, and event-handler property assignment (el.onclick = string)"
+      - "CSS: element.style, style.cssText, a <style> element or CSSStyleSheet.insertRule (usually data exfiltration rather than script execution, still report-worthy)"
+      - "framework escape hatches: Angular bypassSecurityTrust*, [innerHTML]; React dangerouslySetInnerHTML"
+  - description: "The output context at the sink (HTML body, attribute, URL/href, inline script, CSS), because the correct neutralization depends on it"
+  - description: "Whether a context-correct control is applied at the sink in the browser; server-side validation and the server Content-Type do not apply to a DOM sink"
+
+sanitizer_patterns:
+  effective:
+    - "assigning the value as inert text rather than markup: textContent, innerText, createTextNode, or a framework text binding (React JSX text, Angular interpolation) (language/framework-specific)"
+    - "context-correct client-side encoding matched to the sink before insertion (language-agnostic principle)"
+    - "a vetted, currently maintained client-side HTML sanitizer whose actual configuration you have read and is default or strict (no ADD_TAGS, ADD_ATTR or ALLOW_* flags that re-open vectors), whose version is not subject to a known bypass, and whose output is inserted unmodified, for the HTML-body context only (DOMPurify): it does not cover URL, attribute, CSS or script contexts"
+    - "Trusted Types enforced (not Report-Only) with a policy that actually transforms or validates the input: it neutralizes the injection-sink family (innerHTML, script.src, eval) but NOT navigation sinks (location, window.open), which still need a scheme allowlist (browser-specific)"
+    - "a strict scheme allowlist for a value used as a URL: after lowercasing and stripping whitespace and control characters, permit only a fixed safe set (http, https, mailto or relative) and reject everything else; data:, blob: and vbscript: are unsafe, and a two-item javascript:/data: denylist is not sufficient"
+  ineffective:
+    - "any server-side validation, encoding or Content-Type for a sink that executes in the browser: the source and the sink are both client-side, so the server never sees the exploit"
+    - "blacklist stripping of <script> or keywords: bypassable with event handlers, casing, nesting, or markup the browser re-parses (mutation XSS)"
+    - "HTML-body encoding when the value lands in an attribute, URL, CSS or script context: wrong context (for example HTML-entity encoding into an unquoted or event-handler attribute still executes, because the HTML parser decodes entities before the value is used)"
+    - "encodeURIComponent for a value used as a full URL: does not stop javascript: or data: scheme payloads, which need a scheme allowlist"
+    - "Angular bypassSecurityTrustHtml/Url/ResourceUrl, [innerHTML] without sanitization, React dangerouslySetInnerHTML, or jQuery .html(): these deliberately disable safe-by-default handling"
+    - "sanitizing once but re-serializing or re-parsing before insertion (mutation XSS): the sanitized output must be the exact bytes inserted, in the context the sanitizer assumed"
+
+investigation_guidance: |
+  DOM XSS happens entirely in the browser: an attacker-influenced client-side
+  source flows to a client-side sink that parses it as HTML or executes it, with
+  no round trip a server control could mediate. The server response Content-Type
+  is therefore irrelevant here: a value delivered as JSON and then written to
+  innerHTML by JavaScript is DOM XSS. Find the exact JavaScript sink and the
+  context it writes into.
+
+  Identify the source: URL-derived values (location.*, document.URL,
+  document.referrer, document.cookie), window.name, postMessage payloads, and
+  values read from storage or a backend and then rendered client-side. Identify
+  the sink (common, not exhaustive): HTML-parsing sinks (innerHTML / outerHTML /
+  insertAdjacentHTML, document.write, jQuery .html(), srcdoc), navigation and URL
+  sinks (assigning location / location.href, window.open, an href or script.src,
+  where javascript: and data: URLs execute), code sinks (eval / Function /
+  setTimeout with a string, event-handler property assignment), and framework
+  trust-bypasses (Angular bypassSecurityTrust*, [innerHTML]; React
+  dangerouslySetInnerHTML).
+
+  Modern frameworks are safe by default for text and interpolation, so the
+  exploitable case is a deliberate escape hatch: confirm whether one is on the
+  path. The only effective controls run in the browser: render as inert text,
+  apply context-correct client-side encoding, enforce Trusted Types, or pass the
+  value through a vetted sanitizer for the HTML-body context only. Watch for
+  mutation XSS, where a value sanitized as one fragment is re-parsed differently
+  when it is inserted.
+
+common_false_positive_patterns: |
+  The value reaches the sink as inert text (textContent or a framework text
+  binding) rather than markup. A vetted client-side sanitizer with a verified
+  configuration neutralizes it for the HTML-body context it is inserted into.
+  Trusted Types is enforced so a raw string cannot reach the sink. A value used
+  as a URL passes a scheme allowlist that rejects javascript: and data:. The
+  source is provably fixed by the code (a literal constant or strict enum), not
+  derived from the URL, DOM, storage or a backend response.

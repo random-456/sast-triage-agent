@@ -21,7 +21,7 @@ sanitizer_patterns:
     - "canonicalize the resolved path, then verify it stays within an allowed base directory before use (language-agnostic principle)"
     - "File#getCanonicalPath().startsWith(canonicalBaseDir) with the base also canonicalized (Java)"
     - "resolve then confirm containment: path.resolve(base, input) and check it is still under base (Node.js); os.path.realpath under a base (Python)"
-    - "use only the basename of the input joined to a fixed directory, discarding any directory components"
+    - "use only the basename of the input joined to a fixed directory, discarding any directory components, where the basename extraction strips both forward-slash and backslash separators for the target OS (a POSIX-only split leaves Windows separators intact)"
     - "indirection: map an opaque id or allowlisted name to a known file, never using the raw input as a path"
   ineffective:
     - "blacklisting or stripping ../: bypassable with ....//, encoded (%2e%2e%2f), backslashes, absolute paths or null bytes"
@@ -29,6 +29,7 @@ sanitizer_patterns:
     - "containment check performed before canonicalization, so ../ has not yet been resolved"
     - "checking startsWith on non-canonical strings, which a symlink or .. can defeat"
     - "allowing absolute paths or drive-letter / UNC prefixes to pass through"
+    - "extracting an archive without canonicalizing each entry: in archive extraction (zip-slip) the entry name is the attacker-controlled value, so every destination base.resolve(entryName) must be canonicalized and confirmed under the base before writing; treating the archive as trusted because it was read from disk is not a defense"
 
 investigation_guidance: |
   A correct defense has two parts that must both be present: canonicalize the
@@ -47,16 +48,18 @@ investigation_guidance: |
   and does not canonicalize-then-contain, lean CONFIRMED.
 
   Also check whether the input can be an absolute path or a UNC/drive-prefixed
-  path, which bypasses naive prefix joins entirely. The safest patterns reduce
-  the input to a basename joined to a fixed directory, or map an allowlisted
-  identifier to a known file: if you see one of those applied to the exact
-  tainted value, the finding is likely NOT_EXPLOITABLE. Verify the check
+  path, which bypasses naive prefix joins entirely. The strongest pattern maps
+  an allowlisted identifier to a known file: that is likely NOT_EXPLOITABLE.
+  Reducing the input to a basename joined to a fixed directory is also strong,
+  but only when the basename extraction strips separators for the target OS
+  (a POSIX-only split leaves Windows backslashes intact). Verify any check
   applies to the same value that reaches the sink, not a different copy.
 
 common_false_positive_patterns: |
   The code canonicalizes and then verifies containment within a base directory
-  before the filesystem call. Only the basename is used, with directory
-  components discarded. The input is an allowlisted identifier mapped to a known
-  file rather than a raw path. The path is not actually influenced by user
-  input (fixed or derived from trusted configuration). The code path is test or
-  fixture code.
+  before the filesystem call. Only the basename is used (with a separator-correct
+  basename for the target OS) and all directory components are discarded. The
+  input is an allowlisted identifier mapped to a known file rather than a raw
+  path. The path is not actually influenced by user input (fixed, or derived
+  from configuration the operator controls, not tenant- or API-settable
+  settings). The code path is test or fixture code.

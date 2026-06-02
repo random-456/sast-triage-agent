@@ -49,22 +49,32 @@ investigation_guidance: |
   claim is never sufficient: the escaping must match the context.
 
   Confirm whether the response is actually rendered as HTML. A value reflected
-  into an application/json response consumed by a non-browser client, or into
-  a downloaded attachment, is usually not reflected XSS. Check the
-  Content-Type and how the endpoint is consumed.
+  into a non-rendered response is not reflected XSS only when you can confirm it
+  is not browser-rendered: a non-HTML Content-Type served with
+  X-Content-Type-Options: nosniff, or Content-Disposition: attachment. Do not
+  assume the consumer is a non-browser client. This Content-Type reasoning
+  applies to server-reflected output only: for a client-side/DOM sink (a value
+  written by browser JavaScript into innerHTML, document.write, eval or a
+  framework trust-bypass) the server Content-Type is irrelevant, the value
+  executes in the page regardless, and the DOM XSS checklist applies.
 
-  When a framework template is used, the default is auto-escaping ON, which
-  makes most reflected findings false positives. The exploitable case is when
-  auto-escaping is explicitly bypassed: th:utext, raw JSP expressions,
-  dangerouslySetInnerHTML, direct innerHTML assignment or string-built HTML.
-  Look specifically for those bypasses on the path. A Content-Security-Policy
-  can reduce impact but is defense-in-depth: do not treat it as the control
-  that makes a clear injection NOT_EXPLOITABLE.
+  Framework auto-escaping is per-sink and per-context, not global: confirm it is
+  actually in force at the exact sink rather than assuming it. JSP ${...} and
+  <%= %> are not auto-escaped; React and Angular do not auto-escape URL/href
+  attributes, raw-HTML sinks (dangerouslySetInnerHTML, [innerHTML]) or
+  trust-bypass calls. The exploitable case is when escaping is absent or
+  bypassed at the sink: th:utext, raw JSP expressions, dangerouslySetInnerHTML,
+  direct innerHTML assignment or string-built HTML. If you cannot point to
+  correct escaping at this sink, treat the value as unescaped. A
+  Content-Security-Policy can reduce impact but is defense-in-depth: do not treat
+  it as the control that makes a clear injection NOT_EXPLOITABLE.
 
 common_false_positive_patterns: |
-  Framework auto-escaping renders the value as inert text (React JSX, Angular
-  interpolation, Thymeleaf th:text, escaped JSP). The value is not reflected to
-  a browser-rendered response (logged, returned as JSON to an API client, or
-  used server-side only). The value is strictly constrained before output
+  Framework auto-escaping renders the value as inert text, but only when it is
+  actually applied at this sink and the sink is a text/HTML-body context (not a
+  URL, attribute or script sink): a bare "it is a React/Angular/Thymeleaf app"
+  is not evidence. The value is not reflected to a browser-rendered response
+  (logged, or returned as JSON to a confirmed non-browser client, not a browser
+  that renders it into the DOM). The value is strictly constrained before output
   (enum, integer, allowlisted token). The reflection is into a non-HTML
-  Content-Type that the browser does not execute.
+  Content-Type, served with nosniff, that the browser does not execute.

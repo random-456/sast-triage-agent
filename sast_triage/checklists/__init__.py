@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,13 @@ class EvidenceItem(BaseModel):
     description: str
     examples: List[str] = Field(default_factory=list)
 
+    @field_validator("description")
+    @classmethod
+    def _description_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("evidence description must not be blank")
+        return value
+
 
 class AppliesTo(BaseModel):
     """Which findings a checklist covers."""
@@ -44,10 +51,15 @@ class AppliesTo(BaseModel):
 
 
 class SanitizerPatterns(BaseModel):
-    """Guards split by whether they neutralize this vulnerability class."""
+    """Guards split by whether they neutralize this vulnerability class.
+
+    ``ineffective`` is required and non-empty: the "do NOT accept these" list is
+    the checklist's false-negative guardrail, so a checklist without one is
+    treated as malformed rather than silently rendering no bypass warnings.
+    """
 
     effective: List[str] = Field(default_factory=list)
-    ineffective: List[str] = Field(default_factory=list)
+    ineffective: List[str] = Field(min_length=1)
 
 
 class ChecklistDocument(BaseModel):
@@ -56,10 +68,22 @@ class ChecklistDocument(BaseModel):
     checklist_id: str
     display_name: str
     applies_to: AppliesTo = Field(default_factory=AppliesTo)
-    evidence_required: List[EvidenceItem]
+    evidence_required: List[EvidenceItem] = Field(min_length=1)
     sanitizer_patterns: SanitizerPatterns
     investigation_guidance: str
     common_false_positive_patterns: str
+
+    @field_validator(
+        "checklist_id",
+        "display_name",
+        "investigation_guidance",
+        "common_false_positive_patterns",
+    )
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("field must not be blank")
+        return value
 
 
 def normalize_cwe(cwe: Optional[object]) -> Optional[str]:
@@ -174,6 +198,20 @@ def select_checklist_with_method(
         return load_checklist(mapping["default"]), "default"
 
 
+# Reason: one false-negative-averse stance rendered into every checklist (and
+# therefore seen by the research, analyst and critic nodes) so no per-CWE file
+# can omit or contradict it. The analyst prompt sets the global "when uncertain,
+# choose exploitable" rule; this ties that rule to the source and sink reasoning
+# the checklists drive and shifts the burden of proof onto the control, away
+# from assuming the source is safe.
+_DEFAULT_STANCE = """\
+DEFAULT STANCE (this tool minimizes false negatives: a missed vulnerability is the worst outcome):
+- The sink is decisive. If a tainted value reaches the sink without an effective, context-correct control on that exact value, established in the evidence, the finding is exploitable. A control that is effective for one position or context (a bound parameter for a value, HTML-body encoding for body text) is not effective for another (an identifier position, or a URL, attribute or script context).
+- "Established" means you have read the control and can cite it. A control you assume is present (a framework that "binds by default" or "auto-escapes", a value you label a "plain data argument") is not established: verify it at the exact sink.
+- Source provenance: treat a source whose origin you cannot verify from the evidence (another system, a database or store of unknown provenance, a queued message, an import, an upstream response) as attacker-controlled. Dismiss on source grounds only when the evidence proves the value cannot be attacker-influenced: a literal constant, a strict enum, or a value the code itself fixes.
+- When no effective control is established on the path, lean CONFIRMED over NOT_EXPLOITABLE. If the evidence is genuinely insufficient to decide, set is_vulnerable null rather than guessing."""
+
+
 def render_checklist_section(checklist: ChecklistDocument) -> str:
     """Render a checklist as a prompt section appended to the system prompt."""
     lines: List[str] = [
@@ -206,5 +244,7 @@ def render_checklist_section(checklist: ChecklistDocument) -> str:
         "",
         "COMMON FALSE-POSITIVE PATTERNS:",
         checklist.common_false_positive_patterns.strip(),
+        "",
+        _DEFAULT_STANCE,
     ]
     return "\n".join(lines)

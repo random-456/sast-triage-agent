@@ -29,17 +29,24 @@ sanitizer_patterns:
     - "escaping or quoting shell metacharacters in a string passed to a shell: bypassable across shells and quoting contexts"
     - "blacklisting characters such as ; | & $ ` ( ) < > newline: incomplete and bypassable"
     - "wrapping user input in quotes inside a shell command string"
-    - "Runtime.exec(String) on a single concatenated string, which still tokenizes and can invoke a shell depending on the call"
+    - "Runtime.exec(String) on a single concatenated string: it splits on whitespace and execs the first token directly with no shell, so it does not chain commands but still allows argument injection and splitting; full command injection applies only if that string is then handed to sh -c or cmd /c"
     - "validating the command name but still concatenating attacker-controlled arguments into a shell string"
     - "treating an argument array as safe when a shell is re-enabled anyway: a Windows .bat or .cmd target re-enters cmd.exe and re-interprets metacharacters, and a shell:true (Node) or shell=True (Python) option spawns a shell regardless of how arguments are passed"
+    - "an argument array whose program is itself an interpreter with the tainted value as its code argument (sh -c, bash -c, python -c, node -e, awk, find -exec): no OS shell is involved but this is still code execution"
 
 investigation_guidance: |
   The decisive question is whether a shell is in the loop. If the code passes
   the program and its arguments as a list to an exec-family call that does not
-  spawn a shell (ProcessBuilder, execFile, subprocess with shell=False), then
-  shell metacharacters in an argument are inert data and the finding is
-  usually NOT_EXPLOITABLE, even with no escaping, provided the attacker cannot
-  control the program name or inject extra arguments that change behavior.
+  spawn a shell (ProcessBuilder, execFile, subprocess with shell=False), shell
+  metacharacters in an argument value are inert. That is a real control, but it
+  neutralizes only the argument's content. Before treating it as not exploitable,
+  confirm from the code that (i) the program name is fixed and not
+  attacker-controlled, (ii) the tainted value cannot be parsed as an option
+  (no leading-dash / argument injection), (iii) no shell is re-enabled (a Windows
+  .bat or .cmd target, shell:true or shell=True), and (iv) the program is not
+  itself an interpreter taking the tainted value as code (sh -c, bash -c,
+  python -c, node -e, awk, find -exec). If any of these is unverified, lean
+  exploitable.
 
   If a shell is invoked (sh -c, child_process.exec, shell=True, os.system) and
   any part of the command string is attacker-controlled, treat it as
@@ -58,7 +65,10 @@ investigation_guidance: |
 
 common_false_positive_patterns: |
   The call uses an argument array with no shell (ProcessBuilder, execFile,
-  subprocess shell=False) and the user value is a plain data argument. The
-  command is fully constant with no attacker influence. The input is mapped
-  through a strict allowlist to a known-safe command or argument. The code path
-  is test or build tooling not deployed to production.
+  subprocess shell=False) and the user value is a positional data argument,
+  verified: not parseable as an option, the program name is fixed, the program
+  is not an interpreter taking it as code, and no shell is re-enabled via a
+  wrapper, a .bat/.cmd target or a shell flag. The command is fully constant
+  with no attacker influence. The input is mapped through a strict allowlist to
+  a known-safe command or argument. The code path is test or build tooling not
+  deployed to production.
