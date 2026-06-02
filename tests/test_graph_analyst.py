@@ -23,7 +23,7 @@ class _FakeStructLLM:
         self._result = result
         self._captured = captured
 
-    async def ainvoke(self, messages):
+    async def ainvoke(self, messages, config=None, **kwargs):
         self._captured.append(messages)
         return self._result.model_copy()
 
@@ -64,7 +64,7 @@ class TestSampling:
     async def test_first_run_appends_at_first_temperature(self):
         factory = _AnalystFactory()
         node = make_analyst_node(factory)
-        result = await node(_state())
+        result = await node(_state(), {})
         assert len(result["samples"]) == 1
         assert factory.temps == [0.1]
         assert result["samples"][0].sample_temperature == 0.1
@@ -77,7 +77,7 @@ class TestSampling:
             samples=[_verdict()],
             last_critique=_critique(CritiqueDecision.APPROVED),
         )
-        result = await node(state)
+        result = await node(state, {})
         assert len(result["samples"]) == 2
         assert factory.temps == [0.3]
         assert result["current_sample_idx"] == 1
@@ -89,7 +89,7 @@ class TestSampling:
             samples=[_verdict()] * 5,
             last_critique=_critique(CritiqueDecision.APPROVED),
         )
-        await node(state)
+        await node(state, {})
         assert factory.temps == [0.5]  # min(5, len-1) -> last entry
 
 
@@ -102,7 +102,7 @@ class TestRefinement:
             last_critique=_critique(CritiqueDecision.REANALYZE),
             reanalysis_count=0,
         )
-        result = await node(state)
+        result = await node(state, {})
         assert len(result["samples"]) == 1
         assert result["samples"][0].reasoning == "refined"
         assert result["reanalysis_count"] == 1
@@ -116,7 +116,7 @@ class TestRefinement:
             last_critique=_critique(CritiqueDecision.NEEDS_MORE_RESEARCH),
             reanalysis_count=0,
         )
-        result = await node(state)
+        result = await node(state, {})
         assert len(result["samples"]) == 1
         assert result["samples"][0].reasoning == "refined"
         assert result["reanalysis_count"] == 0

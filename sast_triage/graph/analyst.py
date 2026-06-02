@@ -12,6 +12,7 @@ import logging
 from typing import Awaitable, Callable, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 
 from config import ANALYST_TEMPERATURES
 from sast_triage.agent_models import AnalystVerdict, CritiqueDecision
@@ -22,7 +23,7 @@ from sast_triage.prompts import ANALYST_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
-AnalystNode = Callable[[TriageState], Awaitable[Dict]]
+AnalystNode = Callable[[TriageState, RunnableConfig], Awaitable[Dict]]
 _REFINING = {CritiqueDecision.REANALYZE, CritiqueDecision.NEEDS_MORE_RESEARCH}
 
 
@@ -89,13 +90,17 @@ def make_analyst_node(
             temperature; its ``ainvoke`` returns an ``AnalystVerdict``.
     """
 
-    async def analyst_node(state: TriageState) -> Dict:
+    async def analyst_node(
+        state: TriageState, config: RunnableConfig
+    ) -> Dict:
         refining = _is_refinement(state)
         slot_index = (len(state.samples) - 1) if refining else len(state.samples)
         temperature = _temperature_for(slot_index)
 
         llm = analyst_llm_for(temperature)
-        verdict: AnalystVerdict = await llm.ainvoke(build_analyst_messages(state))
+        verdict: AnalystVerdict = await llm.ainvoke(
+            build_analyst_messages(state), config=config
+        )
         verdict.sample_temperature = temperature
 
         samples = list(state.samples)
