@@ -47,6 +47,14 @@ CRITIC_TEMPERATURE = 0.6  # Higher than the analyst to defeat sycophancy
 # PROPOSED_NOT_EXPLOITABLE for human attention rather than NOT_EXPLOITABLE.
 # Conservative placeholder; calibrate against the gold-set.
 CONFIDENCE_THRESHOLD = 0.85
+# A not-exploitable verdict produced when the per-finding loop stops without
+# genuine critic approval (a circuit breaker fired) has not earned a confident
+# dismissal: it is often a single unvalidated sample whose agreement_rate is
+# trivially 1.0. Cap its confidence to this value so it routes to
+# PROPOSED_NOT_EXPLOITABLE for human review instead of NOT_EXPLOITABLE. Must
+# stay below CONFIDENCE_THRESHOLD. Conservative placeholder; calibrate against
+# the gold-set.
+NON_CONVERGENT_CONFIDENCE_CAP = 0.8
 
 # Checkmarx API Configuration
 CHECKMARX_CLIENT_ID = "ast-app"  # Default client ID for Checkmarx One

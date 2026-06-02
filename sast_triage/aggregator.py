@@ -9,7 +9,7 @@ any single model's self-report: a calibrated number rather than the clustered
 from collections import Counter
 from typing import List, Optional, Tuple
 
-from config import CONFIDENCE_AGREEMENT_WEIGHT
+from config import CONFIDENCE_AGREEMENT_WEIGHT, NON_CONVERGENT_CONFIDENCE_CAP
 from sast_triage.agent_models import (
     AnalystVerdict,
     SuggestedState,
@@ -80,8 +80,30 @@ def _build_justification(
             f"is_vulnerable={is_vulnerable}. {representative}"
         )
     if stop_reason in ("max_research", "max_reanalysis"):
-        base += f" (stopped early: {stop_reason})"
+        base += (
+            f" The analysis stopped without critic approval ({stop_reason}); "
+            "this verdict is unconfirmed and needs human review."
+        )
     return base
+
+
+def _earned_confidence(
+    confidence: float,
+    is_vulnerable: Optional[bool],
+    stop_reason: Optional[str],
+) -> float:
+    """Cap a dismissal that stopped without genuine critic approval.
+
+    A not-exploitable verdict reached on a circuit breaker has not earned a
+    confident dismissal: it is often a lone unvalidated sample whose
+    agreement_rate is trivially 1.0. Capping it below CONFIDENCE_THRESHOLD
+    routes it to PROPOSED_NOT_EXPLOITABLE for human review instead of silently
+    marking NOT_EXPLOITABLE. Positive verdicts are untouched (derive_state
+    confirms them regardless of confidence), so CONFIRMED recall is unaffected.
+    """
+    if is_vulnerable is False and stop_reason != "approved":
+        return min(confidence, NON_CONVERGENT_CONFIDENCE_CAP)
+    return confidence
 
 
 def aggregate_samples(
@@ -117,6 +139,8 @@ def aggregate_samples(
         # A split is never a confident dismissal: route to human attention.
         is_vulnerable = None
         confidence = 0.0
+
+    confidence = _earned_confidence(confidence, is_vulnerable, stop_reason)
 
     return TriageDecision(
         resultHash=result_hash,
