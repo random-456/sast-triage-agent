@@ -40,7 +40,7 @@ class _FakeLLM:
         self.default = default
         self.calls = []  # the message list passed on each ainvoke
 
-    async def ainvoke(self, messages):
+    async def ainvoke(self, messages, config=None, **kwargs):
         self.calls.append(messages)
         if self.scripted:
             return self.scripted.pop(0)
@@ -52,7 +52,7 @@ class _FakeTool:
         self.name = name
         self._fn = fn
 
-    def invoke(self, args):
+    def invoke(self, args, config=None, **kwargs):
         return self._fn(args)
 
 
@@ -127,7 +127,7 @@ class TestResearchNode:
     async def test_ends_on_response_with_no_tool_calls(self):
         llm = _FakeLLM([_Response(content="done")])
         node = make_research_node(llm, [_read_tool()])
-        result = await node(_state())
+        result = await node(_state(), {})
         assert len(llm.calls) == 1
         assert result["evidence"].items == []
         assert result["research_iterations"] == 1
@@ -135,7 +135,7 @@ class TestResearchNode:
     async def test_increments_research_iterations(self):
         llm = _FakeLLM([_Response(content="done")])
         node = make_research_node(llm, [_read_tool()])
-        result = await node(_state(research_iterations=2))
+        result = await node(_state(research_iterations=2), {})
         assert result["research_iterations"] == 3
 
     async def test_successful_tool_call_accumulates_evidence(self):
@@ -146,7 +146,7 @@ class TestResearchNode:
             ]
         )
         node = make_research_node(llm, [_read_tool()])
-        result = await node(_state())
+        result = await node(_state(), {})
         items = result["evidence"].items
         assert len(items) == 1
         assert items[0].file_path == "a.java"
@@ -164,7 +164,7 @@ class TestResearchNode:
             ]
         )
         node = make_research_node(llm, [_read_tool()])
-        await node(_state())
+        await node(_state(), {})
         lengths = [len(c) for c in llm.calls]
         # turn 0: system + code bank (no prior round) = 2
         assert lengths[0] == 2
@@ -182,7 +182,7 @@ class TestResearchNode:
             ]
         )
         node = make_research_node(llm, [_FakeTool("read_file", _read_err)])
-        result = await node(_state())
+        result = await node(_state(), {})
 
         records = result["failed_tool_calls"]
         assert len(records) == 1
@@ -200,7 +200,7 @@ class TestResearchNode:
             ]
         )
         node = make_research_node(llm, [_read_tool()])
-        result = await node(_state())
+        result = await node(_state(), {})
         assert len(result["failed_tool_calls"]) == 1
         assert "not found" in result["failed_tool_calls"][0].error
 
@@ -209,6 +209,6 @@ class TestResearchNode:
         looping = _Response(tool_calls=[_call("read_file", {"file_path": "a"}, "1")])
         llm = _FakeLLM([], default=looping)
         node = make_research_node(llm, [_read_tool()])
-        result = await node(_state())
+        result = await node(_state(), {})
         assert len(llm.calls) == MAX_TOOL_CALLS_PER_RESEARCH
         assert result["research_iterations"] == 1

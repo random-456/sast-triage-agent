@@ -10,6 +10,7 @@ import logging
 from typing import Awaitable, Callable, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 
 from sast_triage.agent_models import AnalystVerdict, CritiqueResult
 from sast_triage.checklists import render_checklist_section
@@ -19,7 +20,7 @@ from sast_triage.prompts import CRITIC_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
-CriticNode = Callable[[TriageState], Awaitable[Dict]]
+CriticNode = Callable[[TriageState, RunnableConfig], Awaitable[Dict]]
 
 
 def _render_verdict(verdict: AnalystVerdict) -> str:
@@ -57,9 +58,11 @@ def make_critic_node(critic_llm) -> CriticNode:
             ``CritiqueResult``, configured at the critic temperature.
     """
 
-    async def critic_node(state: TriageState) -> Dict:
+    async def critic_node(
+        state: TriageState, config: RunnableConfig
+    ) -> Dict:
         critique: CritiqueResult = await critic_llm.ainvoke(
-            build_critic_messages(state)
+            build_critic_messages(state), config=config
         )
         return {"last_critique": critique}
 

@@ -23,7 +23,7 @@ class _FakeLLM:
         self.result = result
         self.captured = []
 
-    async def ainvoke(self, messages):
+    async def ainvoke(self, messages, config=None, **kwargs):
         self.captured.append(messages)
         return self.result
 
@@ -51,7 +51,7 @@ class TestCriticNode:
             weakest_point="no taint to the sink",
         )
         node = make_critic_node(_FakeLLM(critique))
-        result = await node(_state(samples=[_verdict()]))
+        result = await node(_state(samples=[_verdict()]), {})
         assert result["last_critique"] is critique
         assert result["last_critique"].decision == CritiqueDecision.REANALYZE
 

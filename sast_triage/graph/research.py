@@ -8,9 +8,10 @@ how long research runs (avoids context rot on long investigations).
 """
 
 import logging
-from typing import Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 
 from config import MAX_TOOL_CALLS_PER_RESEARCH
 from sast_triage.checklists import render_checklist_section
@@ -19,7 +20,7 @@ from sast_triage.prompts import RESEARCH_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
-ResearchNode = Callable[[TriageState], Awaitable[Dict]]
+ResearchNode = Callable[[TriageState, RunnableConfig], Awaitable[Dict]]
 
 
 def _format_failed_calls(records: List[ToolCallRecord]) -> str:
@@ -98,16 +99,25 @@ def make_research_node(llm_with_tools, tools: List) -> ResearchNode:
     """
     tools_by_name = {t.name: t for t in tools}
 
-    def _run_tool(call: Dict) -> object:
+    def _run_tool(call: Dict, config: Optional[RunnableConfig]) -> object:
+        # Pass the parent's RunnableConfig through to the tool so the
+        # session-log callback handler (and any other callback in the
+        # parent graph) sees the tool start/end events. LangChain
+        # propagates this through a contextvar internally, but the
+        # contextvar is not reliable across event loops (Windows
+        # ProactorEventLoop) and across structured-output / bind_tools
+        # wrappers. Passing it explicitly is the canonical pattern.
         tool = tools_by_name.get(call["name"])
         if tool is None:
             return {"error": f"Tool {call['name']} not found"}
         try:
-            return tool.invoke(call.get("args", {}))
+            return tool.invoke(call.get("args", {}), config=config)
         except Exception as exc:  # surfaced to the model as a failed call
             return {"error": str(exc)}
 
-    async def research_node(state: TriageState) -> Dict:
+    async def research_node(
+        state: TriageState, config: RunnableConfig
+    ) -> Dict:
         evidence = state.evidence.model_copy(deep=True)
         failed: List[ToolCallRecord] = list(state.failed_tool_calls)
         last_round: List = []
@@ -117,7 +127,7 @@ def make_research_node(llm_with_tools, tools: List) -> ResearchNode:
                 update={"evidence": evidence, "failed_tool_calls": failed}
             )
             response = await llm_with_tools.ainvoke(
-                build_research_messages(working, last_round)
+                build_research_messages(working, last_round), config=config
             )
             tool_calls = getattr(response, "tool_calls", None)
             if not tool_calls:
@@ -125,7 +135,7 @@ def make_research_node(llm_with_tools, tools: List) -> ResearchNode:
 
             round_messages = [response]
             for call in tool_calls:
-                result = _run_tool(call)
+                result = _run_tool(call, config)
                 if _is_error(result):
                     failed.append(
                         ToolCallRecord(
