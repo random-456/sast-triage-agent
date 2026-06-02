@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import CONFIDENCE_AGREEMENT_WEIGHT
+from config import CONFIDENCE_AGREEMENT_WEIGHT, CONFIDENCE_THRESHOLD
 from sast_triage.agent_models import AnalystVerdict, SuggestedState
 from sast_triage.aggregator import (
     aggregate_samples,
@@ -22,6 +22,21 @@ def _v(is_vulnerable, citations=None, refs=None) -> AnalystVerdict:
         reasoning="reasoned",
         citation_lines=citations or [],
         evidence_refs=refs or [],
+    )
+
+
+def _strong(is_vulnerable) -> AnalystVerdict:
+    """A lone verdict with maxed-out evidence strength.
+
+    Five distinct files and five citations saturate
+    ``compute_evidence_strength``, so a single sample's blended confidence is
+    1.0. Used to show a non-convergent dismissal would otherwise clear
+    ``CONFIDENCE_THRESHOLD`` were it not clamped.
+    """
+    return _v(
+        is_vulnerable,
+        citations=["a:1", "b:2", "c:3", "d:4", "e:5"],
+        refs=["a", "b", "c", "d", "e"],
     )
 
 
@@ -106,3 +121,49 @@ class TestAggregateSamples:
     def test_stop_reason_noted_in_justification(self):
         decision = aggregate_samples("h", [_v(False), _v(False)], stop_reason="max_research")
         assert "max_research" in decision.justification
+
+
+class TestNonConvergentConfidenceClamp:
+    """A verdict reached without genuine critic approval must not dismiss
+    confidently: a not-exploitable result is capped below the threshold and
+    routed to human review, while a positive result is unaffected."""
+
+    def test_max_research_dismissal_routes_to_human_review(self):
+        decision = aggregate_samples(
+            "h", [_strong(False)], stop_reason="max_research"
+        )
+        assert decision.is_vulnerable is False
+        assert decision.confidence < CONFIDENCE_THRESHOLD
+        assert decision.suggested_state == SuggestedState.PROPOSED_NOT_EXPLOITABLE
+
+    def test_max_reanalysis_dismissal_routes_to_human_review(self):
+        decision = aggregate_samples(
+            "h", [_strong(False)], stop_reason="max_reanalysis"
+        )
+        assert decision.is_vulnerable is False
+        assert decision.confidence < CONFIDENCE_THRESHOLD
+        assert decision.suggested_state == SuggestedState.PROPOSED_NOT_EXPLOITABLE
+
+    def test_non_convergent_exploitable_is_confirmed(self):
+        # Recall-safe: a positive verdict is confirmed regardless of the cap.
+        decision = aggregate_samples(
+            "h", [_strong(True)], stop_reason="max_research"
+        )
+        assert decision.is_vulnerable is True
+        assert decision.suggested_state == SuggestedState.CONFIRMED
+
+    def test_approved_dismissal_is_not_clamped(self):
+        # A genuine critic approval is still allowed to dismiss confidently.
+        decision = aggregate_samples(
+            "h", [_strong(False)], stop_reason="approved"
+        )
+        assert decision.is_vulnerable is False
+        assert decision.confidence >= CONFIDENCE_THRESHOLD
+        assert decision.suggested_state == SuggestedState.NOT_EXPLOITABLE
+
+    def test_non_convergent_justification_flags_review(self):
+        decision = aggregate_samples(
+            "h", [_strong(False)], stop_reason="max_research"
+        )
+        assert "max_research" in decision.justification
+        assert "review" in decision.justification.lower()
