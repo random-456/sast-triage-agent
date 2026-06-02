@@ -10,6 +10,7 @@ evidence_required:
     examples:
       - "HTTP request input, message payload, uploaded file content"
       - "value requiring privileged local access (server env var, local config, CLI argument)"
+      - "a value from another system, an upstream response, or a datastore of unverifiable provenance: treat as attacker-controlled unless the code proves otherwise"
   - description: "Sink identified and confirmed to match the vulnerability the finding claims, or a vulnerability in the same family"
   - description: "Every guard on the path between source and sink read and classified EFFECTIVE or INEFFECTIVE for the specific claimed vulnerability"
   - description: "Whether the code path is reachable in production rather than test or dead code"
@@ -40,8 +41,11 @@ investigation_guidance: |
   control on the path, apply the project rule and lean CONFIRMED.
 
 common_false_positive_patterns: |
-  The flagged data is not actually attacker-controlled (constant, enum or
-  privileged-local input in a single-tenant deployment). The vulnerability in
-  the code is a different type or family than the finding claims. The path is
-  test or dead code. An effective, context-correct control neutralizes the
-  payload before it reaches the sink.
+  The flagged data is provably not attacker-influenced because the code fixes it:
+  a literal constant, a strict enum, or a value the code assigns that the
+  attacker cannot reach. The vulnerability in the code is a different type or
+  family than the finding claims. The path is test or dead code. An effective,
+  context-correct control neutralizes the payload before it reaches the sink. Do
+  not dismiss on an assumed deployment model (single- versus multi-tenant) or
+  merely because a source is a config value or environment variable: those can
+  be attacker-influenced.

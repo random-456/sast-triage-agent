@@ -43,16 +43,24 @@ investigation_guidance: |
   back to the user-controlled write that populated the row.
 
   As with reflected XSS, the output context governs the correct encoding, and
-  framework auto-escaping at the render template usually makes the finding a
-  false positive unless it is explicitly bypassed. If the application
-  deliberately stores and renders rich HTML, the only safe control is
-  server-side sanitization with a vetted allowlist library; verify the library
-  and its configuration rather than trusting a hand-rolled filter.
+  framework auto-escaping is per-sink, not global. A stored value is typically
+  rendered at several sinks and contexts, so escaping confirmed at one render
+  sink says nothing about the others: enumerate every place the value is
+  rendered and confirm a context-correct control at each. If any render path
+  lacks one, the finding is exploitable. The render sink may also be client-side
+  (a value fetched by browser JavaScript and written via innerHTML,
+  dangerouslySetInnerHTML or [innerHTML] is stored XSS even though the transport
+  is JSON). If the application deliberately stores and renders rich HTML, the
+  only safe control is server-side sanitization with a vetted allowlist library;
+  verify the library and its configuration rather than trusting a hand-rolled
+  filter.
 
 common_false_positive_patterns: |
-  The render sink uses framework auto-escaping so the stored value is shown as
-  inert text. The stored value is sanitized at render time by a vetted
-  allowlist HTML sanitizer. The stored value is never rendered into an HTML
-  context (used only in non-HTML APIs, exports or server-side logic). The
-  stored field is strictly constrained at the type level (enum, numeric, fixed
-  format) so script content cannot survive.
+  Every render sink that displays the stored value uses confirmed,
+  context-correct auto-escaping (verify each, not just the first), and none is a
+  URL, attribute, script or raw-HTML context the escaping does not cover. The
+  stored value is sanitized at render time by a vetted allowlist HTML sanitizer
+  with a verified configuration. The stored value is never rendered into an HTML
+  context, server-side or client-side (used only in non-HTML APIs, exports or
+  server-side logic). The stored field is strictly constrained at the type level
+  (enum, numeric, fixed format) so script content cannot survive.

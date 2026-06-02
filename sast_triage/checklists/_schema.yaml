@@ -14,21 +14,28 @@ applies_to:
   query_names: [list of strings]   # Checkmarx queryName values, e.g. ["SQL_Injection"]
 
 # Evidence the analyst must gather before reaching a verdict. Each item is a
-# claim that must be confirmed or refuted with a file:line citation.
+# claim that must be confirmed or refuted with a file:line citation. At least
+# one item is required and description must not be blank.
 evidence_required:
-  - description: string        # what must be established
+  - description: string        # what must be established (non-blank)
     examples: [list of strings]   # optional, concrete instances
 
 # Sanitizer / guard patterns, split by whether they genuinely neutralize this
 # vulnerability. State language scope inline when an item is language-specific
 # (e.g. "PreparedStatement with ? (Java)") versus language-agnostic
-# (e.g. "parameterized query with bound parameters").
+# (e.g. "parameterized query with bound parameters"). `ineffective` is required
+# and must be non-empty: it is the false-negative guardrail. `effective` may be
+# empty for a class where nothing is reliably safe.
 sanitizer_patterns:
   effective: [list of strings]
-  ineffective: [list of strings]
+  ineffective: [list of strings]   # required, at least one
 
-# Free-form guidance specific to this CWE family. ~300-500 words.
+# Free-form guidance specific to this CWE family: substantive prose, kept
+# focused, must not be blank. Do not restate the cross-cutting false-negative
+# stance (sink decisive, a source of unverifiable origin is attacker-controlled,
+# lean CONFIRMED when no effective control is established): the renderer appends
+# that to every checklist, so keep this guidance CWE-specific.
 investigation_guidance: string
 
-# Why this CWE is often a false positive in production code.
+# Why this CWE is often a false positive in production code. Must not be blank.
 common_false_positive_patterns: string

@@ -33,7 +33,7 @@ investigation_guidance: string   # free-form, ~300-500 words
 common_false_positive_patterns: string
 ```
 
-`_schema.yaml` in the checklists directory documents the same shape for contributors. It is not loaded at runtime; `ChecklistDocument` is the authoritative validator.
+`_schema.yaml` in the checklists directory documents the same shape for contributors. It is not loaded at runtime; `ChecklistDocument` is the authoritative validator. Validation rejects a weak checklist: `evidence_required` must have at least one item, `sanitizer_patterns.ineffective` (the bypass guardrail) must be non-empty, and the id, display name and free-text fields must not be blank, so a malformed file fails fast rather than loading and rendering an empty section.
 
 Two helper models are part of the validation:
 
@@ -48,8 +48,9 @@ The active set on `dev`:
 | `checklist_id` | `display_name` | Maps from CWE | Maps from `queryName` |
 |----------------|----------------|---------------|------------------------|
 | `sqli` | SQL Injection (CWE-89) | CWE-89 | `SQL_Injection` |
-| `xss_reflected` | Reflected Cross-Site Scripting (CWE-79, reflected) | CWE-79 (default for XSS) | `Reflected_XSS`, `XSS_Evasion_Attack_via_Replace` |
+| `xss_reflected` | Reflected Cross-Site Scripting (CWE-79, reflected) | CWE-79 (default for XSS), CWE-116 | `Reflected_XSS`, `XSS_Evasion_Attack_via_Replace` |
 | `xss_stored` | Stored Cross-Site Scripting (CWE-79, stored) | -- | `Stored_XSS` |
+| `xss_dom` | DOM-based Cross-Site Scripting (CWE-79, client-side) | -- | `Client_Potential_XSS` |
 | `command_injection` | OS Command Injection (CWE-78, CWE-77) | CWE-77, CWE-78 | -- |
 | `path_traversal` | Path Traversal (CWE-22) | CWE-22 | -- |
 | `generic` | Generic taint-flow finding | (fallback) | (fallback) |
@@ -68,7 +69,7 @@ The result is loaded via `load_checklist`, which is `lru_cache`d so repeated fin
 
 **Fail-safe behavior.** A mapped checklist that fails to load (file missing, schema validation error) is replaced by the default with a warning logged. The default failing is fatal: the agent will not silently produce weaker prompts.
 
-The mapping policy in `_mapping.yaml` is intentionally cautious. Sub-flavors that share one CWE (the XSS variants under CWE-79) are the reason the `queryName` layer exists at all. Command injection and path traversal route on CWE alone because no `queryName` has been confirmed for them yet, and CWE is authoritative. `Client_Potential_XSS` (DOM/client XSS) is intentionally absent until an `xss_dom` checklist exists; it falls through to the CWE-79 default.
+The mapping policy in `_mapping.yaml` is intentionally cautious. Sub-flavors that share one CWE (the XSS variants under CWE-79) are the reason the `queryName` layer exists at all. Command injection and path traversal route on CWE alone because no `queryName` has been confirmed for them yet, and CWE is authoritative. `Client_Potential_XSS` (DOM/client XSS) routes to `xss_dom`, whose sources and sinks are client-side, so it does not inherit the reflected-XSS server-Content-Type reasoning. `CWE-116` (improper output encoding) routes to `xss_reflected` as the encoding sibling of XSS.
 
 ## `_mapping.yaml`
 
@@ -78,10 +79,12 @@ query_name_to_checklist:
   Reflected_XSS: xss_reflected
   XSS_Evasion_Attack_via_Replace: xss_reflected
   Stored_XSS: xss_stored
+  Client_Potential_XSS: xss_dom
 
 cwe_to_checklist:
   CWE-89: sqli
   CWE-79: xss_reflected  # default when the XSS sub-flavor is not detectable
+  CWE-116: xss_reflected  # improper output encoding; the encoding sibling of XSS
   CWE-78: command_injection
   CWE-77: command_injection
   CWE-22: path_traversal
@@ -116,9 +119,14 @@ INVESTIGATION GUIDANCE:
 
 COMMON FALSE-POSITIVE PATTERNS:
 <common_false_positive_patterns>
+
+DEFAULT STANCE (...):
+<the shared false-negative-averse stance, identical for every checklist>
 ```
 
 The same block is included verbatim by the critic so the critic and analyst are reviewing against the same standard. The analyst is told to ground each protocol step in a `file:line` citation; the checklist supplies what to look for and what bypasses to expect.
+
+The rendered block ends with a fixed **DEFAULT STANCE** that is identical for every checklist. It is the single place the cross-cutting false-negative posture lives: the sink is decisive, a source whose origin cannot be verified from the evidence is treated as attacker-controlled, a dismissal must rest on a control read in the evidence rather than assumed, and where no effective control is established the verdict leans CONFIRMED. Because `render_checklist_section` appends it, every checklist (including any added later) inherits it, so a per-CWE file should carry only CWE-specific evidence and controls and must not restate or contradict the stance.
 
 ## Adding a new checklist
 

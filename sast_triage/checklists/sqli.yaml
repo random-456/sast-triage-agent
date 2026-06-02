@@ -27,7 +27,7 @@ sanitizer_patterns:
     - "parameterized query with bound parameters (language-agnostic principle)"
     - "PreparedStatement with ? placeholders, parameters set via setString/setInt (Java)"
     - "ORM query with bound parameters: JPA/Hibernate positional or named params, Django ORM filter(), SQLAlchemy with bindparams, parameterized node-postgres ($1) (language/framework-specific)"
-    - "strict integer coercion before concatenation when the value is provably numeric: Integer.parseInt (Java), parseInt with isNaN guard (JS), int() (Python) where a parse failure aborts the query"
+    - "strict integer coercion before concatenation when the value is provably numeric, and the parsed numeric result (not the original string) is what reaches the query: Integer.parseInt (Java), Number() or parseInt with a strict isNaN guard (JS: note parseInt('1; DROP') === 1 does not throw, so reusing the original string is still injectable), int() (Python), where a parse failure aborts the query"
     - "allowlist mapping for identifier positions: user input is used only to pick from a fixed set of known-safe column/table names, never concatenated directly"
   ineffective:
     - "string escaping or quote-doubling (addslashes, manual replace of ' with ''): bypassable, especially in identifier positions and under some multibyte charsets"
@@ -66,10 +66,12 @@ investigation_guidance: |
   the immediate source is the database.
 
 common_false_positive_patterns: |
-  The query is fully parameterized and the tainted value is a bound parameter
-  that the scanner tracked into the query text by name only. The "tainted"
-  value is a hardcoded constant, enum or framework-internal value, not user
-  input. The value is strictly integer-parsed before use and a parse failure
-  aborts the request. The code path is test or fixture code not deployed to
-  production. The dialect/driver auto-parameterizes the call (some query
-  builders bind by default) and no raw escape hatch is used.
+  You have read the execute call and confirmed the tainted value is passed as a
+  bound parameter (not concatenated) and lands in a value position, not an
+  identifier position. The "tainted" value is a hardcoded constant, enum or
+  framework-internal value, not user input. The value is strictly integer-parsed
+  before use and a parse failure aborts the request. The code path is test or
+  fixture code not deployed to production. A query builder that "binds by
+  default" is not sufficient on its own: confirm by reading the call that this
+  value is bound, that no raw or literal escape hatch carries it, and that it is
+  not in an identifier position.

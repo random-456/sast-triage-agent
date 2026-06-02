@@ -11,17 +11,19 @@
 # (the XSS variants under CWE-79) are the reason this layer exists. Command
 # injection and path traversal route on CWE alone: no queryName is confirmed
 # for them yet, and CWE is authoritative. Client_Potential_XSS (DOM/client XSS)
-# is intentionally absent until an xss_dom checklist exists; it falls through to
-# the CWE-79 default below.
+# routes to xss_dom: its sources and sinks are client-side, so the reflected-XSS
+# server-Content-Type reasoning does not apply.
 query_name_to_checklist:
   SQL_Injection: sqli
   Reflected_XSS: xss_reflected
   XSS_Evasion_Attack_via_Replace: xss_reflected
   Stored_XSS: xss_stored
+  Client_Potential_XSS: xss_dom
 
 cwe_to_checklist:
   CWE-89: sqli
   CWE-79: xss_reflected  # default when the XSS sub-flavor is not detectable
+  CWE-116: xss_reflected  # improper output encoding; the encoding sibling of XSS
   CWE-78: command_injection
   CWE-77: command_injection
   CWE-22: path_traversal
