@@ -135,6 +135,23 @@ class TestAnalystMessages:
         assert isinstance(messages[-1], HumanMessage)
         assert "you missed the decoder" in messages[-1].content
 
+    def test_required_information_is_framed_as_request_not_gathered(self):
+        # The critic's required_information must not become a claim that the
+        # evidence was obtained: that is false when research could not find it
+        # (for example backend code outside the cloned repo) and makes the
+        # analyst reason from evidence it does not actually have.
+        state = _state(
+            samples=[_verdict()],
+            last_critique=_critique(
+                CritiqueDecision.NEEDS_MORE_RESEARCH,
+                required_information=["the backend /rest/track-order source"],
+            ),
+        )
+        refinement = build_analyst_messages(state)[-1].content
+        assert "gathered" not in refinement.lower()
+        assert "the backend /rest/track-order source" in refinement
+        assert "asked" in refinement.lower() or "request" in refinement.lower()
+
     def test_no_feedback_message_on_fresh_sample(self):
         state = _state(
             samples=[_verdict()],

@@ -65,9 +65,13 @@ def build_analyst_messages(state: TriageState) -> List:
     if critique is not None and critique.decision in _REFINING:
         feedback = critique.reanalysis_feedback or critique.rationale
         if critique.required_information:
+            # Reason: state what the reviewer requested, not that it was
+            # obtained. Research may not have found it (evidence can be outside
+            # the cloned repo). The analyst prompt already requires grounding
+            # every claim in the CODE BANK, so it checks what is actually there.
             feedback = (
-                f"{feedback}\nMissing information that has now been gathered: "
-                f"{'; '.join(critique.required_information)}"
+                f"{feedback}\nThe reviewer asked for this additional "
+                f"information: {'; '.join(critique.required_information)}"
             )
         messages.append(
             HumanMessage(

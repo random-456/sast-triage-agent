@@ -4,6 +4,25 @@ A log of design decisions about agent reasoning, prompts, routing, topology and 
 
 ---
 
+## 2026-06-02: Stop asserting that requested evidence was gathered
+
+**Context.** When the critic returns `NEEDS_MORE_RESEARCH` or `REANALYZE` with a `required_information` list, the analyst's refinement message (`graph/analyst.py`) appended `"Missing information that has now been gathered: <list>"`. That claim was unconditional: it asserted the listed evidence was in hand whether or not research had found it, and research often cannot find it because the evidence is outside the cloned repository. On a real run (issue #77) the analyst then reasoned "the evidence has now been provided, confirming this" and committed a verdict on evidence that never arrived. The same mechanism confabulates in either direction: that run resolved to CONFIRMED (safe), but an invented "an effective guard was found" would resolve to NOT_EXPLOITABLE and lose a true positive. (issue #77, Step 1)
+
+**Decision.** Rewrite the refinement message to state what the reviewer requested, not that it was obtained: `"The reviewer asked for this additional information: <list>"`. Nothing claims the information is present. The analyst system prompt already requires grounding every claim in a concrete `file:line` from the CODE BANK, so the analyst checks what is actually there.
+
+**Why.**
+
+- The model violated its own grounding rule because the refinement message overrode it with a direct false assertion. Removing the falsehood lets the existing rule work rather than layering on another rule.
+- This is the confabulation half of the false-negative risk. The confidence clamp (the other Step 1 change) only catches verdicts that stop without critic approval; a confabulated verdict the critic then approves would not be clamped, so the message itself must not seed a false premise.
+- Truthful framing is direction-agnostic: it removes the push toward both a fabricated CONFIRMED and a fabricated NOT_EXPLOITABLE.
+
+**Alternatives rejected.**
+
+- Add a rule telling the analyst to trust only evidence in the CODE BANK. Rejected as redundant: that rule already exists in the analyst system prompt. The problem was a message that contradicted it, so the fix is to remove the contradiction, not to add a second rule.
+- Make the message conditional on whether research actually grew the CODE BANK. Rejected as more complex and unnecessary: the analyst can already see the CODE BANK and is instructed to ground claims in it, so stating the request truthfully is enough.
+
+**Scope.** This is the second issue #77 Step 1 change, alongside the confidence clamp. Step 2 (honest termination when evidence is unobtainable, self-consistency under refinement) is separate.
+
 ## 2026-06-02: Clamp confidence on non-convergent termination
 
 **Context.** The per-finding graph can terminate on a circuit breaker (`max_research` or `max_reanalysis`) without the critic ever approving the verdict. The aggregator computed the final confidence from `agreement_rate` and `evidence_strength` and ignored the stop reason. On a finding that loops through `NEEDS_MORE_RESEARCH`, each refinement replaces the single in-progress sample (`graph/analyst.py`), so the aggregator votes over one sample: `agreement_rate` is then trivially 1.0 and confidence is `0.7 * 1.0 + 0.3 * evidence_strength`, floored at 0.70 and clearing `CONFIDENCE_THRESHOLD` (0.85) once evidence strength reaches 0.5. A not-exploitable verdict at or above the threshold becomes `NOT_EXPLOITABLE` and leaves the review queue with no human seeing it. That is a silently lost true positive, the failure mode the tool is built to avoid, and it was reachable from the confidence math alone without any reasoning error. (issue #77, Step 1)
