@@ -174,7 +174,7 @@ The CODE BANK that the model sees on each turn is rendered by `format_code_bank`
 flowchart TB
     sys["<b>SystemMessage</b><br/>ANALYST_SYSTEM_PROMPT<br/>+ ## FINDING (finding.model_dump_json)<br/>+ render_checklist_section(checklist)"]
     bank["<b>HumanMessage</b><br/>format_code_bank(state)"]
-    fb["<b>HumanMessage</b> (only on refinement)<br/>'A reviewer rejected your previous analysis. Address this<br/>and produce a corrected verdict:'<br/>+ reanalysis_feedback (or rationale as fallback)<br/>+ 'Missing information that has now been gathered: ...'<br/>(only when required_information is non-empty)"]
+    fb["<b>HumanMessage</b> (only on refinement)<br/>'A reviewer rejected your previous analysis. Address this<br/>and produce a corrected verdict:'<br/>+ reanalysis_feedback (or rationale as fallback)<br/>+ 'The reviewer asked for this additional information: ...'<br/>(only when required_information is non-empty)"]
     sys --> bank --> fb
 ```
 
@@ -276,6 +276,8 @@ confidence = CONFIDENCE_AGREEMENT_WEIGHT * agreement_rate
 
 with `CONFIDENCE_AGREEMENT_WEIGHT = 0.7`. The `agreement_rate` is the fraction of samples that voted the majority way. `evidence_strength` is a 0.0-1.0 heuristic that combines the number of distinct files cited across samples and the average citation count per sample, each saturating at `_EVIDENCE_SATURATION = 5`. Both the weight and the saturation are placeholders to be calibrated against a gold-set; today they bias toward sample agreement.
 
+**Non-convergent clamp.** A not-exploitable verdict reached without genuine critic approval (`stop_reason` is anything other than `"approved"`, for example a `max_research` or `max_reanalysis` breaker) has not earned a confident dismissal: it is often a single unvalidated sample whose `agreement_rate` is trivially 1.0. Its confidence is capped at `NON_CONVERGENT_CONFIDENCE_CAP = 0.8`, below `CONFIDENCE_THRESHOLD`, so it routes to `PROPOSED_NOT_EXPLOITABLE` for human review rather than `NOT_EXPLOITABLE`. A positive verdict is untouched (`derive_state` confirms it regardless of confidence), so the clamp never lowers CONFIRMED recall.
+
 **Edge cases.**
 
 | Sample set | Result |
@@ -283,6 +285,7 @@ with `CONFIDENCE_AGREEMENT_WEIGHT = 0.7`. The `agreement_rate` is the fraction o
 | Empty | `REFUSED`, confidence 0.0, justification notes no samples were produced |
 | Split (no strict majority) | `REFUSED`, confidence 0.0, classification null |
 | Clear majority | Classification is the plurality value, confidence is the calibrated number |
+| Clear majority, not exploitable, non-convergent stop | Confidence capped below `CONFIDENCE_THRESHOLD`, so the disposition is `PROPOSED_NOT_EXPLOITABLE` (human review) |
 
 **State writes.** `verdict` (the `TriageDecision`) and `stop_reason`.
 

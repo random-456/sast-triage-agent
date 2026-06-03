@@ -93,6 +93,7 @@ Defined in `config.py`. These rarely need modification but can be adjusted for s
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `CONFIDENCE_THRESHOLD` | `0.85` | A non-exploitable verdict below this confidence is routed to `PROPOSED_NOT_EXPLOITABLE` for human review instead of `NOT_EXPLOITABLE`. Conservative placeholder; calibrate against the gold-set. |
+| `NON_CONVERGENT_CONFIDENCE_CAP` | `0.8` | A not-exploitable verdict that stopped without genuine critic approval (a circuit breaker fired) is capped to this, below `CONFIDENCE_THRESHOLD`, so it routes to `PROPOSED_NOT_EXPLOITABLE` for human review. Conservative placeholder; calibrate against the gold-set. |
 
 ### Checkmarx Configuration
 
