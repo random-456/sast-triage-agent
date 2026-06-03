@@ -20,6 +20,18 @@ from sast_triage.agent import SASTTriageAgent
 from sast_triage.agent_models import TriageDecision
 
 
+def test_agent_config_snapshot_includes_non_convergent_cap():
+    # The session_start snapshot self-documents the active tuning knobs, so the
+    # non-convergent confidence cap (the clamp) must appear alongside the others.
+    from config import NON_CONVERGENT_CONFIDENCE_CAP
+
+    snapshot = SASTTriageAgent._agent_config_snapshot()
+    assert (
+        snapshot["NON_CONVERGENT_CONFIDENCE_CAP"]
+        == NON_CONVERGENT_CONFIDENCE_CAP
+    )
+
+
 class TestSASTTriageAgent:
     """Test the main SAST Triage Agent class."""
     
