@@ -17,6 +17,7 @@ from config import (
     INITIAL_SAMPLES,
     MAX_REANALYSIS_LOOPS,
     MAX_RESEARCH_ITERATIONS,
+    MAX_RESEARCH_STALL,
 )
 from sast_triage.agent_models import (
     AnalystVerdict,
@@ -83,6 +84,23 @@ class TestRouteFromCritic:
         state = _state(
             samples=[_verdict()],
             last_critique=_critique(CritiqueDecision.NEEDS_MORE_RESEARCH),
+        )
+        assert route_from_critic(state) == "research"
+
+    def test_needs_more_research_with_stalled_evidence_aggregates(self):
+        # Research has come back empty too many times; stop instead of looping.
+        state = _state(
+            samples=[_verdict()],
+            last_critique=_critique(CritiqueDecision.NEEDS_MORE_RESEARCH),
+            research_stall_streak=MAX_RESEARCH_STALL,
+        )
+        assert route_from_critic(state) == "aggregate"
+
+    def test_needs_more_research_below_stall_limit_routes_to_research(self):
+        state = _state(
+            samples=[_verdict()],
+            last_critique=_critique(CritiqueDecision.NEEDS_MORE_RESEARCH),
+            research_stall_streak=MAX_RESEARCH_STALL - 1,
         )
         assert route_from_critic(state) == "research"
 
@@ -170,6 +188,23 @@ class TestComputeStopReason:
         state = _state(last_critique=_critique(CritiqueDecision.APPROVED))
         assert compute_stop_reason(state) == "approved"
 
+    def test_no_progress_when_research_stalls_under_needs_more(self):
+        state = _state(
+            last_critique=_critique(CritiqueDecision.NEEDS_MORE_RESEARCH),
+            research_stall_streak=MAX_RESEARCH_STALL,
+        )
+        assert compute_stop_reason(state) == "no_progress"
+
+    def test_research_breaker_takes_precedence_over_no_progress(self):
+        # Both conditions hold; the recorded reason must match the router, which
+        # checks the breaker first.
+        state = _state(
+            last_critique=_critique(CritiqueDecision.NEEDS_MORE_RESEARCH),
+            research_stall_streak=MAX_RESEARCH_STALL,
+            research_iterations=MAX_RESEARCH_ITERATIONS,
+        )
+        assert compute_stop_reason(state) == "max_research"
+
     def test_none_when_no_terminal_condition(self):
         state = _state(last_critique=_critique(CritiqueDecision.REANALYZE))
         assert compute_stop_reason(state) is None
@@ -187,6 +222,15 @@ def _final_verdict() -> TriageDecision:
 
 def _stub_research(state):
     return {"research_iterations": state.research_iterations + 1}
+
+
+def _stub_research_stalled(state):
+    # Mimics a research visit that never grows the evidence: the stall streak
+    # climbs every visit.
+    return {
+        "research_iterations": state.research_iterations + 1,
+        "research_stall_streak": state.research_stall_streak + 1,
+    }
 
 
 def _stub_analyst(state):
@@ -240,4 +284,20 @@ class TestCompiledTopology:
         result = graph.invoke(_initial())
         assert result["stop_reason"] == "max_research"
         assert result["research_iterations"] == MAX_RESEARCH_ITERATIONS
+        assert result["verdict"] is not None
+
+    def test_stalled_research_terminates_via_no_progress(self):
+        # Research never grows the evidence and the critic keeps asking for
+        # more: the loop terminates with no_progress well before the breaker.
+        graph = build_per_finding_graph(
+            research_node=_stub_research_stalled,
+            analyst_node=_stub_analyst,
+            critic_node=lambda s: {
+                "last_critique": _critique(CritiqueDecision.NEEDS_MORE_RESEARCH)
+            },
+            aggregate_node=_stub_aggregate,
+        )
+        result = graph.invoke(_initial())
+        assert result["stop_reason"] == "no_progress"
+        assert result["research_iterations"] < MAX_RESEARCH_ITERATIONS
         assert result["verdict"] is not None

@@ -212,3 +212,41 @@ class TestResearchNode:
         result = await node(_state(), {})
         assert len(llm.calls) == MAX_TOOL_CALLS_PER_RESEARCH
         assert result["research_iterations"] == 1
+
+
+class TestResearchStallStreak:
+    """A research visit that adds no new evidence is a stall signal: the
+    streak counts consecutive barren visits so the loop can terminate honestly
+    instead of burning the whole research budget."""
+
+    async def test_visit_without_new_evidence_increments_streak(self):
+        llm = _FakeLLM([_Response(content="done")])
+        node = make_research_node(llm, [_read_tool()])
+        result = await node(_state(), {})
+        assert result["evidence"].items == []
+        assert result["research_stall_streak"] == 1
+
+    async def test_productive_visit_resets_streak(self):
+        llm = _FakeLLM(
+            [
+                _Response(tool_calls=[_call("read_file", {"file_path": "a.java"}, "1")]),
+                _Response(content="done"),
+            ]
+        )
+        node = make_research_node(llm, [_read_tool()])
+        result = await node(_state(research_stall_streak=2), {})
+        assert len(result["evidence"].items) == 1
+        assert result["research_stall_streak"] == 0
+
+    async def test_failed_only_visit_increments_streak(self):
+        # Every tool call errored, so no evidence was added: still a stall.
+        llm = _FakeLLM(
+            [
+                _Response(tool_calls=[_call("read_file", {"file_path": "x"}, "1")]),
+                _Response(content="giving up"),
+            ]
+        )
+        node = make_research_node(llm, [_FakeTool("read_file", _read_err)])
+        result = await node(_state(research_stall_streak=1), {})
+        assert result["evidence"].items == []
+        assert result["research_stall_streak"] == 2

@@ -81,6 +81,7 @@ Defined in `config.py`. These rarely need modification but can be adjusted for s
 | `MAX_RESEARCH_ITERATIONS` | `5` | Research-node visits before a forced aggregate |
 | `MAX_REANALYSIS_LOOPS` | `2` | Critic to analyst reanalysis loops before aggregate |
 | `MAX_TOOL_CALLS_PER_RESEARCH` | `10` | Tool-call turns within one research-node visit |
+| `MAX_RESEARCH_STALL` | `2` | Consecutive research visits that add no new evidence before the loop stops with `no_progress` |
 | `INITIAL_SAMPLES` | `2` | Self-consistency samples collected before a tiebreaker |
 | `DEFAULT_SAMPLES` | `3` | Maximum self-consistency samples per finding |
 | `ANALYST_TEMPERATURES` | `[0.1, 0.3, 0.5]` | Per-sample analyst temperatures for diversity |

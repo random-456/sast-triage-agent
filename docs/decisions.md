@@ -4,6 +4,27 @@ A log of design decisions about agent reasoning, prompts, routing, topology and 
 
 ---
 
+## 2026-06-04: Honest termination when evidence is unobtainable
+
+**Context.** When a critic demand cannot be satisfied within the cloned scope (for example backend code that is not in the repository), the research node keeps being asked for evidence it cannot find. `research_iterations` increments on every visit (`graph/research.py`), even one that gathers nothing, so the loop runs to the `MAX_RESEARCH_ITERATIONS` breaker while `evidence.items` never grows. The finding then aggregates with a generic "stopped without critic approval" justification, and the wasted iterations cost tokens and latency. The clamp (PR #78) already routes the resulting not-exploitable verdict to human review, but nothing told the reviewer the reason was unobtainable evidence rather than a genuine dismissal. (issue #77, Step 2)
+
+**Decision.** Detect the stall and terminate with the reserved `no_progress` stop reason. The research node tracks `research_stall_streak`: incremented when a visit adds no new evidence, reset to 0 when it does. When the critic returns `NEEDS_MORE_RESEARCH` and `research_stall_streak >= MAX_RESEARCH_STALL` (2), `route_from_critic` routes to the aggregator instead of research and `compute_stop_reason` records `no_progress`, ordered after the two breakers so the recorded reason matches the route. The aggregator justification names the cause: research could not obtain the requested information within the cloned scope. `MAX_RESEARCH_STALL` is added to the `session_start` config snapshot.
+
+**Why.**
+
+- The stall signal is the clean one the review identified: research being asked for more while `evidence.items` does not grow. A streak of 2 tolerates a single barren visit (which can be the model legitimately deciding it is done) and still stops well short of the five-iteration breaker.
+- It reuses the existing clamp rather than adding a new disposition path. `no_progress` is not `"approved"`, so a not-exploitable stall verdict is already capped below `CONFIDENCE_THRESHOLD` and routed to `PROPOSED_NOT_EXPLOITABLE`. The only new behavior is stopping sooner and saying why.
+- Recall-safe and dismissal-safe by construction. The aggregator on a `no_progress` stop can only emit `CONFIRMED` (a positive, untouched by the clamp), `PROPOSED_NOT_EXPLOITABLE` (a clamped not-exploitable) or `REFUSED` (a split or no samples). It can never emit `NOT_EXPLOITABLE`, so the earlier stop cannot create a silent miss; the worst case is routing a finding to human review a few iterations sooner.
+- Counters live in the node and the routing functions stay pure reads, matching the existing invariant that the route chosen and the recorded `stop_reason` come from the same condition.
+
+**Alternatives rejected.**
+
+- Compare the recurring `required_information` strings across iterations to detect the stall more precisely. Rejected as more complex for no added safety: the evidence-count signal is conservative (it fires only when research is genuinely stuck) and any stall it misses falls through to the existing breaker, which the clamp already handles. The simpler signal degrades safely.
+- Force a `no_progress` finding to `CONFIRMED` on the "lean exploitable when no control is established" stance. Rejected: it would flood the confirmed queue with findings the agent could not actually evaluate and is not clearly correct, since unobtainable evidence does not imply exploitability. `PROPOSED_NOT_EXPLOITABLE` keeps a human in the loop without asserting a verdict.
+- Reset the stall streak on a `REANALYZE` round. Rejected as unnecessary: a reanalysis does not run research, so the streak correctly continues to reflect that research has not produced new evidence, and `MAX_RESEARCH_STALL = 2` already gives slack for a single productive visit to reset it.
+
+**Scope.** issue #77 Step 2, honest termination only. It changes when the loop stops and how the stop is labeled, not the classification, so it cannot regress CONFIRMED recall; validate against the benchmark. Self-consistency under refinement (the other Step 2 item) shipped separately as the uncorroborated-samples confidence fix.
+
 ## 2026-06-04: Honest confidence on uncorroborated samples
 
 **Context.** Self-consistency votes over the analyst samples and the aggregator turns the agreement rate into the final confidence. On a finding that loops through refinement (`NEEDS_MORE_RESEARCH` or `REANALYZE`) the analyst replaces the in-progress sample instead of appending (`graph/analyst.py`), so a looping finding can reach the aggregator with a single sample. `tally` over one vote returns `agreement_rate = 1.0` by definition (`top_count == len == 1`), which is not agreement at all: it is one opinion. The aggregator blended that 1.0 into the confidence (`0.7 * 1.0 + 0.3 * evidence_strength`) and reported `agreement_rate = 1.0` as a diagnostic, overstating corroboration on exactly the hardest findings. (issue #77, F3)

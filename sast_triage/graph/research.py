@@ -155,10 +155,17 @@ def make_research_node(llm_with_tools, tools: List) -> ResearchNode:
                 )
             last_round = round_messages
 
+        # A visit that gathered no new evidence is a stall signal; the streak
+        # of consecutive barren visits lets the loop terminate honestly
+        # (stop_reason="no_progress") rather than burn the whole research budget.
+        grew = len(evidence.items) > len(state.evidence.items)
+        stall_streak = 0 if grew else state.research_stall_streak + 1
+
         return {
             "evidence": evidence,
             "failed_tool_calls": failed,
             "research_iterations": state.research_iterations + 1,
+            "research_stall_streak": stall_streak,
         }
 
     return research_node

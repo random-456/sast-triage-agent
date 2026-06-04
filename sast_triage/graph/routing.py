@@ -13,6 +13,7 @@ from config import (
     INITIAL_SAMPLES,
     MAX_REANALYSIS_LOOPS,
     MAX_RESEARCH_ITERATIONS,
+    MAX_RESEARCH_STALL,
 )
 from sast_triage.agent_models import CritiqueDecision
 from sast_triage.aggregator import has_majority
@@ -64,6 +65,10 @@ def route_from_critic(state: TriageState) -> str:
             return "analyst"
         return "aggregate"
     if critique.decision == CritiqueDecision.NEEDS_MORE_RESEARCH:
+        # Honest termination: if research keeps coming back empty, more research
+        # will not satisfy the critic, so stop instead of looping to the breaker.
+        if state.research_stall_streak >= MAX_RESEARCH_STALL:
+            return "aggregate"
         return "research"
     if critique.decision == CritiqueDecision.REANALYZE:
         return "analyst"
@@ -85,6 +90,12 @@ def compute_stop_reason(state: TriageState) -> Optional[StopReason]:
         return "max_research"
     if state.reanalysis_count >= MAX_REANALYSIS_LOOPS:
         return "max_reanalysis"
+    if (
+        state.last_critique is not None
+        and state.last_critique.decision == CritiqueDecision.NEEDS_MORE_RESEARCH
+        and state.research_stall_streak >= MAX_RESEARCH_STALL
+    ):
+        return "no_progress"
     if (
         state.last_critique is not None
         and state.last_critique.decision == CritiqueDecision.APPROVED

@@ -29,6 +29,11 @@ MAX_SEARCH_RESULTS = 50  # Safety cap for search results
 MAX_RESEARCH_ITERATIONS = 5  # Research-node visits before a forced aggregate
 MAX_REANALYSIS_LOOPS = 2  # Critic -> analyst reanalysis loops before aggregate
 MAX_TOOL_CALLS_PER_RESEARCH = 10  # Tool-call turns within one research-node visit
+# Consecutive research visits that add no new evidence before the per-finding
+# loop is declared stalled and terminated with stop_reason="no_progress",
+# instead of burning the full MAX_RESEARCH_ITERATIONS budget on evidence that
+# cannot be obtained. Conservative placeholder; calibrate against the gold-set.
+MAX_RESEARCH_STALL = 2
 INITIAL_SAMPLES = 2  # Adaptive sampling starts here; a tiebreaker may add more
 DEFAULT_SAMPLES = 3  # Max self-consistency samples per finding (tiebreak ceiling)
 # Final confidence = agreement_rate * W + evidence_strength * (1 - W). Weights
