@@ -21,6 +21,13 @@ from sast_triage.agent_models import (
 # calibrate against the gold-set alongside CONFIDENCE_THRESHOLD.
 _EVIDENCE_SATURATION = 5
 
+# Reason: self-consistency agreement is only meaningful with corroboration. A
+# lone sample's agreement_rate is trivially 1.0 (top_count == len == 1), so
+# confidence must not credit agreement until a second sample backs the verdict;
+# below this the confidence rests on evidence strength alone and the agreement
+# diagnostic is reported as undefined. Structural, not a calibration knob.
+_MIN_CORROBORATING_SAMPLES = 2
+
 
 def tally(votes: List[Optional[bool]]) -> Tuple[Optional[bool], float, bool]:
     """Return (plurality value, agreement rate, whether it is a true majority)."""
@@ -69,6 +76,11 @@ def _build_justification(
         base = (
             f"Self-consistency over {n} samples reached no majority verdict "
             f"({pct}% top agreement); routed for manual review."
+        )
+    elif n < _MIN_CORROBORATING_SAMPLES:
+        base = (
+            "A single analyst sample (no self-consistency corroboration) "
+            f"classified is_vulnerable={is_vulnerable}. {samples[0].reasoning}"
         )
     else:
         representative = next(
@@ -131,10 +143,15 @@ def aggregate_samples(
     if is_clear:
         is_vulnerable: Optional[bool] = majority
         evidence_strength = compute_evidence_strength(samples)
-        confidence = (
-            CONFIDENCE_AGREEMENT_WEIGHT * agreement_rate
-            + (1 - CONFIDENCE_AGREEMENT_WEIGHT) * evidence_strength
-        )
+        if len(samples) >= _MIN_CORROBORATING_SAMPLES:
+            confidence = (
+                CONFIDENCE_AGREEMENT_WEIGHT * agreement_rate
+                + (1 - CONFIDENCE_AGREEMENT_WEIGHT) * evidence_strength
+            )
+        else:
+            # A single sample is not self-consistency: there is no agreement
+            # signal, so confidence rests on evidence strength alone.
+            confidence = (1 - CONFIDENCE_AGREEMENT_WEIGHT) * evidence_strength
     else:
         # A split is never a confident dismissal: route to human attention.
         is_vulnerable = None
@@ -150,6 +167,10 @@ def aggregate_samples(
         justification=_build_justification(
             samples, is_vulnerable, agreement_rate, stop_reason
         ),
-        agreement_rate=round(agreement_rate, 4),
+        agreement_rate=(
+            round(agreement_rate, 4)
+            if len(samples) >= _MIN_CORROBORATING_SAMPLES
+            else None
+        ),
         sample_count=len(samples),
     )

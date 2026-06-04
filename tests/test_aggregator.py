@@ -5,7 +5,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import CONFIDENCE_AGREEMENT_WEIGHT, CONFIDENCE_THRESHOLD
+from config import (
+    CONFIDENCE_AGREEMENT_WEIGHT,
+    CONFIDENCE_THRESHOLD,
+    NON_CONVERGENT_CONFIDENCE_CAP,
+)
 from sast_triage.agent_models import AnalystVerdict, SuggestedState
 from sast_triage.aggregator import (
     aggregate_samples,
@@ -123,6 +127,46 @@ class TestAggregateSamples:
         assert "max_research" in decision.justification
 
 
+class TestUncorroboratedSampleConfidence:
+    """A lone analyst sample is not self-consistency: its agreement_rate is
+    trivially 1.0, so confidence must rest on evidence strength alone and the
+    agreement diagnostic must not claim a consensus that never happened. A
+    positive verdict stays CONFIRMED regardless, so this is recall-safe."""
+
+    def test_single_exploitable_sample_reports_uncorroborated_confidence(self):
+        decision = aggregate_samples("h", [_strong(True)])
+        assert decision.is_vulnerable is True
+        assert decision.suggested_state == SuggestedState.CONFIRMED
+        # Agreement over one sample is not credited, so even maxed-out evidence
+        # cannot clear the threshold on a single sample.
+        assert decision.confidence < CONFIDENCE_THRESHOLD
+
+    def test_single_sample_confidence_excludes_agreement_term(self):
+        # One citation and one ref give evidence_strength 0.2; with no agreement
+        # credit the confidence is (1 - W) * 0.2.
+        sample = _v(True, citations=["a:1"], refs=["a"])
+        decision = aggregate_samples("h", [sample])
+        expected = round((1 - CONFIDENCE_AGREEMENT_WEIGHT) * 0.2, 4)
+        assert decision.confidence == expected
+
+    def test_single_sample_reports_no_agreement_diagnostic(self):
+        decision = aggregate_samples("h", [_v(True)])
+        assert decision.agreement_rate is None
+        assert decision.sample_count == 1
+
+    def test_single_sample_justification_states_no_corroboration(self):
+        decision = aggregate_samples("h", [_v(True)])
+        assert "single analyst sample" in decision.justification.lower()
+
+    def test_two_agreeing_samples_credit_agreement(self):
+        # The corroboration boundary is exactly two samples: with agreement the
+        # confidence is W * 1.0 (no evidence here) and the diagnostic reports
+        # the real agreement rate.
+        decision = aggregate_samples("h", [_v(True), _v(True)])
+        assert decision.confidence == round(CONFIDENCE_AGREEMENT_WEIGHT * 1.0, 4)
+        assert decision.agreement_rate == 1.0
+
+
 class TestNonConvergentConfidenceClamp:
     """A verdict reached without genuine critic approval must not dismiss
     confidently: a not-exploitable result is capped below the threshold and
@@ -152,14 +196,28 @@ class TestNonConvergentConfidenceClamp:
         assert decision.is_vulnerable is True
         assert decision.suggested_state == SuggestedState.CONFIRMED
 
-    def test_approved_dismissal_is_not_clamped(self):
-        # A genuine critic approval is still allowed to dismiss confidently.
+    def test_approved_corroborated_dismissal_is_not_clamped(self):
+        # A genuine critic approval over corroborating samples may dismiss
+        # confidently. A single approved sample cannot reach aggregation in
+        # production (APPROVED always collects a second sample), so the
+        # realistic confident-dismissal shape is two agreeing samples.
         decision = aggregate_samples(
-            "h", [_strong(False)], stop_reason="approved"
+            "h", [_strong(False), _strong(False)], stop_reason="approved"
         )
         assert decision.is_vulnerable is False
         assert decision.confidence >= CONFIDENCE_THRESHOLD
         assert decision.suggested_state == SuggestedState.NOT_EXPLOITABLE
+
+    def test_max_research_corroborated_dismissal_is_clamped(self):
+        # The clamp is load-bearing for multi-sample dismissals: two agreeing
+        # not-exploitable samples blend to a high confidence that would reach
+        # NOT_EXPLOITABLE, so a non-convergent stop must cap it for human review.
+        decision = aggregate_samples(
+            "h", [_strong(False), _strong(False)], stop_reason="max_research"
+        )
+        assert decision.is_vulnerable is False
+        assert decision.confidence == NON_CONVERGENT_CONFIDENCE_CAP
+        assert decision.suggested_state == SuggestedState.PROPOSED_NOT_EXPLOITABLE
 
     def test_non_convergent_justification_flags_review(self):
         decision = aggregate_samples(
