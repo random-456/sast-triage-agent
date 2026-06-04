@@ -63,6 +63,7 @@ class TestTriageState:
     def test_initial_counters_and_terminal_fields(self):
         state = self._state()
         assert state.research_iterations == 0
+        assert state.research_stall_streak == 0
         assert state.reanalysis_count == 0
         assert state.current_sample_idx == 0
         assert state.failed_tool_calls == []

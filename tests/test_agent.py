@@ -32,6 +32,15 @@ def test_agent_config_snapshot_includes_non_convergent_cap():
     )
 
 
+def test_agent_config_snapshot_includes_research_stall_limit():
+    # The honest-termination stall limit is a tuning knob, so it belongs in the
+    # session_start snapshot alongside the other per-finding-graph constants.
+    from config import MAX_RESEARCH_STALL
+
+    snapshot = SASTTriageAgent._agent_config_snapshot()
+    assert snapshot["MAX_RESEARCH_STALL"] == MAX_RESEARCH_STALL
+
+
 class TestSASTTriageAgent:
     """Test the main SAST Triage Agent class."""
     

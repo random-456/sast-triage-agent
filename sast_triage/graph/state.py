@@ -68,6 +68,7 @@ class TriageState(BaseModel):
     evidence: EvidenceBundle = Field(default_factory=EvidenceBundle)
     research_iterations: int = 0
     failed_tool_calls: List[ToolCallRecord] = Field(default_factory=list)
+    research_stall_streak: int = 0
 
     samples: List[AnalystVerdict] = Field(default_factory=list)
     current_sample_idx: int = 0

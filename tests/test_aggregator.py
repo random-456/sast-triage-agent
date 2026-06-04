@@ -225,3 +225,14 @@ class TestNonConvergentConfidenceClamp:
         )
         assert "max_research" in decision.justification
         assert "review" in decision.justification.lower()
+
+    def test_no_progress_dismissal_flags_evidence_unavailable_for_review(self):
+        # An evidence stall (no_progress) is non-convergent, so the dismissal is
+        # capped to human review and the reason names the unavailable evidence.
+        decision = aggregate_samples(
+            "h", [_strong(False)], stop_reason="no_progress"
+        )
+        assert decision.is_vulnerable is False
+        assert decision.suggested_state == SuggestedState.PROPOSED_NOT_EXPLOITABLE
+        assert "could not obtain" in decision.justification.lower()
+        assert "review" in decision.justification.lower()

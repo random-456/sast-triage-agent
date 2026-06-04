@@ -96,6 +96,12 @@ def _build_justification(
             f" The analysis stopped without critic approval ({stop_reason}); "
             "this verdict is unconfirmed and needs human review."
         )
+    elif stop_reason == "no_progress":
+        base += (
+            " Research could not obtain the information the reviewer requested "
+            "within the cloned scope; this verdict is unconfirmed and needs "
+            "human review."
+        )
     return base
 
 

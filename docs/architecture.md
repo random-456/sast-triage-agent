@@ -159,6 +159,7 @@ Two consequences:
 | `evidence` | `add()` per successful tool result |
 | `failed_tool_calls` | append per errored tool call |
 | `research_iterations` | `+= 1` |
+| `research_stall_streak` | `+= 1` when the visit added no new evidence, reset to `0` when it did |
 
 The CODE BANK that the model sees on each turn is rendered by `format_code_bank` from `state.evidence`, grouped per item with a `relevance` annotation.
 
@@ -356,7 +357,8 @@ Routing is implemented by three pure functions in `sast_triage/graph/routing.py`
 | critic | aggregate | `last_critique is None` (defensive; should not happen in normal runs) |
 | critic | analyst | `APPROVED` and `len(samples) < target_samples_for(state)` |
 | critic | aggregate | `APPROVED` and `len(samples) >= target_samples_for(state)` |
-| critic | research | `NEEDS_MORE_RESEARCH` |
+| critic | research | `NEEDS_MORE_RESEARCH` and `research_stall_streak < MAX_RESEARCH_STALL` |
+| critic | aggregate | `NEEDS_MORE_RESEARCH` and `research_stall_streak >= MAX_RESEARCH_STALL` (honest termination, `no_progress`) |
 | critic | analyst | `REANALYZE` |
 | aggregate | END | `verdict is not None` (always; aggregate writes the verdict before returning) |
 
@@ -371,6 +373,7 @@ Bounds that keep the subgraph from running away:
 | `MAX_RESEARCH_ITERATIONS` | 5 | Runaway research loops |
 | `MAX_REANALYSIS_LOOPS` | 2 | Critic ping-ponging on the same verdict |
 | `MAX_TOOL_CALLS_PER_RESEARCH` | 10 | Tool churn within a single research-node visit |
+| `MAX_RESEARCH_STALL` | 2 | Research looping on evidence it cannot obtain |
 | `GRAPH_RECURSION_LIMIT` | 50 | LangGraph node-visit safety net |
 
 Whichever fires first routes to the aggregator with a `stop_reason` taken from this set:
@@ -380,9 +383,9 @@ Whichever fires first routes to the aggregator with a `stop_reason` taken from t
 | `approved` | The critic last returned `APPROVED` and the sample target was reached |
 | `max_research` | `MAX_RESEARCH_ITERATIONS` hit |
 | `max_reanalysis` | `MAX_REANALYSIS_LOOPS` hit |
-| `no_progress` | Reserved literal in `StopReason`; not currently emitted by `compute_stop_reason` |
+| `no_progress` | The critic still wants more research but `research_stall_streak >= MAX_RESEARCH_STALL`: the evidence cannot be obtained in the cloned scope, so the loop terminates honestly instead of burning the research budget. Checked after the two breakers so the recorded reason matches the route taken. |
 
-The justification on the final `TriageDecision` mentions an early stop when it was reached because of a breaker.
+The justification on the final `TriageDecision` mentions an early stop when it was reached because of a breaker or an evidence stall. A not-exploitable `no_progress` verdict is capped below `CONFIDENCE_THRESHOLD` by the non-convergent clamp (its `stop_reason` is not `"approved"`), so it routes to `PROPOSED_NOT_EXPLOITABLE` for human review rather than `NOT_EXPLOITABLE`.
 
 ### Investigation tools
 
