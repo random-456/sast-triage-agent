@@ -2,6 +2,7 @@ import os
 import shutil
 import stat
 import logging
+from datetime import datetime
 
 from config import TEMP_DIR
 from utils.path_helpers import io_safe
@@ -26,6 +27,18 @@ class DirectoryHelpers:
         os.makedirs(output_dir, exist_ok=True)
 
         self.logger.info("Directories set up successfully")
+
+    @classmethod
+    def timestamped_subdir(self, base_dir: str) -> str:
+        """Create and return a per-run timestamped subdirectory under base_dir.
+
+        Each run of the tool writes into its own ``YYYYMMDD_HHMMSS`` folder so
+        repeated runs against the same output directory stay grouped instead of
+        accumulating side by side.
+        """
+        run_dir = os.path.join(base_dir, datetime.now().strftime("%Y%m%d_%H%M%S"))
+        os.makedirs(io_safe(run_dir), exist_ok=True)
+        return run_dir
 
     # Handler below needed to remove .git readonly files
     @classmethod

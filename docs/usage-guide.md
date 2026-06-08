@@ -21,6 +21,7 @@ python run_triage.py run PROJECT_NAME --gitleaks-report <path|none> [OPTIONS]
 | `--findings` | -- | Comma-separated result hashes (bypasses severity/state filters) |
 | `--gitleaks-report` | -- | Path to Gitleaks CSV, or `none` (required) |
 | `--output` | `output` | Output directory |
+| `--run-subdir/--no-run-subdir` | `--run-subdir` | Nest this run's results under a timestamped subfolder of `--output` |
 | `--keep-temp` | `false` | Preserve temp directory after execution |
 | `--log-mode` | `rich` | Session log capture: `rich` records every LLM prompt and response (sufficient for replay); `observability` replaces content with hashes and lengths. |
 | `-v, --verbose` | `false` | Enable debug-level logging |
@@ -87,12 +88,16 @@ When `--findings` is provided, both severity and state filters are bypassed. Onl
 
 ## Output
 
-Results are saved to a timestamped JSON file in the output directory:
+Results are saved to a timestamped JSON file. By default each run gets its own
+timestamped subfolder so repeated runs stay grouped:
 
 ```
 output/
-    findings_assessment_<project>_<timestamp>.json
+    <timestamp>/
+        findings_assessment_<project>_<timestamp>.json
 ```
+
+Pass `--no-run-subdir` to write directly into `--output` instead.
 
 The file contains:
 
