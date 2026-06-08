@@ -133,9 +133,14 @@ The table below defines two tiers for a production go/no-go decision. **Minimum*
 
 ## Output Files
 
+Each benchmark invocation writes into its own timestamped run folder
+(`<output>/<run-timestamp>/`), so repeated runs against the same `--output`
+stay grouped. The per-dataset folders and the cross-dataset summary all live
+under that run folder.
+
 ### Per-Dataset KPIs
 
-Saved to `<output>/<project>/<timestamp>_<model>_benchmark_kpis.json`:
+Saved to `<output>/<run-timestamp>/<project>/<timestamp>_<model>_benchmark_kpis.json`:
 
 ```json
 {
@@ -177,8 +182,8 @@ Saved to `<output>/<project>/<timestamp>_<model>_benchmark_kpis.json`:
 
 ### Cross-Dataset Summary
 
-Saved to `<output>/<timestamp>_<model>_benchmark_summary.json`. Same structure as per-dataset KPIs but aggregated across all datasets.
+Saved to `<output>/<run-timestamp>/<timestamp>_<model>_benchmark_summary.json`. Same structure as per-dataset KPIs but aggregated across all datasets.
 
 ### Raw Results
 
-Saved to `<output>/<project>/<timestamp>_<model>_benchmark_raw_results.json`. Contains the full enriched dataset with agent triage results and justification scores per finding.
+Saved to `<output>/<run-timestamp>/<project>/<timestamp>_<model>_benchmark_raw_results.json`. Contains the full enriched dataset with agent triage results and justification scores per finding.

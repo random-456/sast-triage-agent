@@ -1,5 +1,6 @@
 """Tests for ``utils.directory_helpers``."""
 
+import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -51,3 +52,25 @@ class TestSetupDirectoriesCleanup:
             DirectoryHelpers.setup_directories("output_dir", keep_temp_dir=True)
 
         mock_rmtree.assert_not_called()
+
+
+class TestTimestampedSubdir:
+    """``timestamped_subdir`` groups one run's outputs under a dated folder.
+
+    The directory is created through ``io_safe`` so the extra nesting does not
+    push the path past Windows MAX_PATH before the agent starts writing.
+    """
+
+    def test_creates_and_returns_timestamped_subdir(self):
+        with patch("utils.directory_helpers.os.makedirs") as mock_makedirs, \
+             patch(
+                 "utils.directory_helpers.io_safe",
+                 side_effect=lambda p: f"<io_safe>{p}",
+             ), \
+             patch("utils.directory_helpers.datetime") as mock_datetime:
+            mock_datetime.now.return_value.strftime.return_value = "20260608_143000"
+            result = DirectoryHelpers.timestamped_subdir("out")
+
+        expected = os.path.join("out", "20260608_143000")
+        assert result == expected
+        mock_makedirs.assert_called_once_with(f"<io_safe>{expected}", exist_ok=True)

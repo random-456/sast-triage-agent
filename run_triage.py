@@ -182,6 +182,7 @@ def execute_triage(
     finding_hashes: Optional[List[str]],
     interactive: bool = False,
     log_mode: str = "rich",
+    create_run_subdir: bool = True,
 ) -> None:
     """
     Shared triage execution logic used by both run and interactive commands.
@@ -197,6 +198,7 @@ def execute_triage(
         keep_temp: Whether to preserve temp directory
         finding_hashes: Specific finding hashes to target, or None
         interactive: Whether to show interactive preprocessing confirmation
+        create_run_subdir: Nest this run's output under a timestamped subfolder
     """
     logger = logging.getLogger("run_triage")
 
@@ -228,6 +230,10 @@ def execute_triage(
     logger.info(f"Target branch: {branch}")
 
     try:
+        if create_run_subdir:
+            output_dir = DirectoryHelpers.timestamped_subdir(output_dir)
+        logger.info(f"Output directory: {output_dir}")
+
         DirectoryHelpers.setup_directories(output_dir, keep_temp)
 
         logger.info("Initializing CheckmarxClient")
@@ -438,6 +444,12 @@ def cli():
     help=f"Whether to keep {TEMP_DIR} or not",
 )
 @click.option(
+    "--run-subdir/--no-run-subdir",
+    default=True,
+    show_default=True,
+    help="Nest this run's results under a timestamped subfolder of --output",
+)
+@click.option(
     "-v", "--verbose",
     is_flag=True,
     help="Enable verbose output",
@@ -462,6 +474,7 @@ def run(
     output_dir: str,
     gitleaks_report: str,
     keep_temp: bool,
+    run_subdir: bool,
     finding_hashes: List,
     verbose: bool,
     log_mode: str,
@@ -489,6 +502,7 @@ def run(
         finding_hashes=finding_hashes,
         interactive=False,
         log_mode=log_mode,
+        create_run_subdir=run_subdir,
     )
 
 

@@ -5,6 +5,7 @@ import logging
 
 from utils.banner import display_banner
 from utils.generic_logging import setup_logging
+from utils.directory_helpers import DirectoryHelpers
 from benchmark.benchmark_helpers import BenchmarkHelpers
 from run_triage import cli
 
@@ -37,6 +38,9 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool, log_mode: str
     runner = CliRunner()
     gcp_project, gcp_location = resolve_vertex_config()
 
+    # Group every dataset of this invocation plus the summary under one folder.
+    run_output_dir = DirectoryHelpers.timestamped_subdir(output_dir)
+
     datasets = [os.path.join(BENCHMARK_DATASETS_DIR, f) for f in os.listdir(BENCHMARK_DATASETS_DIR) if f.endswith(".json")]
     logger.info(f"Found {len(datasets)} datasets to evaluate !")
 
@@ -60,10 +64,12 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool, log_mode: str
 
             logger.info(f"Performing triage for {len(finding_ids)} findings...")
 
-            project_output_dir = os.path.join(output_dir, project_name)
+            project_output_dir = os.path.join(run_output_dir, project_name)
             os.makedirs(project_output_dir, exist_ok=True)
 
-            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", gitleaks_report, "--log-mode", log_mode]
+            # --no-run-subdir: the benchmark already owns run_output_dir, so the
+            # nested run_triage call must write straight into project_output_dir.
+            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", gitleaks_report, "--log-mode", log_mode, "--no-run-subdir"]
 
             logger.debug(f"Launching run_triage command with parameters : {' '.join(parameters)}")
             result = runner.invoke(cli, ["run"] + parameters)
@@ -111,7 +117,7 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool, log_mode: str
     BenchmarkHelpers.generate_summary_kpis(
         model_name=model_name,
         all_datasets_data=all_datasets_data,
-        output_dir=output_dir,
+        output_dir=run_output_dir,
     )
 
 if __name__ == "__main__":
