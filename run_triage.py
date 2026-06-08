@@ -8,6 +8,7 @@ Usage:
 """
 
 import asyncio
+import dataclasses
 import logging
 import os
 import sys
@@ -29,11 +30,6 @@ os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = CERTIFICATES_CRT_FILE
 from sast_triage.agent import SASTTriageAgent
 from sast_triage.preprocessing.obfuscation import obfuscate_codebase
 from sast_triage.preprocessing.secret_masking import mask_secrets
-from sast_triage.tracing import (
-    initialize_tracing,
-    is_tracing_enabled,
-    wait_for_trace_review,
-)
 from utils.checkmarx_helpers import CheckmarxClient
 from utils.click_helpers import CommaList
 from utils.directory_helpers import DirectoryHelpers
@@ -51,6 +47,7 @@ from config import (
     DEFAULT_TRIAGE_MODEL,
     TEMP_DIR,
     APP_NAME,
+    resolve_vertex_config,
 )
 
 
@@ -65,6 +62,7 @@ async def _run_triage_analysis(
     repo_url: Optional[str] = None,
     obfuscation_report=None,
     masking_report=None,
+    log_mode: str = "rich",
 ) -> int:
     """
     Run the triage analysis on the fetched data.
@@ -87,23 +85,17 @@ async def _run_triage_analysis(
     logger = logging.getLogger("run_triage_analysis")
 
     try:
-        vertex_project = os.getenv("PROJECT_ID")
-        vertex_location = os.getenv("DEFAULT_LOCATION")
-
-        if not vertex_project:
-            logger.error(
-                "PROJECT_ID environment variable is required "
-                "for Vertex AI"
-            )
-            return 1
-
-        logger.info(f"Using Vertex AI project: {vertex_project}")
-        logger.info(f"Using location: {vertex_location}")
+        gcp_project, gcp_location = resolve_vertex_config()
+        logger.info(
+            f"Using Vertex AI project {gcp_project} ({gcp_location})"
+        )
         logger.info(f"Using model: {model_name}")
 
+        from sast_triage.session_log import LogMode
+
         agent = SASTTriageAgent(
-            project=vertex_project,
-            location=vertex_location,
+            project=gcp_project,
+            location=gcp_location,
             model_name=model_name,
             project_name=project_name,
             project_id=project_id,
@@ -112,13 +104,24 @@ async def _run_triage_analysis(
             branch=branch,
             repo_url=repo_url,
             output_dir=output_dir,
+            log_mode=LogMode(log_mode),
         )
 
-        # Log preprocessing reports in the session log
+        # Record preprocessing reports in the session log. The reports are
+        # dataclasses (see sast_triage/preprocessing), so use dataclasses.asdict
+        # to coerce them to the dict shape PreprocessingCompleteEvent expects.
         if obfuscation_report or masking_report:
-            agent.agent_logger.log_preprocessing(
-                obfuscation_report=obfuscation_report,
-                masking_report=masking_report,
+            agent.session_logger.emit_preprocessing_complete(
+                obfuscation_report=(
+                    dataclasses.asdict(obfuscation_report)
+                    if obfuscation_report is not None
+                    else None
+                ),
+                masking_report=(
+                    dataclasses.asdict(masking_report)
+                    if masking_report is not None
+                    else None
+                ),
             )
 
         await agent.process_all_findings(output_dir)
@@ -178,6 +181,8 @@ def execute_triage(
     keep_temp: bool,
     finding_hashes: Optional[List[str]],
     interactive: bool = False,
+    log_mode: str = "rich",
+    create_run_subdir: bool = True,
 ) -> None:
     """
     Shared triage execution logic used by both run and interactive commands.
@@ -193,6 +198,7 @@ def execute_triage(
         keep_temp: Whether to preserve temp directory
         finding_hashes: Specific finding hashes to target, or None
         interactive: Whether to show interactive preprocessing confirmation
+        create_run_subdir: Nest this run's output under a timestamped subfolder
     """
     logger = logging.getLogger("run_triage")
 
@@ -224,6 +230,10 @@ def execute_triage(
     logger.info(f"Target branch: {branch}")
 
     try:
+        if create_run_subdir:
+            output_dir = DirectoryHelpers.timestamped_subdir(output_dir)
+        logger.info(f"Output directory: {output_dir}")
+
         DirectoryHelpers.setup_directories(output_dir, keep_temp)
 
         logger.info("Initializing CheckmarxClient")
@@ -346,10 +356,10 @@ def execute_triage(
                 repo_url=repo_url,
                 obfuscation_report=obfuscation_report,
                 masking_report=masking_report,
+                log_mode=log_mode,
             )
         )
 
-        wait_for_trace_review()
         sys.exit(exit_code)
 
     except Exception as e:
@@ -434,14 +444,26 @@ def cli():
     help=f"Whether to keep {TEMP_DIR} or not",
 )
 @click.option(
+    "--run-subdir/--no-run-subdir",
+    default=True,
+    show_default=True,
+    help="Nest this run's results under a timestamped subfolder of --output",
+)
+@click.option(
     "-v", "--verbose",
     is_flag=True,
     help="Enable verbose output",
 )
 @click.option(
-    "--trace",
-    is_flag=True,
-    help="Enable Phoenix tracing (UI at localhost:6006)",
+    "--log-mode",
+    type=click.Choice(["rich", "observability"], case_sensitive=False),
+    default="rich",
+    show_default=True,
+    help=(
+        "Session log capture mode. 'rich' records every LLM prompt and "
+        "response and every tool call payload (needed for replay). "
+        "'observability' replaces content with hashes and lengths."
+    ),
 )
 def run(
     project_name: str,
@@ -452,9 +474,10 @@ def run(
     output_dir: str,
     gitleaks_report: str,
     keep_temp: bool,
+    run_subdir: bool,
     finding_hashes: List,
     verbose: bool,
-    trace: bool,
+    log_mode: str,
 ) -> None:
     """
     Run triage in non-interactive mode.
@@ -463,9 +486,6 @@ def run(
     """
     display_banner(APP_NAME)
     setup_logging(logging.DEBUG) if verbose else setup_logging(logging.INFO)
-
-    if trace or is_tracing_enabled():
-        initialize_tracing()
 
     severity_list = [s.strip().upper() for s in severities.split(",")]
     state_list = [s.strip().upper() for s in states.split(",")]
@@ -481,6 +501,8 @@ def run(
         keep_temp=keep_temp,
         finding_hashes=finding_hashes,
         interactive=False,
+        log_mode=log_mode,
+        create_run_subdir=run_subdir,
     )
 
 
@@ -491,17 +513,20 @@ def run(
     help="Enable verbose output",
 )
 @click.option(
-    "--trace",
-    is_flag=True,
-    help="Enable Phoenix tracing (UI at localhost:6006)",
+    "--log-mode",
+    type=click.Choice(["rich", "observability"], case_sensitive=False),
+    default="rich",
+    show_default=True,
+    help=(
+        "Session log capture mode. 'rich' records every LLM prompt and "
+        "response and every tool call payload (needed for replay). "
+        "'observability' replaces content with hashes and lengths."
+    ),
 )
-def interactive(verbose: bool, trace: bool) -> None:
+def interactive(verbose: bool, log_mode: str) -> None:
     """Run triage in interactive mode with guided prompts."""
     display_banner(APP_NAME)
     setup_logging(logging.DEBUG) if verbose else setup_logging(logging.INFO)
-
-    if trace or is_tracing_enabled():
-        initialize_tracing()
 
     from sast_triage.interactive import (
         display_config_summary,
@@ -527,6 +552,7 @@ def interactive(verbose: bool, trace: bool) -> None:
         keep_temp=False,
         finding_hashes=config["finding_hashes"],
         interactive=True,
+        log_mode=log_mode,
     )
 
 

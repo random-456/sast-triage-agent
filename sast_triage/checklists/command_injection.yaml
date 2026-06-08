@@ -1,0 +1,74 @@
+checklist_id: command_injection
+display_name: "OS Command Injection (CWE-78, CWE-77)"
+
+applies_to:
+  cwes:
+    - CWE-78
+    - CWE-77
+  query_names: []
+
+evidence_required:
+  - description: "Source is attacker-controlled and reaches a process-execution call"
+    examples:
+      - "request parameter passed to a system command, filename used in a shell call"
+  - description: "Whether a shell interprets the command, because that determines if metacharacters are dangerous"
+    examples:
+      - "shell invoked: Runtime.exec with sh -c, child_process.exec, subprocess with shell=True, os.system"
+      - "no shell: ProcessBuilder/Runtime.exec with an argument array, child_process.execFile, subprocess with shell=False and a list"
+  - description: "Whether the tainted value is a separate argument or is concatenated into the command/shell string"
+  - description: "Every guard read and classified: allowlist of commands/arguments, or escaping/quoting (and whether it actually holds)"
+
+sanitizer_patterns:
+  effective:
+    - "no shell at all: pass the program and each argument as separate array elements so the OS does not interpret metacharacters (language-agnostic principle)"
+    - "ProcessBuilder(list) or Runtime.exec(String[]) with the user value as a distinct argument (Java)"
+    - "child_process.execFile / spawn with an args array, not exec (Node.js)"
+    - "subprocess with shell=False and an argument list (Python)"
+    - "strict allowlist: the user input only selects from a fixed set of known commands or arguments, never forms them"
+  ineffective:
+    - "escaping or quoting shell metacharacters in a string passed to a shell: bypassable across shells and quoting contexts"
+    - "blacklisting characters such as ; | & $ ` ( ) < > newline: incomplete and bypassable"
+    - "wrapping user input in quotes inside a shell command string"
+    - "Runtime.exec(String) on a single concatenated string: it splits on whitespace and execs the first token directly with no shell, so it does not chain commands but still allows argument injection and splitting; full command injection applies only if that string is then handed to sh -c or cmd /c"
+    - "validating the command name but still concatenating attacker-controlled arguments into a shell string"
+    - "treating an argument array as safe when a shell is re-enabled anyway: a Windows .bat or .cmd target re-enters cmd.exe and re-interprets metacharacters, and a shell:true (Node) or shell=True (Python) option spawns a shell regardless of how arguments are passed"
+    - "an argument array whose program is itself an interpreter with the tainted value as its code argument (sh -c, bash -c, python -c, node -e, awk, find -exec): no OS shell is involved but this is still code execution"
+
+investigation_guidance: |
+  The decisive question is whether a shell is in the loop. If the code passes
+  the program and its arguments as a list to an exec-family call that does not
+  spawn a shell (ProcessBuilder, execFile, subprocess with shell=False), shell
+  metacharacters in an argument value are inert. That is a real control, but it
+  neutralizes only the argument's content. Before treating it as not exploitable,
+  confirm from the code that (i) the program name is fixed and not
+  attacker-controlled, (ii) the tainted value cannot be parsed as an option
+  (no leading-dash / argument injection), (iii) no shell is re-enabled (a Windows
+  .bat or .cmd target, shell:true or shell=True), and (iv) the program is not
+  itself an interpreter taking the tainted value as code (sh -c, bash -c,
+  python -c, node -e, awk, find -exec). If any of these is unverified, lean
+  exploitable.
+
+  If a shell is invoked (sh -c, child_process.exec, shell=True, os.system) and
+  any part of the command string is attacker-controlled, treat it as
+  exploitable unless an effective control is present. Escaping and quoting are
+  not effective controls here: quoting contexts and shell differences make
+  them bypassable. The only robust controls are removing the shell or
+  constraining the input to a fixed allowlist.
+
+  Read the actual call. Names like exec or run do not tell you whether a shell
+  is used: check the specific API and its arguments. Two traps re-enable a
+  shell even when arguments are passed as an array: a Windows .bat or .cmd
+  target hands the line back to cmd.exe, and a shell:true / shell=True option
+  spawns a shell regardless. Watch for argument injection too: even without a
+  shell, a user-controlled value placed where the program expects an option (a
+  leading dash) can change the program's behavior.
+
+common_false_positive_patterns: |
+  The call uses an argument array with no shell (ProcessBuilder, execFile,
+  subprocess shell=False) and the user value is a positional data argument,
+  verified: not parseable as an option, the program name is fixed, the program
+  is not an interpreter taking it as code, and no shell is re-enabled via a
+  wrapper, a .bat/.cmd target or a shell flag. The command is fully constant
+  with no attacker influence. The input is mapped through a strict allowlist to
+  a known-safe command or argument. The code path is test or build tooling not
+  deployed to production.

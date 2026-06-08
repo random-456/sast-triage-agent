@@ -12,6 +12,7 @@ from typing import Dict, List
 from langchain_core.tools import tool
 
 from config import CODEBASE_DIR, FINDINGS_CSV_FILE, FINDINGS_JSON_FILE, MAX_SEARCH_RESULTS
+from utils.path_helpers import io_safe, display_path
 
 
 def validate_safe_path(base_path: str, requested_path: str) -> str:
@@ -24,7 +25,8 @@ def validate_safe_path(base_path: str, requested_path: str) -> str:
         requested_path: The requested path to validate
 
     Returns:
-        The validated absolute path
+        The validated absolute path, in a form safe for I/O on this platform
+        (long-path-prefixed on Windows).
 
     Raises:
         ValueError: If path traversal is detected
@@ -36,7 +38,9 @@ def validate_safe_path(base_path: str, requested_path: str) -> str:
     full_path = os.path.abspath(os.path.join(base, clean_path))
 
     # Check if the resolved path is within the base path
-    # Using os.path.commonpath to ensure the path doesn't escape
+    # Using os.path.commonpath to ensure the path doesn't escape.
+    # Run the check against the non-prefixed form so commonpath sees
+    # comparable paths.
     try:
         if not os.path.commonpath([base, full_path]) == base:
             raise ValueError(f"Path traversal attempt detected: {requested_path}")
@@ -44,7 +48,7 @@ def validate_safe_path(base_path: str, requested_path: str) -> str:
         # commonpath raises ValueError if paths are on different drives on Windows
         raise ValueError(f"Path traversal attempt detected: {requested_path}")
 
-    return full_path
+    return io_safe(full_path)
 
 
 @tool
@@ -151,15 +155,20 @@ def search_in_files(pattern: str, file_extensions: str = "*") -> Dict:
         Search results with file paths and matching lines
     """
     try:
+        # Use the long-path-safe form for globbing and I/O on Windows;
+        # keep an unprefixed copy for clean relpath display.
+        base_display = os.path.abspath(CODEBASE_DIR)
+        base = io_safe(base_display)
+
         if file_extensions == "*":
-            search_path = os.path.join(CODEBASE_DIR, "**", "*")
+            search_path = os.path.join(base, "**", "*")
             files = glob.glob(search_path, recursive=True)
             files = [f for f in files if os.path.isfile(f)]
         else:
             files = []
             for ext in file_extensions.split(","):
                 ext = ext.strip().lstrip(".")
-                search_path = os.path.join(CODEBASE_DIR, "**", f"*.{ext}")
+                search_path = os.path.join(base, "**", f"*.{ext}")
                 files.extend(glob.glob(search_path, recursive=True))
 
         results = []
@@ -172,7 +181,9 @@ def search_in_files(pattern: str, file_extensions: str = "*") -> Dict:
                     lines = f.readlines()
                     for i, line in enumerate(lines):
                         if pattern_re.search(line):
-                            rel_path = os.path.relpath(file_path, CODEBASE_DIR)
+                            rel_path = os.path.relpath(
+                                display_path(file_path), base_display
+                            )
                             results.append({
                                 "file": rel_path,
                                 "line": i + 1,
@@ -193,38 +204,6 @@ def search_in_files(pattern: str, file_extensions: str = "*") -> Dict:
         }
     except Exception as e:
         return {"error": f"Search failed: {str(e)}"}
-
-
-@tool
-def submit_triage_decision(
-    is_exploitable: bool,
-    confidence: float,
-    justification: str
-) -> Dict:
-    """
-    Submit the final triage decision after completing analysis.
-
-    Args:
-        is_exploitable: True if the vulnerability is exploitable, False if not
-        confidence: Confidence level between 0.0 and 1.0
-        justification: Detailed explanation of the decision
-
-    Returns:
-        Confirmation of decision submission
-    """
-    # Validate confidence is in range
-    if not 0.0 <= confidence <= 1.0:
-        return {"error": f"Confidence must be between 0.0 and 1.0, got {confidence}"}
-
-    # Convert boolean to assessment result
-    assessment_result = "CONFIRMED" if is_exploitable else "NOT_EXPLOITABLE"
-
-    return {
-        "status": "decision_submitted",
-        "assessment_result": assessment_result,
-        "confidence": confidence,
-        "justification": justification
-    }
 
 
 @tool
@@ -267,42 +246,3 @@ def list_directory(directory_path: str) -> Dict:
         }
     except Exception as e:
         return {"error": f"Failed to list directory: {str(e)}"}
-
-
-@tool
-def verify_analysis(
-    investigation_summary: str,
-    key_evidence: str,
-    preliminary_assessment: str,
-    potential_gaps: str,
-    is_analysis_complete: bool
-) -> Dict:
-    """
-    Verification checkpoint before final decision. Step back and review your analysis.
-
-    Args:
-        investigation_summary: Brief summary of what you investigated
-        key_evidence: The main evidence supporting your assessment
-        preliminary_assessment: Your current assessment (CONFIRMED or NOT_EXPLOITABLE)
-        potential_gaps: Areas you're uncertain about.
-        is_analysis_complete: Set to True ONLY if potential_gaps is 'none' and you are ready to submit. Set False if you need to investigate further.
-    """
-
-    # CASE 1: The Agent signals it is done (True)
-    if is_analysis_complete:
-        return {
-            "status": "verification_complete",
-            "feedback": "Analysis verified as complete. You are authorized to proceed to submit_triage_decision."
-        }
-
-    # CASE 2: The Agent signals it is NOT done (False)
-    else:
-        # We explicitly block the agent and echo the gaps back
-        return {
-            "status": "verification_failed",
-            "feedback": (
-                f"STOP. You marked analysis as incomplete. "
-                f"Recorded gaps: '{potential_gaps}'. "
-                f"You must use read_file or search_in_files to resolve these gaps before submitting."
-            )
-        }

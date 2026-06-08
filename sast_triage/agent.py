@@ -7,33 +7,53 @@ import csv
 import json
 import datetime
 import logging
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from langchain_google_vertexai import ChatVertexAI
-from langchain_google_vertexai.model_garden import ChatAnthropicVertex
-from langchain_core.messages import ToolMessage
 
-from sast_triage.agent_models import TriageDecision
+from sast_triage.agent_models import (
+    AnalystVerdict,
+    CheckmarxFinding,
+    CritiqueResult,
+    SuggestedState,
+    TriageDecision,
+)
 from sast_triage.agent_tools import (
     read_file,
     search_in_files,
     list_directory,
-    verify_analysis,
-    submit_triage_decision,
     parse_csv_findings,
     get_finding_details,
 )
-from sast_triage.agent_logging import AgentLoggingManager
-from sast_triage.prompts import (
-    TRIAGE_SYSTEM_PROMPT,
-    TRIAGE_INPUT_PROMPT_TEMPLATE,
+from sast_triage.checklists import select_checklist_with_method
+from sast_triage.graph import (
+    TriageState,
+    aggregate_node,
+    build_per_finding_graph,
+    make_analyst_node,
+    make_critic_node,
+    make_research_node,
 )
+from sast_triage.session_log import LogMode, SessionLogger
+from utils.path_helpers import io_safe
 from config import (
+    ANALYST_TEMPERATURES,
     CODEBASE_DIR,
-    FINDINGS_JSON_FILE,
-    FINDINGS_CSV_FILE,
-    MAX_ANALYSIS_ITERATIONS,
+    CONFIDENCE_AGREEMENT_WEIGHT,
+    CONFIDENCE_THRESHOLD,
+    CRITIC_TEMPERATURE,
     DEFAULT_OUTPUT_DIR,
+    DEFAULT_SAMPLES,
+    FINDINGS_CSV_FILE,
+    FINDINGS_JSON_FILE,
+    GRAPH_RECURSION_LIMIT,
+    INITIAL_SAMPLES,
+    MAX_REANALYSIS_LOOPS,
+    MAX_RESEARCH_ITERATIONS,
+    MAX_RESEARCH_STALL,
+    MAX_TOOL_CALLS_PER_RESEARCH,
+    NON_CONVERGENT_CONFIDENCE_CAP,
 )
 
 
@@ -55,22 +75,27 @@ class SASTTriageAgent:
         branch: Optional[str] = None,
         repo_url: Optional[str] = None,
         output_dir: str = DEFAULT_OUTPUT_DIR,
+        log_mode: LogMode = LogMode.RICH,
     ):
         """
         Initialize the SAST Triage Agent.
 
         Args:
-            project: Google Cloud Project ID for Vertex AI
-            location: Vertex AI location
-            model_name: Vertex AI model name
-            temperature: Model temperature for consistency
-            project_name: Project name for reporting
-            project_id: Project identifier for reporting
-            scan_id: Scan identifier for reporting
-            checkmarx_base_url: Checkmarx base URL for report links
-            branch: Git branch being analyzed
-            repo_url: Repository URL for logging
-            output_dir: Directory for output files
+            project: GCP project ID for Vertex AI.
+            location: Vertex AI region.
+            model_name: Gemini model name.
+            temperature: Model temperature for consistency.
+            project_name: Project name for reporting.
+            project_id: Project identifier for reporting.
+            scan_id: Scan identifier for reporting.
+            checkmarx_base_url: Checkmarx base URL for report links.
+            branch: Git branch being analyzed.
+            repo_url: Repository URL for logging.
+            output_dir: Directory for output files.
+            log_mode: ``LogMode.RICH`` (default) captures every LLM
+                prompt and response verbatim in the JSONL session log;
+                ``LogMode.OBSERVABILITY`` replaces content with hashes
+                and lengths.
         """
         self.project_name = project_name
         self.project_id = project_id
@@ -78,49 +103,62 @@ class SASTTriageAgent:
         self.checkmarx_base_url = checkmarx_base_url
         self.branch = branch
 
-        # Initialize the appropriate LLM backend
-        if "claude" in model_name.lower():
-            self.logger.info(
-                f"Initializing Claude on Vertex: {model_name}"
-            )
-            self.llm = ChatAnthropicVertex(
-                project=project,
-                location=location,
-                model_name=model_name,
-                temperature=temperature,
-                max_retries=3,
-            )
-        else:
-            self.logger.info(
-                f"Initializing Gemini/Vertex: {model_name}"
-            )
-            self.llm = ChatVertexAI(
-                project=project,
-                location=location,
-                model_name=model_name,
-                temperature=temperature,
-                max_retries=3,
-            )
-
-        self.tools = [
-            read_file,
-            search_in_files,
-            list_directory,
-            verify_analysis,
-            submit_triage_decision,
-        ]
-
-        # Bind tools to the LLM
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
-
-        # Store model configuration for logging
+        # Vertex AI via the langchain-google-vertexai client (gRPC transport).
+        # The caller resolves project and location via config.resolve_vertex_config.
+        self._project = project
+        self._location = location
         self.model_name = model_name
         self.temperature = temperature
+        self._structured_llm_cache: Dict[float, object] = {}
 
-        # Setup agent logging with session context
-        self.agent_logger = AgentLoggingManager(
-            model_name=model_name,
-            temperature=temperature,
+        self.logger.info(
+            f"Initializing Gemini via Vertex AI: {model_name}"
+        )
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Structured JSONL session log; see docs/session-log.md for the
+        # event schema.
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        self.session_logger = SessionLogger(
+            log_path=log_dir / f"sast_triage_{timestamp}.jsonl",
+            log_mode=log_mode,
+        )
+
+        # The per-finding flow is a LangGraph subgraph: a tool-using researcher
+        # gathers evidence, structured analyst samples at varied temperature
+        # produce verdicts, an adversarial critic reviews them, and the results
+        # are aggregated by self-consistency.
+        self.research_tools = [read_file, search_in_files, list_directory]
+        research_llm = (
+            self._make_llm(temperature)
+            .bind_tools(self.research_tools)
+            .with_config({"tags": ["session_log:mode=with_tools"]})
+        )
+        critic_llm = (
+            self._make_llm(CRITIC_TEMPERATURE)
+            .with_structured_output(CritiqueResult)
+            .with_config(
+                {
+                    "tags": [
+                        "session_log:mode=structured",
+                        "session_log:schema=CritiqueResult",
+                    ]
+                }
+            )
+        )
+        self.per_finding_graph = build_per_finding_graph(
+            research_node=make_research_node(research_llm, self.research_tools),
+            analyst_node=make_analyst_node(self._analyst_llm_for),
+            critic_node=make_critic_node(critic_llm),
+            aggregate_node=aggregate_node,
+            session_logger=self.session_logger,
+        )
+
+        self.session_logger.emit_session_start(
+            model=model_name,
+            agent_config=self._agent_config_snapshot(),
             project_name=project_name,
             project_id=project_id,
             scan_id=scan_id,
@@ -128,17 +166,64 @@ class SASTTriageAgent:
             branch=branch,
         )
 
-        # System and Human prompts
-        self.system_prompt = TRIAGE_SYSTEM_PROMPT
-        self.human_prompt_template = TRIAGE_INPUT_PROMPT_TEMPLATE
-
         # File to store assessment results (with timestamp)
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         name = project_name or "unknown"
         self.assessments_file = os.path.join(
             output_dir,
             f"findings_assessment_{name}_{timestamp}.json",
         )
+        # Ensure the output directory exists before any write. io_safe keeps
+        # this working on Windows when the path exceeds the 260-char MAX_PATH
+        # limit; it is a no-op on POSIX.
+        os.makedirs(
+            io_safe(os.path.dirname(self.assessments_file) or "."),
+            exist_ok=True,
+        )
+
+    @staticmethod
+    def _agent_config_snapshot() -> Dict[str, Any]:
+        """Constants snapshot for the ``session_start`` event."""
+        return {
+            "INITIAL_SAMPLES": INITIAL_SAMPLES,
+            "DEFAULT_SAMPLES": DEFAULT_SAMPLES,
+            "MAX_RESEARCH_ITERATIONS": MAX_RESEARCH_ITERATIONS,
+            "MAX_REANALYSIS_LOOPS": MAX_REANALYSIS_LOOPS,
+            "MAX_RESEARCH_STALL": MAX_RESEARCH_STALL,
+            "MAX_TOOL_CALLS_PER_RESEARCH": MAX_TOOL_CALLS_PER_RESEARCH,
+            "GRAPH_RECURSION_LIMIT": GRAPH_RECURSION_LIMIT,
+            "ANALYST_TEMPERATURES": list(ANALYST_TEMPERATURES),
+            "CRITIC_TEMPERATURE": CRITIC_TEMPERATURE,
+            "CONFIDENCE_AGREEMENT_WEIGHT": CONFIDENCE_AGREEMENT_WEIGHT,
+            "CONFIDENCE_THRESHOLD": CONFIDENCE_THRESHOLD,
+            "NON_CONVERGENT_CONFIDENCE_CAP": NON_CONVERGENT_CONFIDENCE_CAP,
+        }
+
+    def _make_llm(self, temperature: float) -> ChatVertexAI:
+        """Build a Gemini-on-Vertex client at the given temperature."""
+        return ChatVertexAI(
+            model_name=self.model_name,
+            project=self._project,
+            location=self._location,
+            temperature=temperature,
+            max_retries=3,
+        )
+
+    def _analyst_llm_for(self, temperature: float):
+        """Structured-output analyst LLM for a temperature, cached per value."""
+        if temperature not in self._structured_llm_cache:
+            self._structured_llm_cache[temperature] = (
+                self._make_llm(temperature)
+                .with_structured_output(AnalystVerdict)
+                .with_config(
+                    {
+                        "tags": [
+                            "session_log:mode=structured",
+                            "session_log:schema=AnalystVerdict",
+                        ]
+                    }
+                )
+            )
+        return self._structured_llm_cache[temperature]
 
     async def analyze_single_finding(
         self, result_hash: str
@@ -152,190 +237,68 @@ class SASTTriageAgent:
         Returns:
             TriageDecision with analysis results
         """
-        finding_log = self.agent_logger.log_finding_start(result_hash)
-
         finding_details = get_finding_details.invoke(
             {"result_hash": result_hash}
         )
-        if "error" in finding_details:
+        if isinstance(finding_details, dict) and "error" in finding_details:
             decision = TriageDecision(
                 resultHash=result_hash,
-                assessment_result="REFUSED",
-                assessment_confidence=0.0,
-                assessment_justification=(
+                is_vulnerable=None,
+                confidence=0.0,
+                suggested_state=SuggestedState.REFUSED,
+                justification=(
                     f"Could not load finding details: "
                     f"{finding_details['error']}"
                 ),
             )
-            self.agent_logger.log_finding_complete(finding_log, decision)
             return decision
 
-        input_prompt = self.human_prompt_template.format(
-            finding_details=json.dumps(finding_details, indent=2),
-            finding_id=result_hash,
-        )
-
         try:
-            messages = [
-                ("system", self.system_prompt),
-                ("human", input_prompt),
-            ]
-
-            self.agent_logger.log_message(
-                finding_log, "system", self.system_prompt
+            finding = CheckmarxFinding(**finding_details)
+            checklist, checklist_method = select_checklist_with_method(
+                finding.queryName, finding.cweID
             )
-            self.agent_logger.log_message(
-                finding_log, "human", input_prompt
+            self.logger.debug(
+                f"Selected checklist '{checklist.checklist_id}' "
+                f"(method={checklist_method})"
             )
 
-            max_iterations = MAX_ANALYSIS_ITERATIONS
+            self.session_logger.emit_finding_start(
+                finding_id=result_hash,
+                finding=finding.model_dump(),
+                checklist_id=checklist.checklist_id,
+                checklist_selection_method=checklist_method,
+            )
 
-            for iteration in range(max_iterations):
-                self.logger.debug(
-                    f"  Iteration {iteration + 1}/{max_iterations}"
+            state = TriageState(finding=finding, checklist=checklist)
+            invoke_config = self.session_logger.attach_to_graph_config(
+                {"recursion_limit": GRAPH_RECURSION_LIMIT}
+            )
+            self.session_logger.emit_graph_invoke_start(
+                finding_id=result_hash,
+                recursion_limit=GRAPH_RECURSION_LIMIT,
+            )
+            try:
+                result = await self.per_finding_graph.ainvoke(
+                    state, config=invoke_config
                 )
-
-                response = await self.llm_with_tools.ainvoke(messages)
-                messages.append(response)
-
-                # Extract token usage from LLM response
-                token_usage = getattr(
-                    response, "usage_metadata", None
+            finally:
+                self.session_logger.emit_graph_invoke_end(
+                    finding_id=result_hash
                 )
-                if token_usage:
-                    self.agent_logger.log_token_usage(
-                        finding_log, token_usage
-                    )
+            decision = result["verdict"]
+            stop_reason = result.get("stop_reason") if isinstance(
+                result, dict
+            ) else None
 
-                # Log assistant response
-                tool_calls_info = []
-                if response.tool_calls:
-                    tool_calls_info = [
-                        {"name": tc["name"], "args": tc["args"]}
-                        for tc in response.tool_calls
-                    ]
-
-                self.agent_logger.log_message(
-                    finding_log,
-                    "assistant",
-                    response.content,
-                    tool_calls_info,
-                )
-
-                if response.tool_calls:
-                    for tool_call in response.tool_calls:
-                        tool_name = tool_call["name"]
-                        tool_args = tool_call["args"]
-
-                        self.logger.debug(f"Using tool: {tool_name}")
-
-                        if tool_name == "submit_triage_decision":
-                            try:
-                                decision = TriageDecision(
-                                    resultHash=result_hash,
-                                    assessment_result=(
-                                        "CONFIRMED"
-                                        if tool_args.get(
-                                            "is_exploitable"
-                                        )
-                                        else "NOT_EXPLOITABLE"
-                                    ),
-                                    assessment_confidence=tool_args.get(
-                                        "confidence", 0.5
-                                    ),
-                                    assessment_justification=(
-                                        tool_args.get(
-                                            "justification", ""
-                                        )
-                                    ),
-                                )
-
-                                self.agent_logger.log_finding_complete(
-                                    finding_log, decision
-                                )
-
-                                self.logger.info(
-                                    f"Decision submitted: "
-                                    f"{decision.assessment_result} "
-                                    f"(confidence: "
-                                    f"{decision.assessment_confidence:.2f})"
-                                )
-                                return decision
-
-                            except Exception as e:
-                                self.logger.error(
-                                    f"Error processing decision: {e}"
-                                )
-                                tool_result = {
-                                    "error": (
-                                        f"Failed to process decision: "
-                                        f"{str(e)}"
-                                    )
-                                }
-                        else:
-                            tool_result = None
-                            for t in self.tools:
-                                if t.name == tool_name:
-                                    try:
-                                        tool_result = t.invoke(
-                                            tool_args
-                                        )
-                                    except Exception as e:
-                                        tool_result = {
-                                            "error": str(e)
-                                        }
-                                    break
-
-                            if tool_result is None:
-                                tool_result = {
-                                    "error": (
-                                        f"Tool {tool_name} not found"
-                                    )
-                                }
-
-                        self.agent_logger.log_tool_result(
-                            finding_log,
-                            tool_name,
-                            tool_args,
-                            tool_result,
-                        )
-
-                        tool_message = ToolMessage(
-                            content=str(tool_result),
-                            tool_call_id=tool_call["id"],
-                        )
-                        messages.append(tool_message)
-                else:
-                    prompt = (
-                        "You must use a tool. Either continue "
-                        "investigating with "
-                        "read_file/search_in_files/list_directory, "
-                        "or submit your final decision with "
-                        "submit_triage_decision."
-                    )
-                    messages.append(("human", prompt))
-                    self.agent_logger.log_message(
-                        finding_log, "human", prompt
-                    )
-
-            print(
-                f"  Warning: No decision submitted after "
-                f"{max_iterations} iterations"
+            self.session_logger.emit_finding_complete(
+                finding_id=result_hash,
+                stop_reason=stop_reason,
+                final_decision=decision.model_dump(),
             )
-
-            decision = TriageDecision(
-                resultHash=result_hash,
-                assessment_result="REFUSED",
-                assessment_confidence=0.0,
-                assessment_justification=(
-                    f"Analysis did not complete within "
-                    f"{max_iterations} iterations. "
-                    f"Manual review required."
-                ),
-            )
-
-            self.agent_logger.log_finding_complete(
-                finding_log, decision
+            self.logger.info(
+                f"Decision: {decision.suggested_state.value} "
+                f"(confidence: {decision.confidence:.2f})"
             )
             return decision
 
@@ -345,15 +308,18 @@ class SASTTriageAgent:
             )
             decision = TriageDecision(
                 resultHash=result_hash,
-                assessment_result="REFUSED",
-                assessment_confidence=0.0,
-                assessment_justification=(
+                is_vulnerable=None,
+                confidence=0.0,
+                suggested_state=SuggestedState.REFUSED,
+                justification=(
                     f"Analysis failed due to error: {str(e)}. "
                     f"Manual review required."
                 ),
             )
-            self.agent_logger.log_finding_complete(
-                finding_log, decision
+            self.session_logger.emit_finding_complete(
+                finding_id=result_hash,
+                stop_reason=None,
+                final_decision=decision.model_dump(),
             )
             return decision
 
@@ -392,8 +358,8 @@ class SASTTriageAgent:
         """
         try:
             existing_results = []
-            if os.path.exists(self.assessments_file):
-                with open(self.assessments_file, "r") as f:
+            if os.path.exists(io_safe(self.assessments_file)):
+                with open(io_safe(self.assessments_file), "r") as f:
                     data = json.load(f)
                 if isinstance(data, dict) and "results" in data:
                     existing_results = data["results"]
@@ -413,7 +379,7 @@ class SASTTriageAgent:
 
             output = self._build_assessment_output(existing_results)
 
-            with open(self.assessments_file, "w") as f:
+            with open(io_safe(self.assessments_file), "w") as f:
                 json.dump(output, f, indent=2)
 
             self.logger.info(
@@ -436,20 +402,26 @@ class SASTTriageAgent:
         Returns:
             Dict with metadata and results keys
         """
+        total = len(triage_results)
         confirmed = sum(
             1
             for r in triage_results
-            if r.get("assessment_result") == "CONFIRMED"
+            if r.get("suggested_state") == "CONFIRMED"
         )
         not_exploitable = sum(
             1
             for r in triage_results
-            if r.get("assessment_result") == "NOT_EXPLOITABLE"
+            if r.get("suggested_state") == "NOT_EXPLOITABLE"
+        )
+        proposed_not_exploitable = sum(
+            1
+            for r in triage_results
+            if r.get("suggested_state") == "PROPOSED_NOT_EXPLOITABLE"
         )
         refused = sum(
             1
             for r in triage_results
-            if r.get("assessment_result") == "REFUSED"
+            if r.get("suggested_state") == "REFUSED"
         )
 
         return {
@@ -460,11 +432,15 @@ class SASTTriageAgent:
                 "branch": self.branch,
                 "model": self.model_name,
                 "timestamp": datetime.datetime.now().isoformat(),
-                "total_findings": len(triage_results),
+                "total_findings": total,
                 "summary": {
                     "confirmed": confirmed,
                     "not_exploitable": not_exploitable,
+                    "proposed_not_exploitable": proposed_not_exploitable,
                     "refused": refused,
+                    "refusal_rate": (
+                        round(refused / total, 4) if total else 0.0
+                    ),
                 },
             },
             "results": triage_results,
@@ -519,8 +495,8 @@ class SASTTriageAgent:
                 "No pending findings to triage "
                 "(all marked as 'yes' in CSV)"
             )
-            if os.path.exists(self.assessments_file):
-                with open(self.assessments_file, "r") as f:
+            if os.path.exists(io_safe(self.assessments_file)):
+                with open(io_safe(self.assessments_file), "r") as f:
                     return json.load(f)
             return []
 
@@ -550,15 +526,15 @@ class SASTTriageAgent:
                 )
 
                 self.logger.info(
-                    f"Result: {decision.assessment_result}"
+                    f"Result: {decision.suggested_state.value}"
                 )
                 self.logger.info(
                     f"Confidence: "
-                    f"{decision.assessment_confidence:.2f}"
+                    f"{decision.confidence:.2f}"
                 )
                 self.logger.info(
                     f"Justification: "
-                    f"{decision.assessment_justification[:100]}..."
+                    f"{decision.justification[:100]}..."
                 )
 
             except Exception as e:
@@ -568,9 +544,10 @@ class SASTTriageAgent:
                 )
                 error_result = {
                     "resultHash": finding["resultHash"],
-                    "assessment_result": "REFUSED",
-                    "assessment_confidence": 0.0,
-                    "assessment_justification": (
+                    "is_vulnerable": None,
+                    "confidence": 0.0,
+                    "suggested_state": "REFUSED",
+                    "justification": (
                         f"Analysis failed: {str(e)}"
                     ),
                 }
@@ -583,11 +560,12 @@ class SASTTriageAgent:
 
         # Write final output with metadata
         output = self._build_assessment_output(triage_results)
-        with open(self.assessments_file, "w") as f:
+        with open(io_safe(self.assessments_file), "w") as f:
             json.dump(output, f, indent=2)
 
         # Finalize session log with summary
-        self.agent_logger.finalize_session(triage_results)
+        self.session_logger.emit_session_end()
+        self.session_logger.finalize()
 
         # Generate summary for display
         summary = output["metadata"]["summary"]
@@ -595,7 +573,7 @@ class SASTTriageAgent:
         summary["high_confidence"] = sum(
             1
             for r in triage_results
-            if r["assessment_confidence"] >= 0.8
+            if r["confidence"] >= 0.8
         )
 
         self.logger.info(
@@ -606,6 +584,10 @@ class SASTTriageAgent:
         self.logger.info(f"CONFIRMED: {summary['confirmed']}")
         self.logger.info(
             f"NOT_EXPLOITABLE: {summary['not_exploitable']}"
+        )
+        self.logger.info(
+            f"PROPOSED_NOT_EXPLOITABLE: "
+            f"{summary['proposed_not_exploitable']}"
         )
         self.logger.info(f"REFUSED: {summary['refused']}")
         self.logger.info(
@@ -619,7 +601,7 @@ class SASTTriageAgent:
             error_result = [
                 {"error": "Code base and findings report do not match."}
             ]
-            with open(self.assessments_file, "w") as f:
+            with open(io_safe(self.assessments_file), "w") as f:
                 json.dump(error_result, f, indent=2)
             return error_result
 

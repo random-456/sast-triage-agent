@@ -14,8 +14,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sast_triage.agent_tools import (
     validate_safe_path, read_file, list_directory,
-    parse_csv_findings, get_finding_details, search_in_files
+    parse_csv_findings, get_finding_details, search_in_files,
 )
+from utils.path_helpers import io_safe, display_path
 
 
 class TestPathSecurity:
@@ -236,6 +237,74 @@ class TestSearchInFiles:
 
         assert "error" not in result
         assert result["matches_found"] == 1
+
+
+class TestWindowsLongPathSupport:
+    """Cross-platform path helpers that work around Windows' MAX_PATH limit.
+
+    Real enterprise repos (e.g. deeply nested Java packages) cloned into a
+    workspace can produce paths longer than the 260-char Win32 default. The
+    ``io_safe`` / ``display_path`` helpers paper over that without affecting
+    POSIX behavior.
+    """
+
+    def test_io_safe_noop_on_posix(self):
+        """On POSIX, ``io_safe`` returns the input unchanged."""
+        with patch("utils.path_helpers.os.name", "posix"):
+            assert io_safe("/tmp/foo/bar") == "/tmp/foo/bar"
+            assert io_safe("relative/path") == "relative/path"
+
+    def test_display_path_noop_on_posix(self):
+        """On POSIX, ``display_path`` returns the input unchanged."""
+        with patch("utils.path_helpers.os.name", "posix"):
+            assert display_path("/tmp/foo") == "/tmp/foo"
+            assert display_path("\\\\?\\C:\\x") == "\\\\?\\C:\\x"
+
+    def test_io_safe_adds_long_prefix_on_nt(self):
+        """On Windows, an absolute drive path gains the ``\\\\?\\`` prefix."""
+        with patch("utils.path_helpers.os.name", "nt"), \
+             patch("utils.path_helpers.os.path.abspath", side_effect=lambda p: p):
+            assert io_safe("C:\\foo\\bar") == "\\\\?\\C:\\foo\\bar"
+
+    def test_io_safe_idempotent_on_nt(self):
+        """Applying ``io_safe`` twice yields the same result."""
+        with patch("utils.path_helpers.os.name", "nt"), \
+             patch("utils.path_helpers.os.path.abspath", side_effect=lambda p: p):
+            once = io_safe("C:\\foo\\bar")
+            twice = io_safe(once)
+            assert once == twice == "\\\\?\\C:\\foo\\bar"
+
+    def test_io_safe_unc_path_on_nt(self):
+        """UNC paths get the ``\\\\?\\UNC\\`` form."""
+        with patch("utils.path_helpers.os.name", "nt"), \
+             patch("utils.path_helpers.os.path.abspath", side_effect=lambda p: p):
+            assert io_safe("\\\\server\\share\\dir") == "\\\\?\\UNC\\server\\share\\dir"
+
+    def test_display_path_strips_long_prefix_on_nt(self):
+        """``display_path`` reverses ``io_safe`` for both regular and UNC."""
+        with patch("utils.path_helpers.os.name", "nt"):
+            assert display_path("\\\\?\\C:\\foo") == "C:\\foo"
+            assert display_path("\\\\?\\UNC\\server\\share") == "\\\\server\\share"
+            # Already-clean paths pass through unchanged.
+            assert display_path("C:\\foo") == "C:\\foo"
+
+    def test_validate_safe_path_returns_prefixed_form_on_nt(self):
+        """``validate_safe_path`` returns the long-path-safe form on Windows."""
+        # Patch abspath to identity so we can use Windows-style absolute
+        # inputs from a POSIX test runner without ``posixpath`` mangling them.
+        # The patches must target both modules — agent_tools' own abspath calls
+        # for the traversal check, and path_helpers' abspath inside io_safe.
+        with patch("utils.path_helpers.os.name", "nt"), \
+             patch("utils.path_helpers.os.path.abspath", side_effect=lambda p: p), \
+             patch("sast_triage.agent_tools.os.path.abspath", side_effect=lambda p: p):
+            result = validate_safe_path("C:\\codebase", "deep/file.java")
+            assert result.startswith("\\\\?\\")
+
+    def test_validate_safe_path_blocks_traversal_on_nt(self):
+        """The security check runs before prefixing on the Windows codepath."""
+        with pytest.raises(ValueError, match="Path traversal attempt detected"):
+            with patch("sast_triage.agent_tools.os.name", "nt"):
+                validate_safe_path("/tmp/test", "../etc/passwd")
 
 
 if __name__ == "__main__":

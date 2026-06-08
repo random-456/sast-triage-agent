@@ -12,7 +12,7 @@ from benchmark.benchmark_models import DatasetProject, JustificationComparisonRe
 from benchmark.benchmark_metrics import build_full_kpi_output
 from benchmark.justification_check import JustificationAICheck
 
-from config import BENCHMARK_DATASETS_DIR
+from utils.path_helpers import io_safe
 
 class BenchmarkHelpers:
 
@@ -32,7 +32,7 @@ class BenchmarkHelpers:
 
         self.logger.info(f"Loading {filepath}...")
         try:
-            with open(filepath, "r") as f:
+            with open(io_safe(filepath), "r") as f:
                 json_data = DatasetProject.model_validate_json(f.read())
                 return json_data
 
@@ -46,13 +46,23 @@ class BenchmarkHelpers:
 
         return None
 
+    @staticmethod
+    def _classification_to_result(is_vulnerable: bool | None) -> str:
+        """Map an `is_vulnerable` classification to the analyst vocabulary."""
+        if is_vulnerable is None:
+            return "REFUSED"
+        return "CONFIRMED" if is_vulnerable else "NOT_EXPLOITABLE"
+
     @classmethod
-    def enrich_dataset_with_triage_result(self, cxone_project_name: str, output_dir: str) -> Dict | None:
+    def enrich_dataset_with_triage_result(
+        self, cxone_project_name: str, dataset_filepath: str, output_dir: str
+    ) -> Dict | None:
         """
         Method to enrich the JSON data in the dataset with the agent triage results
 
         Input:
         - CxOne Project Name: str
+        - Dataset file path: str
         - Output Directory: str
 
         Output:
@@ -61,12 +71,18 @@ class BenchmarkHelpers:
         self.logger.info(f"Enriching dataset data with results from triage ran on {cxone_project_name}...")
 
         try:
-            # First we get the data from the dataset
-            dataset_filepath = os.path.join(BENCHMARK_DATASETS_DIR, f"{cxone_project_name}.json")
-            dataset_data = json.load(open(dataset_filepath))
+            # Reason: read the exact dataset path the runner loaded. The on-disk
+            # filename may differ from the project name (e.g. a `_benchmark`
+            # suffix), so reconstructing `{project}.json` would miss the file.
+            dataset_data = json.load(open(io_safe(dataset_filepath)))
 
-            # Then we get the data from the assessment performed by the agent
-            pattern = os.path.join(output_dir, f"findings_assessment_{cxone_project_name}_*.json")
+            # Then we get the data from the assessment performed by the agent.
+            # io_safe the glob base so a >260 assessment path is matched and the
+            # returned path carries the long-path prefix for the open below.
+            pattern = os.path.join(
+                io_safe(output_dir),
+                f"findings_assessment_{cxone_project_name}_*.json",
+            )
             matches = sorted(glob_module.glob(pattern), key=os.path.getmtime, reverse=True)
             if not matches:
                 self.logger.error(f"No assessment file found matching {pattern}")
@@ -82,9 +98,15 @@ class BenchmarkHelpers:
             enriched_dataset_data = dataset_data
             for finding in agent_assessment_data:
                 finding_id = finding["resultHash"]
-                agent_assessment_result = finding["assessment_result"]
-                agent_assessment_justification = finding["assessment_justification"]
-                agent_assessment_confidence = finding["assessment_confidence"]
+                # Compare on the classification, mapped to the analyst's
+                # vocabulary. The disposition (suggested_state) may be
+                # PROPOSED_NOT_EXPLOITABLE, which the analyst ground truth
+                # never uses, so it is kept separate for operational metrics.
+                agent_assessment_result = self._classification_to_result(
+                    finding["is_vulnerable"]
+                )
+                agent_assessment_justification = finding["justification"]
+                agent_assessment_confidence = finding["confidence"]
 
                 dataset_assessment_finding = next(
                     (finding for finding in enriched_dataset_data['findings'] if finding['id'] == finding_id),
@@ -93,7 +115,9 @@ class BenchmarkHelpers:
                 dataset_assessment_finding["agent_triage"] = {
                     "result": agent_assessment_result,
                     "justification": agent_assessment_justification,
-                    "confidence": agent_assessment_confidence
+                    "confidence": agent_assessment_confidence,
+                    "is_vulnerable": finding["is_vulnerable"],
+                    "suggested_state": finding["suggested_state"],
                 }
 
             return enriched_dataset_data
@@ -177,7 +201,7 @@ class BenchmarkHelpers:
         raw_results_filepath = os.path.join(output_dir, f"{timestamp}_{model_name.replace(' ', '-')}_benchmark_raw_results.json")
 
         try:
-            json.dump(enriched_datasets_data, open(raw_results_filepath, "w"), indent=4)
+            json.dump(enriched_datasets_data, open(io_safe(raw_results_filepath), "w"), indent=4)
             self.logger.info(f"Saved enriched datasets data to {raw_results_filepath}")
         except:
             self.logger.error("Failed to save enriched datasets data")
@@ -199,7 +223,7 @@ class BenchmarkHelpers:
             filename = f"{timestamp}_{model_name.replace(' ', '-')}_benchmark_kpis.json"
             kpis_filepath = os.path.join(output_dir, filename)
 
-            with open(kpis_filepath, "w") as f:
+            with open(io_safe(kpis_filepath), "w") as f:
                 json.dump(output, f, indent=4)
             self.logger.info(f"Saved KPIs data to {kpis_filepath}")
         except Exception:
@@ -230,7 +254,7 @@ class BenchmarkHelpers:
             )
             summary_filepath = os.path.join(output_dir, filename)
 
-            with open(summary_filepath, "w") as f:
+            with open(io_safe(summary_filepath), "w") as f:
                 json.dump(output, f, indent=4)
             self.logger.info(f"Saved summary KPIs to {summary_filepath}")
         except Exception:

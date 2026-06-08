@@ -21,8 +21,9 @@ python run_triage.py run PROJECT_NAME --gitleaks-report <path|none> [OPTIONS]
 | `--findings` | -- | Comma-separated result hashes (bypasses severity/state filters) |
 | `--gitleaks-report` | -- | Path to Gitleaks CSV, or `none` (required) |
 | `--output` | `output` | Output directory |
+| `--run-subdir/--no-run-subdir` | `--run-subdir` | Nest this run's results under a timestamped subfolder of `--output` |
 | `--keep-temp` | `false` | Preserve temp directory after execution |
-| `--trace` | `false` | Enable Phoenix tracing UI at localhost:6006 |
+| `--log-mode` | `rich` | Session log capture: `rich` records every LLM prompt and response (sufficient for replay); `observability` replaces content with hashes and lengths. |
 | `-v, --verbose` | `false` | Enable debug-level logging |
 
 ### Examples
@@ -47,32 +48,27 @@ With Gitleaks secret masking and a specific branch:
 python run_triage.py run my-project --gitleaks-report gitleaks-report.csv --branch main
 ```
 
-With verbose output and Phoenix tracing:
+Using a faster, lower-cost model:
 ```bash
-python run_triage.py run my-project --gitleaks-report none -v --trace
-```
-
-Using a Claude model on Vertex AI:
-```bash
-python run_triage.py run my-project --gitleaks-report none --model claude-sonnet-4-5
+python run_triage.py run my-project --gitleaks-report none --model gemini-2.5-flash
 ```
 
 ## Interactive Mode
 
 ```bash
-python run_triage.py interactive [-v] [--trace]
+python run_triage.py interactive [-v]
 ```
 
 Interactive mode presents guided prompts to collect all configuration:
 
-1. **Project name** -- Checkmarx project name (required)
-2. **Branch** -- Git branch to analyze (default: `default.SecurityPipeline`)
-3. **Analysis scope** -- Choose between filtering all findings or targeting specific hashes
-4. **States** -- Checkmarx states to include (checkbox selection)
-5. **Severities** -- Severity levels to include (checkbox selection)
-6. **Model** -- AI model name (default: `gemini-2.5-pro`)
-7. **Gitleaks report** -- Path to CSV or `none`
-8. **Output directory** -- Where to save results (default: `output`)
+1. **Project name:** Checkmarx project name (required).
+2. **Branch:** git branch to analyze (default: `default.SecurityPipeline`).
+3. **Analysis scope:** choose between filtering all findings or targeting specific hashes.
+4. **States:** Checkmarx states to include (checkbox selection).
+5. **Severities:** severity levels to include (checkbox selection).
+6. **Model:** Gemini model name (default: `gemini-2.5-pro`).
+7. **Gitleaks report:** path to CSV or `none`.
+8. **Output directory:** where to save results (default: `output`).
 
 After collecting inputs, a configuration summary is displayed for confirmation. If the codebase is cloned and preprocessed successfully, a preprocessing summary shows obfuscation and masking results before proceeding with the actual analysis.
 
@@ -92,12 +88,16 @@ When `--findings` is provided, both severity and state filters are bypassed. Onl
 
 ## Output
 
-Results are saved to a timestamped JSON file in the output directory:
+Results are saved to a timestamped JSON file. By default each run gets its own
+timestamped subfolder so repeated runs stay grouped:
 
 ```
 output/
-    findings_assessment_<project>_<timestamp>.json
+    <timestamp>/
+        findings_assessment_<project>_<timestamp>.json
 ```
+
+Pass `--no-run-subdir` to write directly into `--output` instead.
 
 The file contains:
 
@@ -113,56 +113,49 @@ The file contains:
     "total_findings": 5,
     "summary": {
       "confirmed": 2,
-      "not_exploitable": 2,
-      "refused": 1
+      "not_exploitable": 1,
+      "proposed_not_exploitable": 1,
+      "refused": 1,
+      "refusal_rate": 0.2
     }
   },
   "results": [
     {
       "resultHash": "abc123",
-      "assessment_result": "CONFIRMED",
-      "assessment_confidence": 0.92,
-      "assessment_justification": "..."
+      "is_vulnerable": true,
+      "confidence": 0.92,
+      "suggested_state": "CONFIRMED",
+      "justification": "..."
     }
   ]
 }
 ```
 
-### Assessment Results
+Each result separates the classification (`is_vulnerable` plus `confidence`) from the advisory disposition (`suggested_state`). The tool only reads from Checkmarx One; every `suggested_state` is a recommendation written to the local output file and is never written back to Checkmarx.
 
-| Result | Meaning |
-|--------|---------|
-| `CONFIRMED` | The finding is a true positive (exploitable vulnerability) |
-| `NOT_EXPLOITABLE` | The finding is a false positive (not exploitable) |
-| `REFUSED` | The agent could not make a determination (manual review required) |
+### Classification
+
+| `is_vulnerable` | Meaning |
+|-----------------|---------|
+| `true` | The finding is exploitable (true positive) |
+| `false` | The finding is not exploitable (false positive) |
+| `null` | The agent could not decide |
+
+### Suggested State
+
+`suggested_state` is derived from the classification and confidence. A non-exploitable verdict below `CONFIDENCE_THRESHOLD` is escalated to `PROPOSED_NOT_EXPLOITABLE` rather than dismissed.
+
+| Suggested State | Derivation |
+|-----------------|------------|
+| `CONFIRMED` | `is_vulnerable` is `true` (always surfaced, regardless of confidence) |
+| `NOT_EXPLOITABLE` | `is_vulnerable` is `false` and confidence is at or above the threshold |
+| `PROPOSED_NOT_EXPLOITABLE` | `is_vulnerable` is `false` and confidence is below the threshold (flagged for human review) |
+| `REFUSED` | `is_vulnerable` is `null` (manual review required) |
 
 ### Session Logs
 
-Each run produces a session log in the `logs/` directory with the full conversation history, token usage, and preprocessing reports. See [architecture.md](architecture.md) for details on the log structure.
-
-## Phoenix Tracing
-
-When `--trace` is passed (or `SAST_TRIAGE_TRACE=true` is set), the agent starts a local Phoenix server for LLM observability. After analysis completes, the process blocks and displays:
-
-```
-Phoenix tracing UI is available at http://localhost:6006
-Press Enter to stop Phoenix and exit...
-```
-
-This allows reviewing traces in the Phoenix UI before the process exits. Tracing requires optional dependencies:
-
-```bash
-pip install arize-phoenix openinference-instrumentation-langchain
-```
+Each run produces a session log in the `logs/` directory containing the per-finding inputs and selected checklist, the final decision and aggregate token usage. See [architecture.md](architecture.md#session-logging) for the log structure.
 
 ## Benchmarking
 
-A separate benchmark mode compares model accuracy against human-reviewed findings:
-
-```bash
-python run_benchmark.py --model gemini-2.5-pro --output benchmark_results -v
-```
-
-> **Note:** Each dataset under `benchmark/datasets/<name>.json` must have a matching Gitleaks CSV at `benchmark/secret-reports/<name>.csv`; datasets without a matching report are skipped.
-
-Benchmark datasets are stored in `benchmark/datasets/` as JSON files. Each file contains findings with analyst-provided ground truth decisions. See the [README](../README.md) for dataset format details.
+A separate benchmark mode compares model accuracy against human-reviewed findings. See [benchmark.md](benchmark.md) for the full runbook, dataset format, metrics and target thresholds.

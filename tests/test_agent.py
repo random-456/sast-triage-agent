@@ -20,6 +20,27 @@ from sast_triage.agent import SASTTriageAgent
 from sast_triage.agent_models import TriageDecision
 
 
+def test_agent_config_snapshot_includes_non_convergent_cap():
+    # The session_start snapshot self-documents the active tuning knobs, so the
+    # non-convergent confidence cap (the clamp) must appear alongside the others.
+    from config import NON_CONVERGENT_CONFIDENCE_CAP
+
+    snapshot = SASTTriageAgent._agent_config_snapshot()
+    assert (
+        snapshot["NON_CONVERGENT_CONFIDENCE_CAP"]
+        == NON_CONVERGENT_CONFIDENCE_CAP
+    )
+
+
+def test_agent_config_snapshot_includes_research_stall_limit():
+    # The honest-termination stall limit is a tuning knob, so it belongs in the
+    # session_start snapshot alongside the other per-finding-graph constants.
+    from config import MAX_RESEARCH_STALL
+
+    snapshot = SASTTriageAgent._agent_config_snapshot()
+    assert snapshot["MAX_RESEARCH_STALL"] == MAX_RESEARCH_STALL
+
+
 class TestSASTTriageAgent:
     """Test the main SAST Triage Agent class."""
     
@@ -51,9 +72,10 @@ class TestSASTTriageAgent:
         """Test that agent initializes correctly."""
         assert agent.model_name == "test-model"
         assert agent.temperature == 0.1
-        assert len(agent.tools) == 5
-        assert agent.system_prompt is not None
-        assert "security analyst" in agent.system_prompt.lower()
+        # The researcher gets the three investigation tools; verdict and review
+        # are handled by the analyst and critic graph nodes, not tools.
+        assert len(agent.research_tools) == 3
+        assert agent.per_finding_graph is not None
     
     def test_update_csv_status(self, agent, tmp_path):
         """Test CSV status update functionality."""
@@ -91,9 +113,10 @@ class TestSASTTriageAgent:
 
         result1 = {
             "resultHash": "hash-001",
-            "assessment_result": "CONFIRMED",
-            "assessment_confidence": 0.9,
-            "assessment_justification": "Test justification 1",
+            "is_vulnerable": True,
+            "confidence": 0.9,
+            "suggested_state": "CONFIRMED",
+            "justification": "Test justification 1",
         }
         agent.save_incremental_result(result1)
 
@@ -107,9 +130,10 @@ class TestSASTTriageAgent:
 
         result2 = {
             "resultHash": "hash-002",
-            "assessment_result": "NOT_EXPLOITABLE",
-            "assessment_confidence": 0.8,
-            "assessment_justification": "Test justification 2",
+            "is_vulnerable": False,
+            "confidence": 0.8,
+            "suggested_state": "PROPOSED_NOT_EXPLOITABLE",
+            "justification": "Test justification 2",
         }
         agent.save_incremental_result(result2)
 
@@ -121,17 +145,18 @@ class TestSASTTriageAgent:
         # Update existing result
         result1_updated = {
             "resultHash": "hash-001",
-            "assessment_result": "NOT_EXPLOITABLE",
-            "assessment_confidence": 0.95,
-            "assessment_justification": "Updated justification",
+            "is_vulnerable": False,
+            "confidence": 0.95,
+            "suggested_state": "NOT_EXPLOITABLE",
+            "justification": "Updated justification",
         }
         agent.save_incremental_result(result1_updated)
 
         with open(assessments_file, "r") as f:
             data = json.load(f)
         assert len(data["results"]) == 2
-        assert data["results"][0]["assessment_result"] == "NOT_EXPLOITABLE"
-        assert data["results"][0]["assessment_confidence"] == 0.95
+        assert data["results"][0]["suggested_state"] == "NOT_EXPLOITABLE"
+        assert data["results"][0]["confidence"] == 0.95
     
     def test_get_pending_findings(self, agent, test_findings_path):
         """Test getting pending findings from CSV."""
@@ -162,82 +187,151 @@ class TestSASTTriageAgent:
             decision = await agent.analyze_single_finding("nonexistent-finding")
 
             assert decision.resultHash == "nonexistent-finding"
-            assert decision.assessment_result == "REFUSED"
-            assert decision.assessment_confidence == 0.0
-            assert "Could not load finding details" in decision.assessment_justification
+            assert decision.is_vulnerable is None
+            assert decision.suggested_state == "REFUSED"
+            assert decision.confidence == 0.0
+            assert "Could not load finding details" in decision.justification
 
     @pytest.mark.asyncio
-    async def test_analyze_single_finding_with_mock_llm(self, agent):
-        """Test analyze_single_finding with mocked LLM response."""
+    async def test_analyze_single_finding_invokes_graph_and_returns_verdict(
+        self, agent
+    ):
+        """The agent builds state, runs the graph and returns its verdict."""
         finding_data = {
             "resultHash": "hash-001",
             "severity": "HIGH",
             "queryName": "SQL_Injection",
+            "cweID": "89",
             "dataflow": [],
         }
+        graph_verdict = TriageDecision(
+            resultHash="hash-001",
+            is_vulnerable=True,
+            confidence=0.88,
+            suggested_state="CONFIRMED",
+            justification="Direct SQL concatenation detected",
+            agreement_rate=1.0,
+            sample_count=2,
+        )
 
         with patch("sast_triage.agent.get_finding_details") as mock_tool:
             mock_tool.invoke.return_value = finding_data
 
-            mock_response = Mock()
-            mock_response.content = "Analyzing the SQL injection vulnerability..."
-            mock_response.tool_calls = [{
-                "id": "call-123",
-                "name": "submit_triage_decision",
-                "args": {
-                    "is_exploitable": True,
-                    "confidence": 0.9,
-                    "justification": "Direct SQL concatenation detected",
-                },
-            }]
-            mock_response.usage_metadata = {
-                "input_tokens": 100,
-                "output_tokens": 50,
-                "total_tokens": 150,
-            }
-
-            agent.llm_with_tools = Mock()
-            agent.llm_with_tools.ainvoke = AsyncMock(return_value=mock_response)
+            agent.per_finding_graph = Mock()
+            agent.per_finding_graph.ainvoke = AsyncMock(
+                return_value={"verdict": graph_verdict}
+            )
 
             decision = await agent.analyze_single_finding("hash-001")
 
-            assert decision.resultHash == "hash-001"
-            assert decision.assessment_result == "CONFIRMED"
-            assert decision.assessment_confidence == 0.9
-            assert "Direct SQL concatenation" in decision.assessment_justification
+            # The agent passed a TriageState built from the finding to the graph.
+            state_arg = agent.per_finding_graph.ainvoke.call_args.args[0]
+            assert state_arg.finding.resultHash == "hash-001"
+            assert state_arg.checklist.checklist_id == "sqli"
+            # And returned the graph's verdict unchanged.
+            assert decision is graph_verdict
+            assert decision.suggested_state == "CONFIRMED"
+            assert decision.agreement_rate == 1.0
 
 
 class TestTriageDecision:
     """Test the TriageDecision model."""
-    
+
     def test_triage_decision_creation(self):
         """Test creating a TriageDecision."""
         decision = TriageDecision(
             resultHash="hash-001",
-            assessment_result="CONFIRMED",
-            assessment_confidence=0.85,
-            assessment_justification="Test justification"
+            is_vulnerable=True,
+            confidence=0.85,
+            suggested_state="CONFIRMED",
+            justification="Test justification",
         )
-        
+
         assert decision.resultHash == "hash-001"
-        assert decision.assessment_result == "CONFIRMED"
-        assert decision.assessment_confidence == 0.85
-        assert decision.assessment_justification == "Test justification"
-    
+        assert decision.is_vulnerable is True
+        assert decision.confidence == 0.85
+        assert decision.suggested_state == "CONFIRMED"
+        assert decision.justification == "Test justification"
+        assert decision.agreement_rate is None
+        assert decision.sample_count is None
+
     def test_triage_decision_dict(self):
         """Test converting TriageDecision to dict."""
         decision = TriageDecision(
             resultHash="hash-001",
-            assessment_result="NOT_EXPLOITABLE",
-            assessment_confidence=0.75,
-            assessment_justification="Not exploitable because..."
+            is_vulnerable=False,
+            confidence=0.75,
+            suggested_state="PROPOSED_NOT_EXPLOITABLE",
+            justification="Not exploitable because...",
         )
-        
+
         decision_dict = decision.model_dump()
         assert decision_dict["resultHash"] == "hash-001"
-        assert decision_dict["assessment_result"] == "NOT_EXPLOITABLE"
-        assert decision_dict["assessment_confidence"] == 0.75
-        assert decision_dict["assessment_justification"] == "Not exploitable because..."
+        assert decision_dict["is_vulnerable"] is False
+        assert decision_dict["confidence"] == 0.75
+        assert decision_dict["suggested_state"] == "PROPOSED_NOT_EXPLOITABLE"
+        assert decision_dict["justification"] == "Not exploitable because..."
+
+
+class TestVertexClient:
+    """The agent builds a Vertex AI client from project + location."""
+
+    def test_agent_builds_vertex_client_with_project_and_location(self):
+        with patch("sast_triage.agent.ChatVertexAI") as mock_chat:
+            mock_llm = Mock()
+            mock_llm.bind_tools = Mock(return_value=mock_llm)
+            mock_chat.return_value = mock_llm
+            SASTTriageAgent(
+                project="proj-x",
+                location="europe-west4",
+                model_name="gemini-2.5-pro",
+            )
+        _, kwargs = mock_chat.call_args
+        assert kwargs["project"] == "proj-x"
+        assert kwargs["location"] == "europe-west4"
+        assert kwargs["model_name"] == "gemini-2.5-pro"
+
+
+class TestOutputPathSafety:
+    """The agent must create its output directory and route assessment-file
+    I/O through io_safe, so a write succeeds on a fresh output path and on a
+    Windows path past the 260-char MAX_PATH limit. io_safe is a no-op on POSIX,
+    so these run unchanged on Linux and macOS."""
+
+    def _agent(self, **kwargs):
+        with patch("sast_triage.agent.ChatVertexAI") as mock_chat:
+            mock_llm = Mock()
+            mock_llm.bind_tools = Mock(return_value=mock_llm)
+            mock_chat.return_value = mock_llm
+            return SASTTriageAgent(
+                project="p", location="l", model_name="m", **kwargs
+            )
+
+    def test_init_creates_missing_output_directory(self, tmp_path):
+        out = tmp_path / "fresh" / "nested"
+        assert not out.exists()
+        self._agent(project_name="proj", output_dir=str(out))
+        assert out.exists()
+
+    def test_save_incremental_result_routes_write_through_io_safe(self, tmp_path):
+        agent = self._agent(project_name="proj", output_dir=str(tmp_path / "o"))
+        result = {
+            "resultHash": "hash-1",
+            "is_vulnerable": True,
+            "confidence": 0.9,
+            "suggested_state": "CONFIRMED",
+            "justification": "j",
+        }
+        with patch(
+            "sast_triage.agent.io_safe", side_effect=lambda p: p
+        ) as mock_io_safe:
+            agent.save_incremental_result(result)
+
+        assert any(
+            call.args and call.args[0] == agent.assessments_file
+            for call in mock_io_safe.call_args_list
+        )
+        assert os.path.exists(agent.assessments_file)
 
 
 if __name__ == "__main__":

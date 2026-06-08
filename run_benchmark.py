@@ -5,16 +5,28 @@ import logging
 
 from utils.banner import display_banner
 from utils.generic_logging import setup_logging
+from utils.directory_helpers import DirectoryHelpers
 from benchmark.benchmark_helpers import BenchmarkHelpers
 from run_triage import cli
 
-from config import DEFAULT_OUTPUT_DIR, APP_NAME, BENCHMARK_DATASETS_DIR, BENCHMARK_SECRET_REPORTS_DIR, DEFAULT_TRIAGE_MODEL
+from config import DEFAULT_OUTPUT_DIR, APP_NAME, BENCHMARK_DATASETS_DIR, BENCHMARK_SECRET_REPORTS_DIR, DEFAULT_TRIAGE_MODEL, resolve_vertex_config
 
 @click.command()
 @click.option("--model", "model_name", default=DEFAULT_TRIAGE_MODEL, help="AI Model used for analysis")
 @click.option("--output", "output_dir", default=DEFAULT_OUTPUT_DIR, help="Output directory")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
-def run_benchmark(model_name: str, output_dir: str, verbose: bool):
+@click.option(
+    "--log-mode",
+    type=click.Choice(["rich", "observability"], case_sensitive=False),
+    default="rich",
+    show_default=True,
+    help=(
+        "Forward --log-mode to each run_triage invocation. 'rich' "
+        "captures full prompts and responses; 'observability' replaces "
+        "content with hashes and lengths."
+    ),
+)
+def run_benchmark(model_name: str, output_dir: str, verbose: bool, log_mode: str):
     """
     Run a benchmark based on a defined set of CheckmarxOne findings. Results are saved to the chosen output directory.
     """
@@ -24,8 +36,10 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
     logger = logging.getLogger("run_benchmark")
 
     runner = CliRunner()
-    vertex_project = os.getenv("PROJECT_ID")
-    vertex_location = os.getenv("DEFAULT_LOCATION")
+    gcp_project, gcp_location = resolve_vertex_config()
+
+    # Group every dataset of this invocation plus the summary under one folder.
+    run_output_dir = DirectoryHelpers.timestamped_subdir(output_dir)
 
     datasets = [os.path.join(BENCHMARK_DATASETS_DIR, f) for f in os.listdir(BENCHMARK_DATASETS_DIR) if f.endswith(".json")]
     logger.info(f"Found {len(datasets)} datasets to evaluate !")
@@ -50,10 +64,12 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
 
             logger.info(f"Performing triage for {len(finding_ids)} findings...")
 
-            project_output_dir = os.path.join(output_dir, project_name)
+            project_output_dir = os.path.join(run_output_dir, project_name)
             os.makedirs(project_output_dir, exist_ok=True)
 
-            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", gitleaks_report]
+            # --no-run-subdir: the benchmark already owns run_output_dir, so the
+            # nested run_triage call must write straight into project_output_dir.
+            parameters = [project_name, "--findings", ",".join(finding_ids), "--model", model_name, "--output", project_output_dir, "--gitleaks-report", gitleaks_report, "--log-mode", log_mode, "--no-run-subdir"]
 
             logger.debug(f"Launching run_triage command with parameters : {' '.join(parameters)}")
             result = runner.invoke(cli, ["run"] + parameters)
@@ -67,12 +83,13 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
 
                 dataset_data_with_triage_results = BenchmarkHelpers.enrich_dataset_with_triage_result(
                     cxone_project_name=project_name,
+                    dataset_filepath=dataset,
                     output_dir=project_output_dir
                 )
 
                 dataset_data_with_scores = BenchmarkHelpers.compute_assessment_scores(
-                    project=vertex_project,
-                    location=vertex_location,
+                    project=gcp_project,
+                    location=gcp_location,
                     dataset_data=dataset_data_with_triage_results
                 )
 
@@ -100,7 +117,7 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool):
     BenchmarkHelpers.generate_summary_kpis(
         model_name=model_name,
         all_datasets_data=all_datasets_data,
-        output_dir=output_dir,
+        output_dir=run_output_dir,
     )
 
 if __name__ == "__main__":

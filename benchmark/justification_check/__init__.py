@@ -22,17 +22,16 @@ class JustificationAICheck:
         Initialize the JustificationAICheck object.
 
         Args:
-            project: Google Cloud Project ID for Vertex AI
-            location: Vertex AI location (default: europe-west4)
-            model_name: Vertex AI model name
-            temperature: Model temperature for consistency
+            project: GCP project ID for Vertex AI.
+            location: Vertex AI region.
+            temperature: Model temperature for consistency.
         """
         self.llm = ChatVertexAI(
+            model_name=DEFAULT_JUSTIFICATION_COMPARISON_MODEL,
             project=project,
             location=location,
-            model_name=DEFAULT_JUSTIFICATION_COMPARISON_MODEL,
             temperature=temperature,
-            max_retries=3
+            max_retries=3,
         )
 
         self.prompt_template = ChatPromptTemplate.from_template(JUSTIFICATION_COMPARISON_PROMPT_TEMPLATE)

@@ -1,0 +1,31 @@
+# Maps a finding to a checklist. Selection order (most specific first):
+#   1. query_name_to_checklist  (exact, case-insensitive on the queryName)
+#   2. cwe_to_checklist         (on the normalized "CWE-<n>" form)
+#   3. default
+#
+# queryName values follow the Checkmarx One short form (e.g. "SQL_Injection",
+# "Reflected_XSS_All_Clients"). cweID is normalized to "CWE-<n>" before lookup,
+# so integer 89, "89" and "CWE-89" all resolve here.
+
+# Only confirmed queryName strings appear here. Sub-flavors that share one CWE
+# (the XSS variants under CWE-79) are the reason this layer exists. Command
+# injection and path traversal route on CWE alone: no queryName is confirmed
+# for them yet, and CWE is authoritative. Client_Potential_XSS (DOM/client XSS)
+# routes to xss_dom: its sources and sinks are client-side, so the reflected-XSS
+# server-Content-Type reasoning does not apply.
+query_name_to_checklist:
+  SQL_Injection: sqli
+  Reflected_XSS: xss_reflected
+  XSS_Evasion_Attack_via_Replace: xss_reflected
+  Stored_XSS: xss_stored
+  Client_Potential_XSS: xss_dom
+
+cwe_to_checklist:
+  CWE-89: sqli
+  CWE-79: xss_reflected  # default when the XSS sub-flavor is not detectable
+  CWE-116: xss_reflected  # improper output encoding; the encoding sibling of XSS
+  CWE-78: command_injection
+  CWE-77: command_injection
+  CWE-22: path_traversal
+
+default: generic

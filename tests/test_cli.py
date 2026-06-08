@@ -1,9 +1,16 @@
 """Tests for CLI sub-commands, parameter parsing, and state filtering."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from click.testing import CliRunner
 
-from run_triage import cli, filter_findings_by_hashes, filter_findings_by_state
+from run_triage import (
+    cli,
+    execute_triage,
+    filter_findings_by_hashes,
+    filter_findings_by_state,
+)
 
 
 @pytest.fixture
@@ -36,6 +43,91 @@ class TestRunSubcommand:
         result = runner.invoke(cli, ["run", "--help"])
         assert result.exit_code == 0
         assert "--findings" in result.output
+
+
+class TestRunSubdirFlag:
+    """``run`` groups each invocation's output under a timestamped subfolder
+    by default; ``--no-run-subdir`` writes straight into ``--output`` (used by
+    the benchmark, which owns its own run folder)."""
+
+    def test_run_creates_run_subdir_by_default(self, runner: CliRunner) -> None:
+        with patch("run_triage.execute_triage") as mock_exec:
+            runner.invoke(cli, ["run", "proj", "--gitleaks-report", "none"])
+        assert mock_exec.call_args.kwargs["create_run_subdir"] is True
+
+    def test_no_run_subdir_flag_disables_run_subdir(self, runner: CliRunner) -> None:
+        with patch("run_triage.execute_triage") as mock_exec:
+            runner.invoke(
+                cli, ["run", "proj", "--gitleaks-report", "none", "--no-run-subdir"]
+            )
+        assert mock_exec.call_args.kwargs["create_run_subdir"] is False
+
+
+class TestExecuteTriageRunSubdir:
+    """``execute_triage`` resolves the run subfolder before setting up
+    directories, so every downstream write lands inside it."""
+
+    @staticmethod
+    def _client_that_aborts() -> MagicMock:
+        # No project match forces an early sys.exit(1), after directory setup.
+        client = MagicMock()
+        client.get_project_id_by_name.return_value = None
+        return client
+
+    def test_output_dir_nested_when_run_subdir_enabled(self, monkeypatch) -> None:
+        monkeypatch.setenv("BASE_URL", "https://cx.example")
+        monkeypatch.setenv("REFRESH_TOKEN", "tok")
+        with patch(
+            "run_triage.DirectoryHelpers.timestamped_subdir",
+            return_value="out/20260608_143000",
+        ) as mock_ts, patch(
+            "run_triage.DirectoryHelpers.setup_directories"
+        ) as mock_setup, patch(
+            "run_triage.CheckmarxClient", return_value=self._client_that_aborts()
+        ):
+            with pytest.raises(SystemExit):
+                execute_triage(
+                    project_name="proj",
+                    model_name="m",
+                    severity_list=["HIGH"],
+                    state_list=["TO_VERIFY"],
+                    branch="main",
+                    output_dir="out",
+                    gitleaks_report="none",
+                    keep_temp=False,
+                    finding_hashes=None,
+                    create_run_subdir=True,
+                )
+
+        mock_ts.assert_called_once_with("out")
+        assert mock_setup.call_args.args[0] == "out/20260608_143000"
+
+    def test_output_dir_unchanged_when_run_subdir_disabled(self, monkeypatch) -> None:
+        monkeypatch.setenv("BASE_URL", "https://cx.example")
+        monkeypatch.setenv("REFRESH_TOKEN", "tok")
+        with patch(
+            "run_triage.DirectoryHelpers.timestamped_subdir"
+        ) as mock_ts, patch(
+            "run_triage.DirectoryHelpers.setup_directories"
+        ) as mock_setup, patch(
+            "run_triage.CheckmarxClient", return_value=self._client_that_aborts()
+        ):
+            with pytest.raises(SystemExit):
+                execute_triage(
+                    project_name="proj",
+                    model_name="m",
+                    severity_list=["HIGH"],
+                    state_list=["TO_VERIFY"],
+                    branch="main",
+                    output_dir="out",
+                    gitleaks_report="none",
+                    keep_temp=False,
+                    finding_hashes=None,
+                    create_run_subdir=False,
+                )
+
+        mock_ts.assert_not_called()
+        assert mock_setup.call_args.args[0] == "out"
 
 
 class TestInteractiveSubcommand:

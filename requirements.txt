@@ -1,14 +1,13 @@
 # Core LangChain packages
 langchain>=0.3.0
-langchain-google-vertexai>=2.0.0  # For Google Vertex AI
+langchain-google-vertexai>=2.0.0  # Vertex AI Gemini client (gRPC transport)
 langchain-community>=0.3.0
 langchain-core>=0.3.0  # Core functionality and tools
-
-# Claude models support
-anthropic>=0.20.0
+langgraph>=1.2,<2.0  # Per-finding triage subgraph; upgrades go through a benchmark check
 
 # Data processing
 pydantic>=2.0.0
+PyYAML>=6.0  # CWE checklist files
 
 # Async support
 asyncio
@@ -26,6 +25,3 @@ python-dotenv>=1.0.0
 # Testing
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
-
-# Optional: LLM tracing (install separately if needed)
-# pip install arize-phoenix openinference-instrumentation-langchain
