@@ -77,6 +77,7 @@ def run_benchmark(model_name: str, output_dir: str, verbose: bool, log_mode: str
 
                 dataset_data_with_triage_results = BenchmarkHelpers.enrich_dataset_with_triage_result(
                     cxone_project_name=project_name,
+                    dataset_filepath=dataset,
                     output_dir=project_output_dir
                 )
 

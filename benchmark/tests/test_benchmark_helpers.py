@@ -23,7 +23,9 @@ class TestLongPathSafety:
             return_value={"findings": []},
         ), patch("builtins.open", mock_open()):
             BenchmarkHelpers.enrich_dataset_with_triage_result(
-                cxone_project_name="proj", output_dir="out/proj"
+                cxone_project_name="proj",
+                dataset_filepath="datasets/proj_benchmark.json",
+                output_dir="out/proj",
             )
 
         # The glob base (the output dir holding the assessment file) is
@@ -51,3 +53,26 @@ class TestLongPathSafety:
 
         path_arg = opener.call_args.args[0]
         assert path_arg.startswith("<safe>")
+
+
+class TestDatasetPathFromCaller:
+    def test_enrich_reads_dataset_from_provided_path(self):
+        # The dataset filename need not equal the project name (the on-disk
+        # file may carry a `_benchmark` suffix). enrich must read the exact
+        # path the runner already holds, not reconstruct `{project}.json`.
+        opener = mock_open()
+        with patch(
+            "benchmark.benchmark_helpers.io_safe", side_effect=lambda p: p
+        ), patch(
+            "benchmark.benchmark_helpers.glob_module.glob", return_value=[]
+        ), patch(
+            "benchmark.benchmark_helpers.json.load",
+            return_value={"findings": []},
+        ), patch("builtins.open", opener):
+            BenchmarkHelpers.enrich_dataset_with_triage_result(
+                cxone_project_name="proj",
+                dataset_filepath="datasets/proj_benchmark.json",
+                output_dir="out/proj",
+            )
+
+        assert opener.call_args_list[0].args[0] == "datasets/proj_benchmark.json"
