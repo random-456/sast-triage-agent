@@ -12,7 +12,6 @@ from benchmark.benchmark_models import DatasetProject, JustificationComparisonRe
 from benchmark.benchmark_metrics import build_full_kpi_output
 from benchmark.justification_check import JustificationAICheck
 
-from config import BENCHMARK_DATASETS_DIR
 from utils.path_helpers import io_safe
 
 class BenchmarkHelpers:
@@ -55,12 +54,15 @@ class BenchmarkHelpers:
         return "CONFIRMED" if is_vulnerable else "NOT_EXPLOITABLE"
 
     @classmethod
-    def enrich_dataset_with_triage_result(self, cxone_project_name: str, output_dir: str) -> Dict | None:
+    def enrich_dataset_with_triage_result(
+        self, cxone_project_name: str, dataset_filepath: str, output_dir: str
+    ) -> Dict | None:
         """
         Method to enrich the JSON data in the dataset with the agent triage results
 
         Input:
         - CxOne Project Name: str
+        - Dataset file path: str
         - Output Directory: str
 
         Output:
@@ -69,8 +71,9 @@ class BenchmarkHelpers:
         self.logger.info(f"Enriching dataset data with results from triage ran on {cxone_project_name}...")
 
         try:
-            # First we get the data from the dataset
-            dataset_filepath = os.path.join(BENCHMARK_DATASETS_DIR, f"{cxone_project_name}.json")
+            # Reason: read the exact dataset path the runner loaded. The on-disk
+            # filename may differ from the project name (e.g. a `_benchmark`
+            # suffix), so reconstructing `{project}.json` would miss the file.
             dataset_data = json.load(open(io_safe(dataset_filepath)))
 
             # Then we get the data from the assessment performed by the agent.
