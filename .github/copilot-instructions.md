@@ -16,6 +16,7 @@ These are directives, not suggestions.
 sast_triage/        core triage logic and agent models
     checklists/     per-CWE evidence checklists (YAML) + selection logic
     graph/          per-finding LangGraph nodes (research, analyst, critic, aggregate) + routing
+    preprocessing/  code obfuscation and secret masking
     session_log/    JSONL session logger
     tests/
 utils/              shared helpers (utils/tests/)
@@ -23,7 +24,7 @@ benchmark/          benchmark tooling (benchmark/tests/)
 tests/              top-level integration tests
 docs/               architecture, usage, configuration, benchmark, session-log notes
 viewer/             static browser-based session-log viewer
-config.py           configuration constants
+config.py           Pydantic settings
 run_triage.py       main CLI entrypoint
 run_benchmark.py    benchmark runner
 ```
@@ -38,6 +39,7 @@ Do not touch (local or gitignored runtime data): `.env`, `.venv/`, `context/`, `
 - YAGNI: build only what the task requires. No speculative features or hooks for later.
 - SOLID, applied lightly: one purpose per function, class and module; extend via new code rather than rewriting stable code; depend on abstractions for LLM clients, API clients and IO.
 - Fail fast: validate at boundaries and raise early. No silent fallbacks that mask real errors.
+- Performance: profile before optimizing. Do not micro-optimize speculatively. When something is actually slow, measure, fix the hot path, then re-measure.
 
 ## Code style
 
@@ -70,16 +72,17 @@ Do not touch (local or gitignored runtime data): `.env`, `.venv/`, `context/`, `
 ## Configuration and security
 
 - Validate required env vars at startup (Pydantic Settings); fail loudly on missing or invalid values; never silently default in production. Document keys in `.env.example`; never commit `.env`.
+- Current keys: `BASE_URL`, `REFRESH_TOKEN` (Checkmarx One); for the Google GenAI backend either `GOOGLE_GENAI_USE_VERTEXAI=true` + `GOOGLE_CLOUD_PROJECT` (plus optional `GOOGLE_CLOUD_LOCATION`) for Vertex AI, or `GOOGLE_API_KEY` for AI Studio; optional `GITHUB_TOKENS` (per-host clone auth). Backend selection is resolved by `config.resolve_genai_backend()`.
 - Never commit secrets or API keys. Validate and sanitize all external input (Checkmarx API responses, cloned repo paths, gitleaks CSVs, user-supplied flags).
-- Keep tokens out of logs and out of `.git/config` or remote URLs. Use HTTPS for all external calls.
+- Keep tokens out of logs and out of `.git/config` or remote URLs. Use HTTPS for all external calls. Run `pip-audit` (or equivalent) periodically and address high/critical findings.
 
 ## Git workflow
 
-- Never commit to `main` directly. Branch from `dev`: `git checkout -b <type>/<short-description>`, where type is feature, fix, docs, refactor, test or chore.
+- Never commit to `main` directly. Branch from `dev`: `git checkout dev && git pull origin dev`, then `git checkout -b <type>/<short-description>`, where type is feature, fix, docs, refactor, test or chore.
 - Open pull requests against `dev`, never `main`. Do not enable auto-merge and do not merge the pull request yourself.
 - Commit message format: `<type>(<scope>): <subject>`, where type is feat, fix, docs, style, refactor, test or chore. Keep the subject imperative and concise.
 - Never assume or guess: when a path, name or API is unclear, read the file or grep before acting. Check `requirements.txt` before adding a dependency.
 
 ## Reference docs
 
-`docs/architecture.md` (system design and data flow), `docs/usage-guide.md`, `docs/configuration.md`, `docs/benchmark.md`, `docs/checklists.md`, `docs/session-log.md`, `docs/session-log-viewer.md`, `docs/decisions.md` (recorded design decisions).
+`docs/architecture.md` (system design and data flow), `docs/usage-guide.md`, `docs/configuration.md`, `docs/checklists.md`, `docs/preprocessing.md`, `docs/benchmark.md`, `docs/session-log.md`, `docs/session-log-viewer.md`, `docs/decisions.md` (recorded design decisions).
