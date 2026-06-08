@@ -36,6 +36,7 @@ from sast_triage.graph import (
     make_research_node,
 )
 from sast_triage.session_log import LogMode, SessionLogger
+from utils.path_helpers import io_safe
 from config import (
     ANALYST_TEMPERATURES,
     CODEBASE_DIR,
@@ -170,6 +171,13 @@ class SASTTriageAgent:
         self.assessments_file = os.path.join(
             output_dir,
             f"findings_assessment_{name}_{timestamp}.json",
+        )
+        # Ensure the output directory exists before any write. io_safe keeps
+        # this working on Windows when the path exceeds the 260-char MAX_PATH
+        # limit; it is a no-op on POSIX.
+        os.makedirs(
+            io_safe(os.path.dirname(self.assessments_file) or "."),
+            exist_ok=True,
         )
 
     @staticmethod
@@ -350,8 +358,8 @@ class SASTTriageAgent:
         """
         try:
             existing_results = []
-            if os.path.exists(self.assessments_file):
-                with open(self.assessments_file, "r") as f:
+            if os.path.exists(io_safe(self.assessments_file)):
+                with open(io_safe(self.assessments_file), "r") as f:
                     data = json.load(f)
                 if isinstance(data, dict) and "results" in data:
                     existing_results = data["results"]
@@ -371,7 +379,7 @@ class SASTTriageAgent:
 
             output = self._build_assessment_output(existing_results)
 
-            with open(self.assessments_file, "w") as f:
+            with open(io_safe(self.assessments_file), "w") as f:
                 json.dump(output, f, indent=2)
 
             self.logger.info(
@@ -487,8 +495,8 @@ class SASTTriageAgent:
                 "No pending findings to triage "
                 "(all marked as 'yes' in CSV)"
             )
-            if os.path.exists(self.assessments_file):
-                with open(self.assessments_file, "r") as f:
+            if os.path.exists(io_safe(self.assessments_file)):
+                with open(io_safe(self.assessments_file), "r") as f:
                     return json.load(f)
             return []
 
@@ -552,7 +560,7 @@ class SASTTriageAgent:
 
         # Write final output with metadata
         output = self._build_assessment_output(triage_results)
-        with open(self.assessments_file, "w") as f:
+        with open(io_safe(self.assessments_file), "w") as f:
             json.dump(output, f, indent=2)
 
         # Finalize session log with summary
@@ -593,7 +601,7 @@ class SASTTriageAgent:
             error_result = [
                 {"error": "Code base and findings report do not match."}
             ]
-            with open(self.assessments_file, "w") as f:
+            with open(io_safe(self.assessments_file), "w") as f:
                 json.dump(error_result, f, indent=2)
             return error_result
 

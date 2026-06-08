@@ -292,5 +292,47 @@ class TestVertexClient:
         assert kwargs["model_name"] == "gemini-2.5-pro"
 
 
+class TestOutputPathSafety:
+    """The agent must create its output directory and route assessment-file
+    I/O through io_safe, so a write succeeds on a fresh output path and on a
+    Windows path past the 260-char MAX_PATH limit. io_safe is a no-op on POSIX,
+    so these run unchanged on Linux and macOS."""
+
+    def _agent(self, **kwargs):
+        with patch("sast_triage.agent.ChatVertexAI") as mock_chat:
+            mock_llm = Mock()
+            mock_llm.bind_tools = Mock(return_value=mock_llm)
+            mock_chat.return_value = mock_llm
+            return SASTTriageAgent(
+                project="p", location="l", model_name="m", **kwargs
+            )
+
+    def test_init_creates_missing_output_directory(self, tmp_path):
+        out = tmp_path / "fresh" / "nested"
+        assert not out.exists()
+        self._agent(project_name="proj", output_dir=str(out))
+        assert out.exists()
+
+    def test_save_incremental_result_routes_write_through_io_safe(self, tmp_path):
+        agent = self._agent(project_name="proj", output_dir=str(tmp_path / "o"))
+        result = {
+            "resultHash": "hash-1",
+            "is_vulnerable": True,
+            "confidence": 0.9,
+            "suggested_state": "CONFIRMED",
+            "justification": "j",
+        }
+        with patch(
+            "sast_triage.agent.io_safe", side_effect=lambda p: p
+        ) as mock_io_safe:
+            agent.save_incremental_result(result)
+
+        assert any(
+            call.args and call.args[0] == agent.assessments_file
+            for call in mock_io_safe.call_args_list
+        )
+        assert os.path.exists(agent.assessments_file)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
