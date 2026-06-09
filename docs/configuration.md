@@ -24,7 +24,7 @@ The agent uses Google Gemini on Vertex AI. Auth is via Application Default Crede
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GITHUB_TOKENS` | -- | Per-host GitHub access tokens for HTTPS clones. Format: `host=token,host=token` (e.g. `github.com=ghp_xxx,ghe.example.com=ghp_yyy`). Hostname is matched case-insensitively against the Checkmarx-supplied repo URL; unmatched hosts fall back to the local git CLI credentials. The token is sent as an HTTP Basic Authorization header (username `x-access-token`) for the clone only and is never written to the cloned repo's git config. |
+| `GITHUB_TOKENS` | (none) | Per-host GitHub access tokens for HTTPS clones. Format: `host=token,host=token` (e.g. `github.com=ghp_xxx,ghe.example.com=ghp_yyy`). Hostname is matched case-insensitively against the Checkmarx-supplied repo URL; unmatched hosts fall back to the local git CLI credentials. The token is sent as an HTTP Basic Authorization header (username `x-access-token`) for the clone only and is never written to the cloned repo's git config. |
 
 ### `.env.example`
 

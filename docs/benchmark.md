@@ -71,6 +71,7 @@ Computed on `is_vulnerable` (positive class = vulnerable) against the analyst gr
 | F1 score | Harmonic mean of vulnerable-class precision and recall |
 | `not_exploitable_precision` | Negative class: TN / (TN + FN). The dismissal-quality gate |
 | `not_exploitable_recall` | Negative class: TN / (TN + FP) |
+| `not_exploitable_f1` | Negative class: harmonic mean of the two above |
 | TP / FP / FN / TN | Confusion counts on `is_vulnerable` |
 | Evaluated count | Findings with a non-null classification on both sides |
 | Refusal rate | Fraction of findings the agent did not classify |
