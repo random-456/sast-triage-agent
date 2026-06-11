@@ -65,7 +65,7 @@ def _process_summary_from_state(final_state: Mapping[str, Any]) -> Dict[str, int
     """
     evidence = final_state.get("evidence")
     failed = final_state.get("failed_tool_calls") or []
-    items = getattr(evidence, "items", []) or []
+    items = evidence.items if evidence is not None else []
     return {
         "evidence_items_count": len(items),
         "failed_tool_calls_count": len(failed),
