@@ -238,3 +238,36 @@ def test_token_totals_default():
     assert t.input == 0
     assert t.output == 0
     assert t.total == 0
+
+
+def test_finding_complete_v2_carries_breakdown_and_summary(envelope):
+    event = FindingCompleteEvent(
+        **envelope,
+        finding_id="abc",
+        stop_reason="max_reanalysis",
+        final_decision={"resultHash": "abc", "sample_count": 1},
+        total_duration_ms=1000.0,
+        confidence_breakdown={"final_confidence": 0.24, "sample_votes": []},
+        process_summary={
+            "evidence_items_count": 3,
+            "failed_tool_calls_count": 0,
+            "reanalysis_count": 2,
+            "research_stall_streak": 0,
+        },
+    )
+    assert event.v == 2
+    _roundtrip(event)
+
+
+def test_finding_complete_v1_line_without_new_fields_parses(envelope):
+    # A pre-v2 log line omits the new fields; it must still parse.
+    event = FindingCompleteEvent(
+        **envelope,
+        finding_id="abc",
+        stop_reason="approved",
+        final_decision={"resultHash": "abc"},
+        total_duration_ms=1000.0,
+    )
+    assert event.confidence_breakdown is None
+    assert event.process_summary is None
+    _roundtrip(event)
