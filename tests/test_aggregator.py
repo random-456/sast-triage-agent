@@ -19,7 +19,6 @@ from sast_triage.aggregator import (
 )
 
 
-
 def _v(is_vulnerable, citations=None, refs=None) -> AnalystVerdict:
     return AnalystVerdict(
         is_vulnerable=is_vulnerable,
@@ -248,7 +247,7 @@ class TestConfidenceBreakdownOutput:
 
     def test_breakdown_records_blend_inputs(self):
         # Two-thirds agreement, no evidence: raw = W * (2/3), no cap.
-        decision, breakdown = aggregate_samples("h", [_v(True), _v(True), _v(False)])
+        _, breakdown = aggregate_samples("h", [_v(True), _v(True), _v(False)])
         assert breakdown.agreement_rate == round(2 / 3, 4)
         assert breakdown.evidence_strength == 0.0
         assert breakdown.agreement_weight == CONFIDENCE_AGREEMENT_WEIGHT
@@ -258,7 +257,7 @@ class TestConfidenceBreakdownOutput:
         assert breakdown.sample_votes[0].is_vulnerable is True
 
     def test_breakdown_flags_applied_cap(self):
-        decision, breakdown = aggregate_samples(
+        _, breakdown = aggregate_samples(
             "h", [_strong(False), _strong(False)], stop_reason="max_research"
         )
         assert breakdown.raw_confidence > breakdown.cap_value
@@ -266,11 +265,11 @@ class TestConfidenceBreakdownOutput:
         assert breakdown.final_confidence == NON_CONVERGENT_CONFIDENCE_CAP
 
     def test_single_sample_breakdown_has_no_agreement(self):
-        decision, breakdown = aggregate_samples("h", [_v(True)])
+        _, breakdown = aggregate_samples("h", [_v(True)])
         assert breakdown.agreement_rate is None
         assert len(breakdown.sample_votes) == 1
 
     def test_empty_samples_returns_trivial_breakdown(self):
-        decision, breakdown = aggregate_samples("h", [])
+        _, breakdown = aggregate_samples("h", [])
         assert breakdown.sample_votes == []
         assert breakdown.final_confidence == 0.0
