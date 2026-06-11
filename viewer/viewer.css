@@ -851,3 +851,39 @@ code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
   gap: 18px;
   flex-wrap: wrap;
 }
+
+/* ===== Per-finding header card ===== */
+.finding-header {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--c-finding);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.finding-header .fh-title {
+  font-weight: 600;
+  color: var(--c-finding);
+  margin-bottom: 6px;
+}
+.finding-header .fh-verdict {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.finding-header .fh-block {
+  margin-top: 4px;
+}
+.finding-header .fh-formula {
+  font-family: var(--font-mono);
+  background: var(--accent-soft);
+  border-radius: 3px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+}
+.finding-header .fh-votes td {
+  white-space: nowrap;
+}
