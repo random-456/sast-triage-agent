@@ -9,9 +9,11 @@ any single model's self-report: a calibrated number rather than the clustered
 from collections import Counter
 from typing import List, Optional, Tuple
 
-from config import CONFIDENCE_AGREEMENT_WEIGHT, NON_CONVERGENT_CONFIDENCE_CAP
+from config import CONFIDENCE_AGREEMENT_WEIGHT, CONFIDENCE_THRESHOLD, NON_CONVERGENT_CONFIDENCE_CAP
 from sast_triage.agent_models import (
     AnalystVerdict,
+    ConfidenceBreakdown,
+    SampleVote,
     SuggestedState,
     TriageDecision,
     derive_state,
@@ -124,14 +126,28 @@ def _earned_confidence(
     return confidence
 
 
+def _sample_votes(samples: List[AnalystVerdict]) -> List[SampleVote]:
+    """Summarize each surviving sample for the confidence breakdown."""
+    return [
+        SampleVote(
+            is_vulnerable=s.is_vulnerable,
+            self_confidence=s.confidence,
+            temperature=s.sample_temperature,
+            n_citations=len(s.citation_lines),
+            n_evidence_refs=len(s.evidence_refs),
+        )
+        for s in samples
+    ]
+
+
 def aggregate_samples(
     result_hash: str,
     samples: List[AnalystVerdict],
     stop_reason: Optional[str] = None,
-) -> TriageDecision:
-    """Combine analyst samples into the final advisory TriageDecision."""
+) -> Tuple[TriageDecision, ConfidenceBreakdown]:
+    """Combine analyst samples into the final decision and its breakdown."""
     if not samples:
-        return TriageDecision(
+        decision = TriageDecision(
             resultHash=result_hash,
             is_vulnerable=None,
             confidence=0.0,
@@ -142,30 +158,44 @@ def aggregate_samples(
             agreement_rate=None,
             sample_count=0,
         )
+        breakdown = ConfidenceBreakdown(
+            agreement_rate=None,
+            evidence_strength=0.0,
+            agreement_weight=CONFIDENCE_AGREEMENT_WEIGHT,
+            raw_confidence=0.0,
+            cap_applied=False,
+            cap_value=NON_CONVERGENT_CONFIDENCE_CAP,
+            final_confidence=0.0,
+            threshold=CONFIDENCE_THRESHOLD,
+            sample_votes=[],
+        )
+        return decision, breakdown
 
     votes = [s.is_vulnerable for s in samples]
     majority, agreement_rate, is_clear = tally(votes)
+    evidence_strength = compute_evidence_strength(samples)
+    corroborated = len(samples) >= _MIN_CORROBORATING_SAMPLES
 
     if is_clear:
         is_vulnerable: Optional[bool] = majority
-        evidence_strength = compute_evidence_strength(samples)
-        if len(samples) >= _MIN_CORROBORATING_SAMPLES:
-            confidence = (
+        if corroborated:
+            raw_confidence = (
                 CONFIDENCE_AGREEMENT_WEIGHT * agreement_rate
                 + (1 - CONFIDENCE_AGREEMENT_WEIGHT) * evidence_strength
             )
         else:
             # A single sample is not self-consistency: there is no agreement
             # signal, so confidence rests on evidence strength alone.
-            confidence = (1 - CONFIDENCE_AGREEMENT_WEIGHT) * evidence_strength
+            raw_confidence = (1 - CONFIDENCE_AGREEMENT_WEIGHT) * evidence_strength
     else:
         # A split is never a confident dismissal: route to human attention.
         is_vulnerable = None
-        confidence = 0.0
+        raw_confidence = 0.0
 
-    confidence = _earned_confidence(confidence, is_vulnerable, stop_reason)
+    confidence = _earned_confidence(raw_confidence, is_vulnerable, stop_reason)
+    reported_agreement = round(agreement_rate, 4) if corroborated else None
 
-    return TriageDecision(
+    decision = TriageDecision(
         resultHash=result_hash,
         is_vulnerable=is_vulnerable,
         confidence=round(confidence, 4),
@@ -173,10 +203,18 @@ def aggregate_samples(
         justification=_build_justification(
             samples, is_vulnerable, agreement_rate, stop_reason
         ),
-        agreement_rate=(
-            round(agreement_rate, 4)
-            if len(samples) >= _MIN_CORROBORATING_SAMPLES
-            else None
-        ),
+        agreement_rate=reported_agreement,
         sample_count=len(samples),
     )
+    breakdown = ConfidenceBreakdown(
+        agreement_rate=reported_agreement,
+        evidence_strength=round(evidence_strength, 4),
+        agreement_weight=CONFIDENCE_AGREEMENT_WEIGHT,
+        raw_confidence=round(raw_confidence, 4),
+        cap_applied=confidence < raw_confidence,
+        cap_value=NON_CONVERGENT_CONFIDENCE_CAP,
+        final_confidence=round(confidence, 4),
+        threshold=CONFIDENCE_THRESHOLD,
+        sample_votes=_sample_votes(samples),
+    )
+    return decision, breakdown

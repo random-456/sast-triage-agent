@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 
 async def aggregate_node(state: TriageState) -> Dict:
     stop_reason = compute_stop_reason(state)
-    decision = aggregate_samples(
+    decision, breakdown = aggregate_samples(
         state.finding.resultHash, state.samples, stop_reason
     )
-    return {"verdict": decision, "stop_reason": stop_reason}
+    return {
+        "verdict": decision,
+        "confidence_breakdown": breakdown,
+        "stop_reason": stop_reason,
+    }

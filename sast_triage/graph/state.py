@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sast_triage.agent_models import (
     AnalystVerdict,
     CheckmarxFinding,
+    ConfidenceBreakdown,
     CritiqueResult,
     TriageDecision,
 )
@@ -77,5 +78,6 @@ class TriageState(BaseModel):
     reanalysis_count: int = 0
 
     stop_reason: Optional[StopReason] = None
+    confidence_breakdown: Optional[ConfidenceBreakdown] = None
 
     verdict: Optional[TriageDecision] = None
