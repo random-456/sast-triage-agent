@@ -80,6 +80,64 @@ class TriageDecision(BaseModel):
     )
 
 
+class SampleVote(BaseModel):
+    """One surviving voting sample, summarized for the confidence breakdown.
+
+    Structural counts only (no content), so it is identical in rich and
+    observability log modes.
+    """
+
+    is_vulnerable: Optional[bool] = Field(
+        description="The sample's classification: True, False or None"
+    )
+    self_confidence: float = Field(
+        ge=0.0, le=1.0, description="The sample's pre-calibration self-report"
+    )
+    temperature: Optional[float] = Field(
+        default=None, description="Sampling temperature that produced the sample"
+    )
+    n_citations: int = Field(ge=0, description="Number of citation lines")
+    n_evidence_refs: int = Field(ge=0, description="Number of evidence references")
+
+
+class ConfidenceBreakdown(BaseModel):
+    """The exact inputs that produced a finding's calibrated confidence.
+
+    Logged on ``finding_complete`` so the viewer can explain the number
+    without reimplementing the aggregator. ``final_confidence`` equals
+    ``TriageDecision.confidence``.
+    """
+
+    agreement_rate: Optional[float] = Field(
+        default=None,
+        description="Vote agreement; None below the corroboration floor",
+    )
+    evidence_strength: float = Field(
+        ge=0.0, le=1.0, description="0..1 grounding proxy from files and citations"
+    )
+    agreement_weight: float = Field(
+        ge=0.0, le=1.0, description="CONFIDENCE_AGREEMENT_WEIGHT at compute time"
+    )
+    raw_confidence: float = Field(
+        ge=0.0, le=1.0, description="Confidence before the circuit-breaker cap"
+    )
+    cap_applied: bool = Field(
+        description="Whether the non-convergent dismissal cap lowered confidence"
+    )
+    cap_value: float = Field(
+        ge=0.0, le=1.0, description="NON_CONVERGENT_CONFIDENCE_CAP"
+    )
+    final_confidence: float = Field(
+        ge=0.0, le=1.0, description="Final confidence; equals the decision's"
+    )
+    threshold: float = Field(
+        ge=0.0, le=1.0, description="CONFIDENCE_THRESHOLD for the disposition"
+    )
+    sample_votes: List[SampleVote] = Field(
+        default_factory=list, description="One entry per surviving voting sample"
+    )
+
+
 # Field names below mirror the Checkmarx One result payload (camelCase) on
 # purpose, matching TriageDecision.resultHash and the dict keys the ingestion
 # layer already uses. `extra="allow"` keeps the full payload lossless: we

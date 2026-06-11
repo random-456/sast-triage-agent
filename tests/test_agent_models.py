@@ -11,9 +11,11 @@ from config import CONFIDENCE_THRESHOLD
 from sast_triage.agent_models import (
     AnalystVerdict,
     CheckmarxFinding,
+    ConfidenceBreakdown,
     CriticConfig,
     CritiqueDecision,
     CritiqueResult,
+    SampleVote,
     SuggestedState,
     TriageDecision,
     derive_state,
@@ -186,3 +188,31 @@ class TestCriticConfig:
         assert config.temperature == 0.6
         assert config.max_research_loops == 2
         assert config.max_reanalysis_loops == 2
+
+
+class TestConfidenceBreakdownModels:
+    """The aggregator's confidence breakdown and per-sample votes validate."""
+
+    def test_sample_vote_counts_are_non_negative(self):
+        with pytest.raises(ValueError):
+            SampleVote(
+                is_vulnerable=True,
+                self_confidence=0.9,
+                temperature=0.1,
+                n_citations=-1,
+                n_evidence_refs=0,
+            )
+
+    def test_breakdown_defaults_sample_votes_to_empty(self):
+        bd = ConfidenceBreakdown(
+            agreement_rate=None,
+            evidence_strength=0.0,
+            agreement_weight=0.7,
+            raw_confidence=0.0,
+            cap_applied=False,
+            cap_value=0.8,
+            final_confidence=0.0,
+            threshold=0.85,
+        )
+        assert bd.sample_votes == []
+        assert bd.agreement_rate is None
