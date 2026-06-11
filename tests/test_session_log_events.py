@@ -259,8 +259,8 @@ def test_finding_complete_v2_carries_breakdown_and_summary(envelope):
     _roundtrip(event)
 
 
-def test_finding_complete_v1_line_without_new_fields_parses(envelope):
-    # A pre-v2 log line omits the new fields; it must still parse.
+def test_finding_complete_without_optional_fields_defaults_to_none(envelope):
+    # A log line that omits the optional fields must still parse.
     event = FindingCompleteEvent(
         **envelope,
         finding_id="abc",
