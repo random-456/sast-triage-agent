@@ -747,7 +747,7 @@
   }
 
   function renderSampleVotes(bd) {
-    const votes = bd && bd.sample_votes ? bd.sample_votes : null;
+    const votes = bd && Array.isArray(bd.sample_votes) ? bd.sample_votes : null;
     const n = votes ? votes.length : 0;
     const det = el("details", { cls: "collapsible fh-block" });
     det.appendChild(el("summary", null, [el("span", { text: "Sample votes (" + n + ")" })]));
