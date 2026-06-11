@@ -110,6 +110,8 @@ class ConfidenceBreakdown(BaseModel):
 
     agreement_rate: Optional[float] = Field(
         default=None,
+        ge=0.0,
+        le=1.0,
         description="Vote agreement; None below the corroboration floor",
     )
     evidence_strength: float = Field(
