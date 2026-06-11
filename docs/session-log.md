@@ -104,7 +104,7 @@ and on the agent's error path.
 
 | Field | Meaning |
 |-------|---------|
-| `agreement_rate` | Fraction of surviving samples that agree on `is_vulnerable`; `null` when no samples |
+| `agreement_rate` | Fraction of surviving samples that agree on `is_vulnerable`; `null` below the corroboration floor (fewer than two samples) |
 | `evidence_strength` | Scaled evidence-quality term |
 | `agreement_weight` | Configured weight applied to the agreement term |
 | `raw_confidence` | Combined confidence before any cap |
