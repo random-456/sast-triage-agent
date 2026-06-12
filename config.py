@@ -13,7 +13,7 @@ DEFAULT_OUTPUT_DIR = "output"
 CODEBASE_DIR = os.path.join(TEMP_DIR, "codebase")
 FINDINGS_DIR = os.path.join(TEMP_DIR, "findings")
 
-CERTIFICATES_CRT_FILE = os.path.join(ASSETS_DIR, "abcorg-ca.crt")
+CERTIFICATES_CRT_FILE = os.path.join(ASSETS_DIR, "airbus-ca.crt")
 FINDINGS_CSV_FILE = os.path.join(FINDINGS_DIR, "triage_list.csv")
 FINDINGS_JSON_FILE = os.path.join(FINDINGS_DIR, "findings_details.json")
 
@@ -63,7 +63,7 @@ NON_CONVERGENT_CONFIDENCE_CAP = 0.8
 
 # Checkmarx API Configuration
 CHECKMARX_CLIENT_ID = "ast-app"  # Default client ID for Checkmarx One
-CHECKMARX_REALM = "abcorg"  # Checkmarx realm/tenant name
+CHECKMARX_REALM = "airbus"  # Checkmarx realm/tenant name
 CHECKMARX_API_LIMIT = 1000  # Max findings per API request
 DEFAULT_SEVERITIES = ["HIGH", "MEDIUM"]  # Default severities to fetch
 DEFAULT_BRANCH = "default.SecurityPipeline"  # Default branch for scans
