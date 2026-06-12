@@ -505,6 +505,7 @@
       : null;
 
     if (finding) {
+      wrap.appendChild(renderFindingHeader(finding));
       wrap.appendChild(renderFlow(finding));
     } else {
       wrap.appendChild(
@@ -546,9 +547,9 @@
         findingId: fid,
         state: decision.suggested_state || "—",
         confidence: decision.confidence != null ? decision.confidence : null,
-        samples: c ? findingSampleCount(f) : 0,
+        samples: c ? (decision.sample_count != null ? decision.sample_count : findingSampleCount(f)) : 0,
         research: visits.research || 0,
-        reanalysis: visits.analyst != null && visits.analyst > 1 ? visits.analyst - 1 : 0,
+        reanalysis: c ? reanalysisCount(c) : 0,
         tokens: tokens,
         duration: duration,
         stopReason: c ? c.stop_reason || "—" : "—",
@@ -655,6 +656,199 @@
       if (ev.type === "llm_call" && ev.structured_schema === "AnalystVerdict") n += 1;
     }
     return n;
+  }
+
+  function reanalysisCount(c) {
+    if (c.process_summary && c.process_summary.reanalysis_count != null) {
+      return c.process_summary.reanalysis_count;
+    }
+    const visits = c.per_node_visit_counts || {};
+    return visits.analyst != null && visits.analyst > 1 ? visits.analyst - 1 : 0;
+  }
+
+  function criticTrail(finding) {
+    const trail = [];
+    for (const ev of finding.events) {
+      if (ev.type === "node_exit" && ev.node === "critic" && ev.state_writes) {
+        const lc = ev.state_writes.last_critique;
+        if (lc) trail.push({ decision: lc.decision || "?", weakest_point: lc.weakest_point || "" });
+      }
+    }
+    if (!trail.length) {
+      let prev = null;
+      for (const ev of finding.events) {
+        if (ev.type === "node_enter" && ev.state_snapshot && ev.state_snapshot.last_critique_decision) {
+          const dec = ev.state_snapshot.last_critique_decision;
+          if (dec !== prev) {
+            trail.push({ decision: dec, weakest_point: "" });
+            prev = dec;
+          }
+        }
+      }
+    }
+    return trail;
+  }
+
+  function dispositionReason(d, bd) {
+    if (d.is_vulnerable === true) return "Positive verdict → CONFIRMED regardless of confidence.";
+    if (d.is_vulnerable == null) return "No majority verdict → REFUSED for manual review.";
+    if (bd && bd.final_confidence != null && bd.threshold != null) {
+      return bd.final_confidence >= bd.threshold
+        ? "Negative at/above threshold " + bd.threshold.toFixed(2) + " → NOT_EXPLOITABLE."
+        : "Negative below threshold " + bd.threshold.toFixed(2) + " → PROPOSED_NOT_EXPLOITABLE for human review.";
+    }
+    return "";
+  }
+
+  function renderConfidenceBreakdown(d, bd) {
+    const det = el("details", { cls: "collapsible fh-block" });
+    det.appendChild(el("summary", null, [el("span", { text: "Confidence breakdown" })]));
+    const body = el("div", { cls: "body" });
+    if (!bd) {
+      body.appendChild(renderKvTable([
+        ["confidence", d.confidence != null ? d.confidence.toFixed(4) : "—"],
+        ["agreement_rate", d.agreement_rate != null ? d.agreement_rate : "—"],
+        ["sample_count", d.sample_count],
+      ]));
+      body.appendChild(el("div", { cls: "muted", text: "Detailed breakdown not in this log (pre-v2)." }));
+      det.appendChild(body);
+      return det;
+    }
+    const W = bd.agreement_weight;
+    const agr = bd.agreement_rate;
+    let formula;
+    if (d.is_vulnerable == null) {
+      // Split or no-majority vote: raw is forced to 0, so the blend does not apply.
+      formula = "no majority vote → raw " + bd.raw_confidence.toFixed(2);
+    } else {
+      const evTerm = (1 - W).toFixed(2) + " x evidence(" + bd.evidence_strength.toFixed(2) + ")";
+      formula = agr != null
+        ? W.toFixed(2) + " x agreement(" + agr.toFixed(2) + ") + " + evTerm
+        : evTerm + " (agreement not credited: single sample)";
+      formula += " = " + bd.raw_confidence.toFixed(2) + " raw";
+    }
+    if (bd.cap_applied) formula += " → capped " + bd.cap_value.toFixed(2);
+    formula += " → final " + bd.final_confidence.toFixed(2);
+    body.appendChild(el("div", { cls: "fh-formula mono", text: formula }));
+    body.appendChild(renderKvTable([
+      ["agreement_rate", agr != null ? agr : "—"],
+      ["evidence_strength", bd.evidence_strength],
+      ["agreement_weight", W],
+      ["raw_confidence", bd.raw_confidence],
+      ["cap_applied", String(bd.cap_applied)],
+      ["cap_value", bd.cap_value],
+      ["final_confidence", bd.final_confidence],
+      ["threshold", bd.threshold],
+    ]));
+    const reason = dispositionReason(d, bd);
+    if (reason) body.appendChild(el("div", { cls: "muted", text: reason }));
+    det.appendChild(body);
+    return det;
+  }
+
+  function renderSampleVotes(bd) {
+    const votes = bd && Array.isArray(bd.sample_votes) ? bd.sample_votes : null;
+    const n = votes ? votes.length : 0;
+    const det = el("details", { cls: "collapsible fh-block" });
+    det.appendChild(el("summary", null, [el("span", { text: "Sample votes (" + n + ")" })]));
+    const body = el("div", { cls: "body" });
+    if (!votes) {
+      body.appendChild(el("div", { cls: "muted", text: "Per-sample votes not in this log (pre-v2)." }));
+      det.appendChild(body);
+      return det;
+    }
+    const tbl = el("table", { cls: "kv-table fh-votes" });
+    tbl.appendChild(el("tr", null, [
+      el("td", { cls: "key", text: "vuln" }),
+      el("td", { cls: "key", text: "self-conf" }),
+      el("td", { cls: "key", text: "temp" }),
+      el("td", { cls: "key", text: "cites" }),
+      el("td", { cls: "key", text: "evidence" }),
+    ]));
+    for (const v of votes) {
+      tbl.appendChild(el("tr", null, [
+        el("td", { cls: "val", text: String(v.is_vulnerable) }),
+        el("td", { cls: "val", text: v.self_confidence != null ? v.self_confidence.toFixed(2) : "—" }),
+        el("td", { cls: "val", text: v.temperature != null ? v.temperature : "—" }),
+        el("td", { cls: "val", text: v.n_citations }),
+        el("td", { cls: "val", text: v.n_evidence_refs }),
+      ]));
+    }
+    body.appendChild(tbl);
+    det.appendChild(body);
+    return det;
+  }
+
+  function renderProcessDiagnostics(finding, c) {
+    const ps = c.process_summary || null;
+    const det = el("details", { cls: "collapsible fh-block" });
+    det.appendChild(el("summary", null, [el("span", { text: "Process diagnostics" })]));
+    const body = el("div", { cls: "body" });
+    const rows = [];
+    if (ps) {
+      rows.push(["evidence_items", ps.evidence_items_count]);
+      rows.push(["failed_tool_calls", ps.failed_tool_calls_count]);
+      rows.push(["reanalysis_count", ps.reanalysis_count]);
+      rows.push(["research_stall_streak", ps.research_stall_streak]);
+    }
+    rows.push(["llm_calls", c.llm_calls_count]);
+    rows.push(["tool_calls", c.tool_calls_count]);
+    rows.push(["total_tokens", c.total_tokens ? c.total_tokens.total : null]);
+    rows.push(["duration", fmtMs(c.total_duration_ms)]);
+    body.appendChild(renderKvTable(rows));
+    const trail = criticTrail(finding);
+    if (trail.length) {
+      body.appendChild(el("h4", { text: "Critic trail" }));
+      body.appendChild(el("div", { cls: "mono", text: trail.map((t) => t.decision).join(" → ") }));
+      const last = trail[trail.length - 1];
+      if (last && last.weakest_point) body.appendChild(dim("weakest point: " + last.weakest_point));
+    }
+    if (!ps) body.appendChild(el("div", { cls: "muted", text: "Process counters not in this log (pre-v2)." }));
+    det.appendChild(body);
+    return det;
+  }
+
+  function renderFindingHeader(finding) {
+    const card = el("div", { cls: "finding-header" });
+    card.appendChild(el("div", { cls: "fh-title", text: "Finding " + shortenHash(finding.findingId) }));
+    const c = finding.completeEvent;
+    if (!c) {
+      card.appendChild(el("div", { cls: "muted", text: "Finding incomplete (no finding_complete event)." }));
+      return card;
+    }
+    const d = c.final_decision || {};
+    const bd = c.confidence_breakdown || null;
+    const ps = c.process_summary || null;
+    const s = finding.startEvent;
+
+    const parts = [];
+    parts.push("conf " + (d.confidence != null ? d.confidence.toFixed(2) : "—"));
+    parts.push("vuln=" + String(d.is_vulnerable));
+    if (s && s.finding && s.finding.cweID) parts.push("CWE-" + s.finding.cweID);
+    if (s && s.checklist_id) parts.push("checklist " + s.checklist_id + " (" + (s.checklist_selection_method || "?") + ")");
+    if (c.stop_reason) parts.push("stop " + c.stop_reason);
+
+    const voted = d.sample_count != null ? d.sample_count : findingSampleCount(finding);
+    const loops = ps ? ps.reanalysis_count : reanalysisCount(c);
+    const attempts = findingSampleCount(finding);
+    let countText = voted + " voted";
+    if (loops) countText += " · " + loops + " reanalysis loop" + (loops === 1 ? "" : "s");
+    if (attempts && attempts !== voted) countText += " · " + attempts + " attempts";
+    parts.push(countText);
+    parts.push(fmtMs(c.total_duration_ms));
+    if (c.total_tokens && c.total_tokens.total) parts.push(fmtTokens(c.total_tokens.total) + " tok");
+
+    const verdict = el("div", { cls: "fh-verdict" }, [
+      el("span", { cls: "state-badge state-" + (d.suggested_state || ""), text: d.suggested_state || "—" }),
+      document.createTextNode(" "),
+      dim(parts.join(" · ")),
+    ]);
+    card.appendChild(verdict);
+
+    card.appendChild(renderConfidenceBreakdown(d, bd));
+    card.appendChild(renderSampleVotes(bd));
+    card.appendChild(renderProcessDiagnostics(finding, c));
+    return card;
   }
 
   function renderFlow(finding) {
@@ -1075,7 +1269,7 @@
           ["retry_attempted", String(!!ev.retry_attempted)],
         ]);
       case "finding_complete":
-        return inspectFindingComplete(ev);
+        return inspectFindingComplete(ev, session);
       case "session_end":
         return inspectSessionEnd(ev);
       default:
@@ -1339,7 +1533,7 @@
     ]);
   }
 
-  function inspectFindingComplete(ev) {
+  function inspectFindingComplete(ev, session) {
     const wrap = el("div");
     const d = ev.final_decision || {};
     wrap.appendChild(el("h4", { text: "Verdict" }));
@@ -1352,6 +1546,12 @@
       ])
     );
     if (d.justification) wrap.appendChild(collapsibleText("Justification", d.justification));
+    if (ev.confidence_breakdown || d.confidence != null) {
+      wrap.appendChild(renderConfidenceBreakdown(d, ev.confidence_breakdown || null));
+    }
+    if (ev.confidence_breakdown) wrap.appendChild(renderSampleVotes(ev.confidence_breakdown));
+    const finding = session.findings.get(ev.finding_id);
+    if (finding) wrap.appendChild(renderProcessDiagnostics(finding, ev));
     wrap.appendChild(el("h4", { text: "Totals" }));
     wrap.appendChild(
       renderKvTable([

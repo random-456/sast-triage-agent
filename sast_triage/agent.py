@@ -8,7 +8,7 @@ import json
 import datetime
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from langchain_google_vertexai import ChatVertexAI
 
@@ -55,6 +55,23 @@ from config import (
     MAX_TOOL_CALLS_PER_RESEARCH,
     NON_CONVERGENT_CONFIDENCE_CAP,
 )
+
+
+def _process_summary_from_state(final_state: Mapping[str, Any]) -> Dict[str, int]:
+    """Final per-finding process counters for the finding_complete event.
+
+    Read from the state mapping that ``ainvoke`` returns; the values are the
+    real state objects (an ``EvidenceBundle``, a list, two ints).
+    """
+    evidence = final_state.get("evidence")
+    failed = final_state.get("failed_tool_calls") or []
+    items = evidence.items if evidence is not None else []
+    return {
+        "evidence_items_count": len(items),
+        "failed_tool_calls_count": len(failed),
+        "reanalysis_count": int(final_state.get("reanalysis_count", 0) or 0),
+        "research_stall_streak": int(final_state.get("research_stall_streak", 0) or 0),
+    }
 
 
 class SASTTriageAgent:
@@ -290,11 +307,20 @@ class SASTTriageAgent:
             stop_reason = result.get("stop_reason") if isinstance(
                 result, dict
             ) else None
+            breakdown = (
+                result.get("confidence_breakdown")
+                if isinstance(result, dict)
+                else None
+            )
 
             self.session_logger.emit_finding_complete(
                 finding_id=result_hash,
                 stop_reason=stop_reason,
                 final_decision=decision.model_dump(),
+                confidence_breakdown=(
+                    breakdown.model_dump() if breakdown is not None else None
+                ),
+                process_summary=_process_summary_from_state(result),
             )
             self.logger.info(
                 f"Decision: {decision.suggested_state.value} "
