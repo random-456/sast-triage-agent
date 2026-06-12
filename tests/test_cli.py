@@ -11,6 +11,7 @@ from run_triage import (
     filter_findings_by_hashes,
     filter_findings_by_state,
 )
+from utils.llm_factory import ModelSelection
 
 
 @pytest.fixture
@@ -43,6 +44,49 @@ class TestRunSubcommand:
         result = runner.invoke(cli, ["run", "--help"])
         assert result.exit_code == 0
         assert "--findings" in result.output
+
+
+class TestModelFlags:
+    """``run`` exposes a global ``--model`` plus per-node model and location
+    flags, bundled into a ModelSelection passed to execute_triage."""
+
+    def test_run_help_lists_per_node_model_and_location_flags(
+        self, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(cli, ["run", "--help"])
+        assert result.exit_code == 0
+        for flag in (
+            "--research-model",
+            "--analyst-model",
+            "--critic-model",
+            "--research-location",
+            "--analyst-location",
+            "--critic-location",
+        ):
+            assert flag in result.output
+
+    def test_flags_are_bundled_into_model_selection(self, runner: CliRunner) -> None:
+        with patch("run_triage.execute_triage") as mock_exec:
+            runner.invoke(
+                cli,
+                [
+                    "run",
+                    "proj",
+                    "--gitleaks-report",
+                    "none",
+                    "--model",
+                    "gemini-2.5-flash",
+                    "--critic-model",
+                    "claude-sonnet-4@20250514",
+                    "--critic-location",
+                    "us-east5",
+                ],
+            )
+        selection = mock_exec.call_args.kwargs["model_selection"]
+        assert selection.model == "gemini-2.5-flash"
+        assert selection.critic_model == "claude-sonnet-4@20250514"
+        assert selection.critic_location == "us-east5"
+        assert selection.research_model is None
 
 
 class TestRunSubdirFlag:
@@ -88,7 +132,7 @@ class TestExecuteTriageRunSubdir:
             with pytest.raises(SystemExit):
                 execute_triage(
                     project_name="proj",
-                    model_name="m",
+                    model_selection=ModelSelection(model="m"),
                     severity_list=["HIGH"],
                     state_list=["TO_VERIFY"],
                     branch="main",
@@ -115,7 +159,7 @@ class TestExecuteTriageRunSubdir:
             with pytest.raises(SystemExit):
                 execute_triage(
                     project_name="proj",
-                    model_name="m",
+                    model_selection=ModelSelection(model="m"),
                     severity_list=["HIGH"],
                     state_list=["TO_VERIFY"],
                     branch="main",

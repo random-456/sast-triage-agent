@@ -108,6 +108,24 @@
     return (n / 1024 / 1024).toFixed(2) + "MB";
   }
 
+  // The session_start event carries per-node models as a map (schema v2);
+  // v1 logs carried a single `model` string. Collapse the map to one value
+  // when every node shares a model, else show each node's model.
+  function sessionModelsLabel(startEvent) {
+    if (!startEvent) return "";
+    const models = startEvent.models;
+    if (models && typeof models === "object") {
+      const order = ["research", "analyst", "critic"];
+      const keys = order
+        .filter((k) => k in models)
+        .concat(Object.keys(models).filter((k) => order.indexOf(k) === -1));
+      const unique = Array.from(new Set(keys.map((k) => models[k])));
+      if (unique.length === 1) return unique[0];
+      return keys.map((k) => k + "=" + models[k]).join(", ");
+    }
+    return startEvent.model || "";
+  }
+
   function jsonPretty(value) {
     try {
       return JSON.stringify(value, null, 2);
@@ -297,7 +315,7 @@
             el("div", {
               cls: "meta",
               text:
-                (session.startEvent ? session.startEvent.model || "" : "") +
+                sessionModelsLabel(session.startEvent) +
                 (session.findings.size > 0
                   ? " · " + session.findings.size + " finding" + (session.findings.size === 1 ? "" : "s")
                   : ""),
@@ -441,7 +459,7 @@
     const start = session.startEvent || {};
     const totals = session.totals;
     const summary = el("div", { cls: "session-summary" }, [
-      summaryItem("Model", start.model || "—"),
+      summaryItem("Models", sessionModelsLabel(start) || "—"),
       summaryItem("Project", start.project_name || "—"),
       summaryItem("Branch", start.branch || "—"),
       summaryItem("Findings", String(session.findings.size)),
@@ -995,7 +1013,7 @@
     const sum = el("span", { cls: "summary" });
     switch (ev.type) {
       case "session_start":
-        sum.appendChild(document.createTextNode(ev.model || ""));
+        sum.appendChild(document.createTextNode(sessionModelsLabel(ev)));
         if (ev.project_name) {
           sum.appendChild(dim(" · " + ev.project_name));
         }
@@ -1649,8 +1667,8 @@
   function renderCompareTable(a, b) {
     const wrap = el("div");
     const summary = el("div", { cls: "compare-summary" });
-    summary.appendChild(summaryItem("A model", (a.startEvent && a.startEvent.model) || "—"));
-    summary.appendChild(summaryItem("B model", (b.startEvent && b.startEvent.model) || "—"));
+    summary.appendChild(summaryItem("A models", sessionModelsLabel(a.startEvent) || "—"));
+    summary.appendChild(summaryItem("B models", sessionModelsLabel(b.startEvent) || "—"));
     summary.appendChild(
       summaryItem(
         "Δ tokens",

@@ -91,7 +91,7 @@ class SessionLogger:
     def emit_session_start(
         self,
         *,
-        model: str,
+        models: Dict[str, str],
         agent_config: Dict[str, Any],
         project_name: Optional[str] = None,
         project_id: Optional[str] = None,
@@ -103,7 +103,7 @@ class SessionLogger:
         self._session_started_iso = _now_iso()
         event = SessionStartEvent(
             **self._envelope(),
-            model=model,
+            models=models,
             agent_config=agent_config,
             project_name=project_name,
             project_id=project_id,

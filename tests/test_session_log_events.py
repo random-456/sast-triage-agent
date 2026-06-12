@@ -49,7 +49,8 @@ def _roundtrip(event):
 def test_session_start_minimal_required_fields_roundtrip(envelope):
     event = SessionStartEvent(
         **envelope,
-        model="gemini-2.5-pro",
+        models={"research": "gemini-2.5-pro", "analyst": "gemini-2.5-pro",
+                "critic": "gemini-2.5-pro"},
         agent_config={"INITIAL_SAMPLES": 2},
         log_mode=LogMode.RICH,
         started_at="2026-05-28T12:00:00.000000+00:00",
@@ -208,9 +209,10 @@ def test_discriminated_union_dispatch_by_type(envelope):
     """Two different event-type JSON lines parse to the correct concrete model."""
     adapter = TypeAdapter(SessionLogEvent)
     s_line = (
-        '{"type":"session_start","v":1,'
+        '{"type":"session_start","v":2,'
         '"ts":"2026-05-28T12:00:00.000000+00:00","seq":1,'
-        '"session_id":"x","model":"m","agent_config":{},'
+        '"session_id":"x","models":{"research":"m","analyst":"m","critic":"m"},'
+        '"agent_config":{},'
         '"log_mode":"rich","started_at":"2026-05-28T12:00:00.000000+00:00"}'
     )
     parsed_s = adapter.validate_json(s_line)

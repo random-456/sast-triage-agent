@@ -24,7 +24,7 @@ The result is a structured `TriageDecision` per finding: an `is_vulnerable` clas
 | Component | Location | Responsibility |
 |-----------|----------|----------------|
 | CLI | `run_triage.py` | Entry point, argument parsing, outer-pipeline orchestration |
-| Agent | `sast_triage/agent.py` | Builds the per-finding subgraph and the Vertex AI client; iterates findings; persists results |
+| Agent | `sast_triage/agent.py` | Builds the per-finding subgraph and the per-node Vertex AI clients; iterates findings; persists results |
 | Graph | `sast_triage/graph/` | Per-finding LangGraph state machine: research, analyst, critic and aggregate nodes plus pure routing |
 | Aggregator | `sast_triage/aggregator.py` | Self-consistency vote and confidence calibration over analyst samples |
 | Checklists | `sast_triage/checklists/` | CWE-keyed evidence checklists in YAML, selected per finding |
@@ -167,7 +167,7 @@ The CODE BANK that the model sees on each turn is rendered by `format_code_bank`
 
 **Purpose:** decide whether the finding is exploitable, given the CODE BANK and the CWE-specific checklist.
 
-**LLM client.** Structured-output Gemini via `ChatVertexAI.with_structured_output(AnalystVerdict)`. The analyst has no tools; it reasons from the evidence on hand and emits a typed object.
+**LLM client.** The analyst node's model with `.with_structured_output(AnalystVerdict)`. The analyst has no tools; it reasons from the evidence on hand and emits a typed object.
 
 **Prompt anatomy.** `build_analyst_messages` returns:
 
@@ -218,7 +218,7 @@ The self-reported `confidence` is recorded but is not the number that ends up in
 
 **Purpose:** find the weakest point in the analyst's latest verdict against the evidence. The critic does not produce its own classification.
 
-**LLM client.** A separate `ChatVertexAI.with_structured_output(CritiqueResult)` at `CRITIC_TEMPERATURE = 0.6`, higher than the analyst's slot temperature so the critic is less likely to mirror the analyst's reasoning.
+**LLM client.** The critic node's model with `.with_structured_output(CritiqueResult)` at `CRITIC_TEMPERATURE = 0.6`, higher than the analyst's slot temperature so the critic is less likely to mirror the analyst's reasoning. The critic can run a different model than the analyst (for example a Claude critic over Gemini analysts).
 
 **Prompt anatomy.** `build_critic_messages` returns:
 
@@ -569,14 +569,14 @@ The preprocessing pipeline runs after repository cloning and before LLM analysis
 
 ## LLM backend
 
-The agent uses Google Gemini on Vertex AI through `ChatVertexAI` from `langchain-google-vertexai`. The transport is gRPC, which respects `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` and so works on corporate networks that re-sign TLS with a private CA.
+The agent runs models on Vertex AI through `langchain-google-vertexai`. `utils.llm_factory.build_chat_model` routes by model name: a name containing `claude` builds `ChatAnthropicVertex` (Anthropic on Vertex), any other name builds `ChatVertexAI` (Gemini). Both transports are gRPC, which respects `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` and so work on corporate networks that re-sign TLS with a private CA.
 
-Project and location are resolved once at startup by `config.resolve_vertex_config`:
+Project and the global location are resolved once at startup by `config.resolve_vertex_config`:
 
 - `GOOGLE_CLOUD_PROJECT` (required).
 - `GOOGLE_CLOUD_LOCATION` (defaults to `europe-west4`).
 
-Auth is via Application Default Credentials (`gcloud auth application-default login`). The model is selected by the `--model` CLI flag or the interactive prompt; the default is `gemini-2.5-pro`.
+Each LLM-using node (research, analyst, critic) takes its own model and Vertex region, resolved by `utils.llm_factory.build_triage_llm_config`. Precedence: a per-node CLI flag, then `--model` (model) or the node's location default, then the config defaults. So a single `--model` sets every node, while `--critic-model` plus `--critic-location` can put the critic on Claude in a Claude-serving region while the rest stay on Gemini. Auth is via Application Default Credentials (`gcloud auth application-default login`).
 
 ## Session logging
 

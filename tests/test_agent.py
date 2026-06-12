@@ -10,6 +10,7 @@ import pytest
 import json
 import asyncio
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import Mock, patch, AsyncMock
 
@@ -18,6 +19,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sast_triage.agent import SASTTriageAgent
 from sast_triage.agent_models import TriageDecision
+from utils.llm_factory import NodeLLMConfig, TriageLLMConfig
+
+
+def _single_model_config(model: str = "test-model", location: str = "test-location"):
+    """A TriageLLMConfig with every node on the same model and region."""
+    node = NodeLLMConfig(model=model, location=location)
+    return TriageLLMConfig(research=node, analyst=node, critic=node)
 
 
 def test_agent_config_snapshot_includes_non_convergent_cap():
@@ -47,17 +55,17 @@ class TestSASTTriageAgent:
     @pytest.fixture
     def agent(self):
         """Create an agent instance for testing."""
-        with patch('sast_triage.agent.ChatVertexAI') as mock_chat:
-            # Mock the LLM
+        with patch("sast_triage.agent.build_chat_model") as mock_factory:
+            # Mock the LLM; bind_tools/with_structured_output/with_config chain
+            # back to the same mock.
             mock_llm = Mock()
             mock_llm.bind_tools = Mock(return_value=mock_llm)
-            mock_chat.return_value = mock_llm
-            
+            mock_factory.return_value = mock_llm
+
             agent = SASTTriageAgent(
                 project="test-project",
-                location="test-location",
-                model_name="test-model",
-                temperature=0.1
+                llm_config=_single_model_config(),
+                temperature=0.1,
             )
             # Store the mock for later access in tests
             agent._mock_llm = mock_llm
@@ -70,7 +78,11 @@ class TestSASTTriageAgent:
     
     def test_agent_initialization(self, agent):
         """Test that agent initializes correctly."""
-        assert agent.model_name == "test-model"
+        assert agent.models == {
+            "research": "test-model",
+            "analyst": "test-model",
+            "critic": "test-model",
+        }
         assert agent.temperature == 0.1
         # The researcher gets the three investigation tools; verdict and review
         # are handled by the analyst and critic graph nodes, not tools.
@@ -234,6 +246,68 @@ class TestSASTTriageAgent:
             assert decision.agreement_rate == 1.0
 
 
+class TestPerNodeModels:
+    """The agent builds each LLM node from its own model and location via
+    build_chat_model, so research, analyst and critic can run different
+    providers and regions."""
+
+    @staticmethod
+    def _llm_config():
+        from utils.llm_factory import NodeLLMConfig, TriageLLMConfig
+
+        return TriageLLMConfig(
+            research=NodeLLMConfig(model="gemini-2.5-pro", location="europe-west4"),
+            analyst=NodeLLMConfig(model="gemini-2.5-flash", location="europe-west4"),
+            critic=NodeLLMConfig(model="claude-sonnet-4@20250514", location="us-east5"),
+        )
+
+    @contextmanager
+    def _agent(self):
+        with patch("sast_triage.agent.build_chat_model") as mock_factory:
+            mock_factory.side_effect = lambda *a, **k: Mock()
+            agent = SASTTriageAgent(
+                project="proj-x",
+                llm_config=self._llm_config(),
+                temperature=0.1,
+            )
+            yield agent, mock_factory
+
+    def test_research_and_critic_clients_built_from_their_node_config(self):
+        with self._agent() as (_, mock_factory):
+            calls = {c.args[0]: c.kwargs for c in mock_factory.call_args_list}
+            # Research builds at the base temperature, critic at CRITIC_TEMPERATURE.
+            from config import CRITIC_TEMPERATURE
+
+            assert calls["gemini-2.5-pro"]["location"] == "europe-west4"
+            assert calls["gemini-2.5-pro"]["temperature"] == 0.1
+            assert calls["claude-sonnet-4@20250514"]["location"] == "us-east5"
+            assert (
+                calls["claude-sonnet-4@20250514"]["temperature"]
+                == CRITIC_TEMPERATURE
+            )
+            assert all(
+                c.kwargs["project"] == "proj-x"
+                for c in mock_factory.call_args_list
+            )
+
+    def test_analyst_client_built_from_analyst_node_config(self):
+        with self._agent() as (agent, mock_factory):
+            mock_factory.reset_mock()
+            agent._analyst_llm_for(0.3)
+            _, kwargs = mock_factory.call_args
+            assert mock_factory.call_args.args[0] == "gemini-2.5-flash"
+            assert kwargs["location"] == "europe-west4"
+            assert kwargs["temperature"] == 0.3
+
+    def test_models_map_exposes_per_node_model_names(self):
+        with self._agent() as (agent, _):
+            assert agent.models == {
+                "research": "gemini-2.5-pro",
+                "analyst": "gemini-2.5-flash",
+                "critic": "claude-sonnet-4@20250514",
+            }
+
+
 class TestTriageDecision:
     """Test the TriageDecision model."""
 
@@ -273,25 +347,6 @@ class TestTriageDecision:
         assert decision_dict["justification"] == "Not exploitable because..."
 
 
-class TestVertexClient:
-    """The agent builds a Vertex AI client from project + location."""
-
-    def test_agent_builds_vertex_client_with_project_and_location(self):
-        with patch("sast_triage.agent.ChatVertexAI") as mock_chat:
-            mock_llm = Mock()
-            mock_llm.bind_tools = Mock(return_value=mock_llm)
-            mock_chat.return_value = mock_llm
-            SASTTriageAgent(
-                project="proj-x",
-                location="europe-west4",
-                model_name="gemini-2.5-pro",
-            )
-        _, kwargs = mock_chat.call_args
-        assert kwargs["project"] == "proj-x"
-        assert kwargs["location"] == "europe-west4"
-        assert kwargs["model_name"] == "gemini-2.5-pro"
-
-
 class TestOutputPathSafety:
     """The agent must create its output directory and route assessment-file
     I/O through io_safe, so a write succeeds on a fresh output path and on a
@@ -299,12 +354,12 @@ class TestOutputPathSafety:
     so these run unchanged on Linux and macOS."""
 
     def _agent(self, **kwargs):
-        with patch("sast_triage.agent.ChatVertexAI") as mock_chat:
+        with patch("sast_triage.agent.build_chat_model") as mock_factory:
             mock_llm = Mock()
             mock_llm.bind_tools = Mock(return_value=mock_llm)
-            mock_chat.return_value = mock_llm
+            mock_factory.return_value = mock_llm
             return SASTTriageAgent(
-                project="p", location="l", model_name="m", **kwargs
+                project="p", llm_config=_single_model_config("m", "l"), **kwargs
             )
 
     def test_init_creates_missing_output_directory(self, tmp_path):

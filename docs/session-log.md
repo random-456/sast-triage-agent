@@ -12,7 +12,7 @@ the replay harness, the [Session Log Viewer](session-log-viewer.md) under
 ```
 logs/
     sast_triage_20260528_120000.jsonl
-        {"type":"session_start","v":1,"ts":"...","seq":1,"session_id":"...",...}
+        {"type":"session_start","v":2,"ts":"...","seq":1,"session_id":"...",...}
         {"type":"preprocessing_complete","v":1,"ts":"...","seq":2,...}
         {"type":"finding_start","v":1,...}
         ...
@@ -48,7 +48,7 @@ Pydantic model.
 
 | Type | Emitted | Key fields |
 |------|---------|-----------|
-| `session_start` | At agent construction | `model`, `agent_config` (constants snapshot incl. `INITIAL_SAMPLES`, `DEFAULT_SAMPLES`, `MAX_RESEARCH_ITERATIONS`, `MAX_REANALYSIS_LOOPS`, `MAX_TOOL_CALLS_PER_RESEARCH`, `GRAPH_RECURSION_LIMIT`, `ANALYST_TEMPERATURES`, `CRITIC_TEMPERATURE`, `CONFIDENCE_AGREEMENT_WEIGHT`, `CONFIDENCE_THRESHOLD`), `project_name`, `project_id`, `scan_id`, `repo_url`, `branch`, `log_mode`, `started_at` |
+| `session_start` | At agent construction | `models` (per-node model names keyed by `research`, `analyst`, `critic`; schema `v` is `2`, v1 carried a single `model` string), `agent_config` (constants snapshot incl. `INITIAL_SAMPLES`, `DEFAULT_SAMPLES`, `MAX_RESEARCH_ITERATIONS`, `MAX_REANALYSIS_LOOPS`, `MAX_TOOL_CALLS_PER_RESEARCH`, `GRAPH_RECURSION_LIMIT`, `ANALYST_TEMPERATURES`, `CRITIC_TEMPERATURE`, `CONFIDENCE_AGREEMENT_WEIGHT`, `CONFIDENCE_THRESHOLD`), `project_name`, `project_id`, `scan_id`, `repo_url`, `branch`, `log_mode`, `started_at` |
 | `preprocessing_complete` | After the preprocessing pipeline | `obfuscation_report`, `masking_report` |
 | `session_end` | After all findings | `ended_at`, `total_duration_ms`, `total_findings`, `suggested_state_counts`, `refusal_rate`, `total_tokens` (input / output / total), `llm_calls_count`, `tool_calls_count` |
 
@@ -233,7 +233,7 @@ One short SQL-injection finding, six representative events
 `node_enter`/`node_exit` events between them.
 
 ```jsonl
-{"type":"session_start","v":1,"ts":"2026-05-28T12:00:00.000000+00:00","seq":1,"session_id":"abc-123","model":"gemini-2.5-pro","agent_config":{"INITIAL_SAMPLES":2,"ANALYST_TEMPERATURES":[0.1,0.3,0.5],"CRITIC_TEMPERATURE":0.6},"log_mode":"rich","started_at":"2026-05-28T12:00:00.000000+00:00"}
+{"type":"session_start","v":2,"ts":"2026-05-28T12:00:00.000000+00:00","seq":1,"session_id":"abc-123","models":{"research":"gemini-2.5-pro","analyst":"gemini-2.5-pro","critic":"gemini-2.5-pro"},"agent_config":{"INITIAL_SAMPLES":2,"ANALYST_TEMPERATURES":[0.1,0.3,0.5],"CRITIC_TEMPERATURE":0.6},"log_mode":"rich","started_at":"2026-05-28T12:00:00.000000+00:00"}
 {"type":"finding_start","v":1,"ts":"2026-05-28T12:00:01.000000+00:00","seq":2,"session_id":"abc-123","finding_id":"8ac6484c12c49772","finding":{"resultHash":"8ac6484c12c49772","queryName":"SQL_Injection","cweID":"89"},"checklist_id":"sqli","checklist_selection_method":"query_name"}
 {"type":"node_enter","v":1,"ts":"...","seq":5,"session_id":"abc-123","finding_id":"8ac6484c12c49772","node":"research","visit_index":0,"run_id":"r-1","parent_run_id":"g-1","state_snapshot":{"evidence_items_count":0,"samples_count":0,"research_iterations":0,"reanalysis_count":0,"last_critique_decision":null,"code_bank_summary":null}}
 {"type":"llm_call","v":1,"ts":"...","seq":6,"session_id":"abc-123","finding_id":"8ac6484c12c49772","node":"research","run_id":"l-1","parent_run_id":"r-1","model":"gemini-2.5-pro","temperature":0.1,"mode":"with_tools","messages_in":[{"type":"system","content":"..."}],"response":{"generations":[[{"text":"...","message":{"type":"ai","tool_calls":[{"name":"read_file","args":{"file_path":"a.py"}}]}}]]},"usage_metadata":{"input_tokens":820,"output_tokens":35,"total_tokens":855},"duration_ms":1240.5}

@@ -14,7 +14,13 @@ python run_triage.py run PROJECT_NAME --gitleaks-report <path|none> [OPTIONS]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model` | `gemini-2.5-pro` | AI model for analysis |
+| `--model` | config default | Model for all LLM nodes; overrides the config defaults |
+| `--research-model` | config default | Model for the research node (overrides `--model`) |
+| `--analyst-model` | config default | Model for the analyst node (overrides `--model`) |
+| `--critic-model` | config default | Model for the critic node (overrides `--model`) |
+| `--research-location` | global location | Vertex region for the research node |
+| `--analyst-location` | global location | Vertex region for the analyst node |
+| `--critic-location` | global location | Vertex region for the critic node |
 | `--severities` | `HIGH,MEDIUM` | Comma-separated severity filter |
 | `--states` | `TO_VERIFY` | Comma-separated Checkmarx state filter |
 | `--branch` | `default.SecurityPipeline` | Git branch to analyze |
@@ -48,9 +54,15 @@ With Gitleaks secret masking and a specific branch:
 python run_triage.py run my-project --gitleaks-report gitleaks-report.csv --branch main
 ```
 
-Using a faster, lower-cost model:
+Using a faster, lower-cost model for every node:
 ```bash
 python run_triage.py run my-project --gitleaks-report none --model gemini-2.5-flash
+```
+
+Running Gemini for research and analyst, Claude for the critic:
+```bash
+python run_triage.py run my-project --gitleaks-report none \
+  --critic-model claude-sonnet-4@20250514 --critic-location us-east5
 ```
 
 ## Interactive Mode
@@ -66,7 +78,7 @@ Interactive mode presents guided prompts to collect all configuration:
 3. **Analysis scope:** choose between filtering all findings or targeting specific hashes.
 4. **States:** Checkmarx states to include (checkbox selection).
 5. **Severities:** severity levels to include (checkbox selection).
-6. **Model:** Gemini model name (default: `gemini-2.5-pro`).
+6. **Model:** model name applied to all nodes (default: `gemini-2.5-pro`). Per-node models are set via the `run` flags or config.py.
 7. **Gitleaks report:** path to CSV or `none`.
 8. **Output directory:** where to save results (default: `output`).
 
@@ -108,7 +120,11 @@ The file contains:
     "project_id": "...",
     "scan_id": "...",
     "branch": "main",
-    "model": "gemini-2.5-pro",
+    "models": {
+      "research": "gemini-2.5-pro",
+      "analyst": "gemini-2.5-pro",
+      "critic": "gemini-2.5-pro"
+    },
     "timestamp": "2026-03-11T14:30:00",
     "total_findings": 5,
     "summary": {

@@ -57,7 +57,9 @@ Guided prompts collect all configuration. A summary is displayed for confirmatio
 | `--states` | `TO_VERIFY` | Comma-separated Checkmarx state filter |
 | `--branch` | `default.SecurityPipeline` | Git branch to analyze |
 | `--findings` | -- | Specific result hashes (bypasses filters) |
-| `--model` | `gemini-2.5-pro` | AI model for analysis |
+| `--model` | config default | Model for all LLM nodes; overrides the config defaults |
+| `--research-model`, `--analyst-model`, `--critic-model` | config default | Per-node model overrides (override `--model`) |
+| `--research-location`, `--analyst-location`, `--critic-location` | global location | Per-node Vertex region overrides |
 | `--log-mode` | `rich` | Session log capture mode: `rich` records every LLM prompt and response (needed for replay); `observability` replaces content with hashes and lengths. |
 | `-v, --verbose` | `false` | Enable debug-level logging |
 
@@ -69,7 +71,11 @@ Results are saved to a timestamped JSON file in the output directory:
 {
   "metadata": {
     "project_name": "my-project",
-    "model": "gemini-2.5-pro",
+    "models": {
+      "research": "gemini-2.5-pro",
+      "analyst": "gemini-2.5-pro",
+      "critic": "gemini-2.5-pro"
+    },
     "summary": {
       "confirmed": 2,
       "not_exploitable": 2,

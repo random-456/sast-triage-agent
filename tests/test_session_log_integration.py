@@ -47,7 +47,7 @@ def _critic(state):
 async def test_full_graph_emits_well_ordered_event_stream(tmp_path):
     log_path = tmp_path / "session.jsonl"
     session = SessionLogger(log_path)
-    session.emit_session_start(model="m", agent_config={"INITIAL_SAMPLES": 2})
+    session.emit_session_start(models={"research": "m", "analyst": "m", "critic": "m"}, agent_config={"INITIAL_SAMPLES": 2})
 
     graph = build_per_finding_graph(
         research_node=_research,
@@ -138,7 +138,7 @@ async def test_routing_events_carry_predicate_and_state_inputs(tmp_path):
     """Each routing function emits a route_decision with the right predicate."""
     log_path = tmp_path / "session.jsonl"
     session = SessionLogger(log_path)
-    session.emit_session_start(model="m", agent_config={})
+    session.emit_session_start(models={"research": "m", "analyst": "m", "critic": "m"}, agent_config={})
 
     graph = build_per_finding_graph(
         research_node=_research,

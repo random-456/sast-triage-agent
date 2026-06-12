@@ -18,9 +18,25 @@ FINDINGS_CSV_FILE = os.path.join(FINDINGS_DIR, "triage_list.csv")
 FINDINGS_JSON_FILE = os.path.join(FINDINGS_DIR, "findings_details.json")
 
 # Vertex AI Configuration
-DEFAULT_TRIAGE_MODEL = "gemini-2.5-pro"
+DEFAULT_TRIAGE_MODEL = "gemini-2.5-pro"  # Global default and --model fallback
 DEFAULT_JUSTIFICATION_COMPARISON_MODEL = "gemini-2.5-flash"
 DEFAULT_GCP_LOCATION = "europe-west4"  # Default Vertex AI region
+
+# Per-node model defaults. Point any node at a Claude model (name containing
+# "claude") to run it on Anthropic via Vertex; the rest stay on Gemini. A
+# matching --research-model/--analyst-model/--critic-model flag overrides per
+# run, and --model overrides all three at once.
+DEFAULT_RESEARCH_MODEL = DEFAULT_TRIAGE_MODEL
+DEFAULT_ANALYST_MODEL = DEFAULT_TRIAGE_MODEL
+DEFAULT_CRITIC_MODEL = DEFAULT_TRIAGE_MODEL
+
+# Per-node Vertex region overrides. None means use the resolved global location
+# (GOOGLE_CLOUD_LOCATION, default DEFAULT_GCP_LOCATION). Set a node's region to
+# one that serves its provider when mixing Gemini and Claude across nodes, since
+# Claude on Vertex is served only from specific regions.
+DEFAULT_RESEARCH_LOCATION: str | None = None
+DEFAULT_ANALYST_LOCATION: str | None = None
+DEFAULT_CRITIC_LOCATION: str | None = None
 
 # Analysis Configuration
 MAX_SEARCH_RESULTS = 50  # Safety cap for search results

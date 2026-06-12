@@ -91,8 +91,10 @@ class StateSnapshot(BaseModel):
 
 class SessionStartEvent(_EventBase):
     type: Literal["session_start"] = "session_start"
-    v: int = 1
-    model: str
+    v: int = 2
+    # Per-node model names, keyed by node ("research", "analyst", "critic").
+    # v1 logs carried a single ``model`` string instead.
+    models: Dict[str, str]
     agent_config: Dict[str, Any]
     project_name: Optional[str] = None
     project_id: Optional[str] = None
