@@ -157,7 +157,7 @@ async def test_real_nodes_propagate_callbacks_to_llm_and_tool_calls(tmp_path):
     """
     log_path = tmp_path / "session.jsonl"
     session = SessionLogger(log_path)
-    session.emit_session_start(model="stub", agent_config={"INITIAL_SAMPLES": 2})
+    session.emit_session_start(models={"research": "stub", "analyst": "stub", "critic": "stub"}, agent_config={"INITIAL_SAMPLES": 2})
 
     research_chat = _StubChat(return_tool_call=True)
     research_llm = (

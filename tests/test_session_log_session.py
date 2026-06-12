@@ -51,9 +51,16 @@ def _agent_config():
     return {"INITIAL_SAMPLES": 2, "ANALYST_TEMPERATURES": [0.1, 0.3, 0.5]}
 
 
-def test_session_start_event_is_written(logger_rich, tmp_path):
+_MODELS = {"research": "m", "analyst": "m", "critic": "m"}
+
+
+def test_session_start_event_carries_per_node_models(logger_rich, tmp_path):
     logger_rich.emit_session_start(
-        model="gemini-2.5-pro",
+        models={
+            "research": "gemini-2.5-pro",
+            "analyst": "gemini-2.5-flash",
+            "critic": "claude-sonnet-4@20250514",
+        },
         agent_config=_agent_config(),
         project_name="p",
         scan_id="s",
@@ -62,7 +69,12 @@ def test_session_start_event_is_written(logger_rich, tmp_path):
     assert len(events) == 1
     e = events[0]
     assert e.type == "session_start"
-    assert e.model == "gemini-2.5-pro"
+    assert e.v == 2
+    assert e.models == {
+        "research": "gemini-2.5-pro",
+        "analyst": "gemini-2.5-flash",
+        "critic": "claude-sonnet-4@20250514",
+    }
     assert e.agent_config["INITIAL_SAMPLES"] == 2
     assert e.seq == 1
 
@@ -124,7 +136,7 @@ def test_preprocessing_complete_accepts_asdict_of_preprocessing_dataclasses(
 
 def test_seq_is_strictly_monotonic(logger_rich):
     logger_rich.emit_session_start(
-        model="m", agent_config=_agent_config()
+        models=_MODELS, agent_config=_agent_config()
     )
     logger_rich.emit_finding_start(
         finding_id="abc",
@@ -139,7 +151,7 @@ def test_seq_is_strictly_monotonic(logger_rich):
 
 
 def test_finding_aggregates_roll_into_finding_complete(logger_rich):
-    logger_rich.emit_session_start(model="m", agent_config=_agent_config())
+    logger_rich.emit_session_start(models=_MODELS, agent_config=_agent_config())
     logger_rich.emit_finding_start(
         finding_id="abc",
         finding={"resultHash": "abc"},
@@ -205,7 +217,7 @@ def test_finding_aggregates_roll_into_finding_complete(logger_rich):
 
 
 def test_session_end_summarizes_findings(logger_rich):
-    logger_rich.emit_session_start(model="m", agent_config=_agent_config())
+    logger_rich.emit_session_start(models=_MODELS, agent_config=_agent_config())
     for fid, state in [("a", "CONFIRMED"), ("b", "NOT_EXPLOITABLE"), ("c", "REFUSED")]:
         logger_rich.emit_finding_start(
             finding_id=fid,
@@ -232,7 +244,7 @@ def test_session_end_summarizes_findings(logger_rich):
 
 
 def test_node_enter_visit_counter_is_per_finding(logger_rich):
-    logger_rich.emit_session_start(model="m", agent_config=_agent_config())
+    logger_rich.emit_session_start(models=_MODELS, agent_config=_agent_config())
     for fid in ("a", "b"):
         logger_rich.emit_finding_start(
             finding_id=fid,
@@ -259,7 +271,7 @@ def test_node_enter_visit_counter_is_per_finding(logger_rich):
 
 
 def test_rich_mode_records_full_messages_and_response(logger_rich):
-    logger_rich.emit_session_start(model="m", agent_config=_agent_config())
+    logger_rich.emit_session_start(models=_MODELS, agent_config=_agent_config())
     logger_rich.emit_finding_start(
         finding_id="abc",
         finding={"resultHash": "abc"},
@@ -288,7 +300,7 @@ def test_rich_mode_records_full_messages_and_response(logger_rich):
 
 
 def test_observability_mode_redacts_to_hash_and_length(logger_obs):
-    logger_obs.emit_session_start(model="m", agent_config=_agent_config())
+    logger_obs.emit_session_start(models=_MODELS, agent_config=_agent_config())
     logger_obs.emit_finding_start(
         finding_id="abc",
         finding={"resultHash": "abc"},
@@ -325,7 +337,7 @@ def test_observability_mode_redacts_to_hash_and_length(logger_obs):
 
 
 def test_observability_mode_redacts_tool_result(logger_obs):
-    logger_obs.emit_session_start(model="m", agent_config=_agent_config())
+    logger_obs.emit_session_start(models=_MODELS, agent_config=_agent_config())
     logger_obs.emit_finding_start(
         finding_id="abc",
         finding={"resultHash": "abc"},
@@ -355,7 +367,7 @@ def test_observability_mode_hash_is_deterministic(tmp_path):
     log_a = SessionLogger(tmp_path / "a.jsonl", log_mode=LogMode.OBSERVABILITY)
     log_b = SessionLogger(tmp_path / "b.jsonl", log_mode=LogMode.OBSERVABILITY)
     for lg in (log_a, log_b):
-        lg.emit_session_start(model="m", agent_config={})
+        lg.emit_session_start(models=_MODELS, agent_config={})
         lg.emit_finding_start(
             finding_id="abc",
             finding={"resultHash": "abc"},
@@ -386,7 +398,7 @@ def test_observability_mode_hash_is_deterministic(tmp_path):
 
 
 def test_emit_route_decision_includes_active_finding_id(logger_rich):
-    logger_rich.emit_session_start(model="m", agent_config={})
+    logger_rich.emit_session_start(models=_MODELS, agent_config={})
     logger_rich.emit_finding_start(
         finding_id="fid-1",
         finding={"resultHash": "fid-1"},
@@ -416,7 +428,7 @@ def test_attach_to_graph_config_merges_callbacks(logger_rich):
 
 
 def test_finalize_closes_writer(logger_rich):
-    logger_rich.emit_session_start(model="m", agent_config={})
+    logger_rich.emit_session_start(models=_MODELS, agent_config={})
     logger_rich.finalize()
     # Subsequent writes through the underlying writer raise.
     with pytest.raises(RuntimeError):
@@ -424,7 +436,7 @@ def test_finalize_closes_writer(logger_rich):
 
 
 def test_finding_complete_carries_breakdown_and_process_summary(logger_rich):
-    logger_rich.emit_session_start(model="m", agent_config=_agent_config())
+    logger_rich.emit_session_start(models=_MODELS, agent_config=_agent_config())
     logger_rich.emit_finding_start(
         finding_id="abc",
         finding={"resultHash": "abc"},

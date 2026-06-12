@@ -1,12 +1,12 @@
 import logging
 import traceback
 
-from langchain_google_vertexai import ChatVertexAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from benchmark.justification_check.prompts import JUSTIFICATION_COMPARISON_PROMPT_TEMPLATE
 from config import DEFAULT_JUSTIFICATION_COMPARISON_MODEL
+from utils.llm_factory import build_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +26,11 @@ class JustificationAICheck:
             location: Vertex AI region.
             temperature: Model temperature for consistency.
         """
-        self.llm = ChatVertexAI(
-            model_name=DEFAULT_JUSTIFICATION_COMPARISON_MODEL,
+        self.llm = build_chat_model(
+            DEFAULT_JUSTIFICATION_COMPARISON_MODEL,
             project=project,
             location=location,
             temperature=temperature,
-            max_retries=3,
         )
 
         self.prompt_template = ChatPromptTemplate.from_template(JUSTIFICATION_COMPARISON_PROMPT_TEMPLATE)

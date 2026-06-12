@@ -63,10 +63,24 @@ Defined in `config.py`. These rarely need modification but can be adjusted for s
 
 ### Model Configuration
 
+Each LLM-using node (research, analyst, critic) takes its own model and Vertex
+region, so providers and regions can be mixed across nodes.
+
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `DEFAULT_TRIAGE_MODEL` | `gemini-2.5-pro` | Default LLM model for triage analysis |
+| `DEFAULT_TRIAGE_MODEL` | `gemini-2.5-pro` | Global default and `--model` fallback for every node |
+| `DEFAULT_RESEARCH_MODEL` | `DEFAULT_TRIAGE_MODEL` | Default model for the research node |
+| `DEFAULT_ANALYST_MODEL` | `DEFAULT_TRIAGE_MODEL` | Default model for the analyst node |
+| `DEFAULT_CRITIC_MODEL` | `DEFAULT_TRIAGE_MODEL` | Default model for the critic node |
+| `DEFAULT_RESEARCH_LOCATION` | `None` | Vertex region for the research node; `None` uses the global location |
+| `DEFAULT_ANALYST_LOCATION` | `None` | Vertex region for the analyst node; `None` uses the global location |
+| `DEFAULT_CRITIC_LOCATION` | `None` | Vertex region for the critic node; `None` uses the global location |
 | `DEFAULT_JUSTIFICATION_COMPARISON_MODEL` | `gemini-2.5-flash` | Model used for benchmark justification comparison |
+
+A model name containing `claude` (case-insensitive) is served by Anthropic on
+Vertex (`ChatAnthropicVertex`); any other name by Gemini (`ChatVertexAI`).
+Claude on Vertex is served only from specific regions, so when a node runs a
+Claude model set that node's location to a region serving it.
 
 ### Analysis Configuration
 
@@ -114,12 +128,18 @@ The application sets `REQUESTS_CA_BUNDLE` and `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`
 
 ## Supported Models
 
-The agent targets Google Gemini models on Vertex AI through the `ChatVertexAI` client.
+The agent runs Google Gemini and Anthropic Claude models on Vertex AI. The
+model name selects the client: a name containing `claude` routes to
+`ChatAnthropicVertex`, any other name to `ChatVertexAI`.
 
-Examples:
+`--model` sets every node at once; the per-node flags override one node and
+beat `--model`; with no flags the config defaults apply.
+
 ```bash
---model gemini-2.5-pro         # default
---model gemini-2.5-flash       # faster, lower cost
+--model gemini-2.5-pro                              # all nodes (default)
+--model gemini-2.5-flash                            # all nodes, faster, lower cost
+--critic-model claude-sonnet-4@20250514 \
+  --critic-location us-east5                        # Gemini elsewhere, Claude critic
 ```
 
 ## Dependencies
@@ -130,7 +150,8 @@ Core dependencies are listed in `requirements.txt`:
 |---------|---------|
 | `langchain`, `langchain-core` | Tool definitions and message primitives |
 | `langgraph` | Per-finding subgraph state machine (research, analyst, critic and aggregate) |
-| `langchain-google-vertexai` | Gemini-on-Vertex client (gRPC transport) |
+| `langchain-google-vertexai` | Gemini and Claude on Vertex clients (gRPC transport) |
+| `anthropic` | Runtime dependency of `ChatAnthropicVertex` (Claude on Vertex) |
 | `pydantic` | Data validation and models |
 | `click` | CLI framework |
 | `questionary` | Interactive prompt library |

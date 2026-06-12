@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
-from langchain_google_vertexai import ChatVertexAI
+from utils.llm_factory import NodeLLMConfig, TriageLLMConfig, build_chat_model
 
 from sast_triage.agent_models import (
     AnalystVerdict,
@@ -82,8 +82,7 @@ class SASTTriageAgent:
     def __init__(
         self,
         project: str,
-        model_name: str,
-        location: str,
+        llm_config: TriageLLMConfig,
         temperature: float = 0.1,
         project_name: Optional[str] = None,
         project_id: Optional[str] = None,
@@ -99,9 +98,9 @@ class SASTTriageAgent:
 
         Args:
             project: GCP project ID for Vertex AI.
-            location: Vertex AI region.
-            model_name: Gemini model name.
-            temperature: Model temperature for consistency.
+            llm_config: Per-node model and Vertex region for the research,
+                analyst and critic nodes.
+            temperature: Research-node temperature for consistency.
             project_name: Project name for reporting.
             project_id: Project identifier for reporting.
             scan_id: Scan identifier for reporting.
@@ -120,16 +119,25 @@ class SASTTriageAgent:
         self.checkmarx_base_url = checkmarx_base_url
         self.branch = branch
 
-        # Vertex AI via the langchain-google-vertexai client (gRPC transport).
-        # The caller resolves project and location via config.resolve_vertex_config.
+        # Vertex AI via the langchain-google-vertexai clients (gRPC transport).
+        # The caller resolves project and the global location via
+        # config.resolve_vertex_config; per-node model and region come from
+        # llm_config (see utils.llm_factory).
         self._project = project
-        self._location = location
-        self.model_name = model_name
+        self.llm_config = llm_config
+        self.models = {
+            "research": llm_config.research.model,
+            "analyst": llm_config.analyst.model,
+            "critic": llm_config.critic.model,
+        }
         self.temperature = temperature
         self._structured_llm_cache: Dict[float, object] = {}
 
         self.logger.info(
-            f"Initializing Gemini via Vertex AI: {model_name}"
+            "Initializing triage LLMs via Vertex AI: "
+            f"research={llm_config.research.model}, "
+            f"analyst={llm_config.analyst.model}, "
+            f"critic={llm_config.critic.model}"
         )
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -149,12 +157,12 @@ class SASTTriageAgent:
         # are aggregated by self-consistency.
         self.research_tools = [read_file, search_in_files, list_directory]
         research_llm = (
-            self._make_llm(temperature)
+            self._make_llm(llm_config.research, temperature)
             .bind_tools(self.research_tools)
             .with_config({"tags": ["session_log:mode=with_tools"]})
         )
         critic_llm = (
-            self._make_llm(CRITIC_TEMPERATURE)
+            self._make_llm(llm_config.critic, CRITIC_TEMPERATURE)
             .with_structured_output(CritiqueResult)
             .with_config(
                 {
@@ -174,7 +182,7 @@ class SASTTriageAgent:
         )
 
         self.session_logger.emit_session_start(
-            model=model_name,
+            models=self.models,
             agent_config=self._agent_config_snapshot(),
             project_name=project_name,
             project_id=project_id,
@@ -215,21 +223,23 @@ class SASTTriageAgent:
             "NON_CONVERGENT_CONFIDENCE_CAP": NON_CONVERGENT_CONFIDENCE_CAP,
         }
 
-    def _make_llm(self, temperature: float) -> ChatVertexAI:
-        """Build a Gemini-on-Vertex client at the given temperature."""
-        return ChatVertexAI(
-            model_name=self.model_name,
+    def _make_llm(self, node: NodeLLMConfig, temperature: float):
+        """Build a Vertex client for a node's model and region at a temperature.
+
+        Routes Gemini vs Claude by model name via the shared factory.
+        """
+        return build_chat_model(
+            node.model,
             project=self._project,
-            location=self._location,
+            location=node.location,
             temperature=temperature,
-            max_retries=3,
         )
 
     def _analyst_llm_for(self, temperature: float):
         """Structured-output analyst LLM for a temperature, cached per value."""
         if temperature not in self._structured_llm_cache:
             self._structured_llm_cache[temperature] = (
-                self._make_llm(temperature)
+                self._make_llm(self.llm_config.analyst, temperature)
                 .with_structured_output(AnalystVerdict)
                 .with_config(
                     {
@@ -456,7 +466,7 @@ class SASTTriageAgent:
                 "project_id": self.project_id,
                 "scan_id": self.scan_id,
                 "branch": self.branch,
-                "model": self.model_name,
+                "models": self.models,
                 "timestamp": datetime.datetime.now().isoformat(),
                 "total_findings": total,
                 "summary": {

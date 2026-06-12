@@ -28,6 +28,7 @@ os.environ["REQUESTS_CA_BUNDLE"] = CERTIFICATES_CRT_FILE
 os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = CERTIFICATES_CRT_FILE
 
 from sast_triage.agent import SASTTriageAgent
+from utils.llm_factory import ModelSelection, build_triage_llm_config
 from sast_triage.preprocessing.obfuscation import obfuscate_codebase
 from sast_triage.preprocessing.secret_masking import mask_secrets
 from utils.checkmarx_helpers import CheckmarxClient
@@ -40,11 +41,16 @@ from utils.banner import display_banner
 
 from config import (
     CODEBASE_DIR,
+    DEFAULT_ANALYST_LOCATION,
+    DEFAULT_ANALYST_MODEL,
     DEFAULT_BRANCH,
+    DEFAULT_CRITIC_LOCATION,
+    DEFAULT_CRITIC_MODEL,
     DEFAULT_OUTPUT_DIR,
+    DEFAULT_RESEARCH_LOCATION,
+    DEFAULT_RESEARCH_MODEL,
     DEFAULT_SEVERITIES,
     DEFAULT_STATES,
-    DEFAULT_TRIAGE_MODEL,
     TEMP_DIR,
     APP_NAME,
     resolve_vertex_config,
@@ -52,7 +58,7 @@ from config import (
 
 
 async def _run_triage_analysis(
-    model_name: str,
+    model_selection: ModelSelection,
     output_dir: str,
     project_name: Optional[str] = None,
     project_id: Optional[str] = None,
@@ -68,7 +74,7 @@ async def _run_triage_analysis(
     Run the triage analysis on the fetched data.
 
     Args:
-        model_name: AI model name for Vertex AI
+        model_selection: Global and per-node model/location CLI overrides
         output_dir: Directory for output files
         project_name: Project name for reporting
         project_id: Project identifier for reporting
@@ -89,14 +95,28 @@ async def _run_triage_analysis(
         logger.info(
             f"Using Vertex AI project {gcp_project} ({gcp_location})"
         )
-        logger.info(f"Using model: {model_name}")
+        llm_config = build_triage_llm_config(
+            model_selection,
+            global_location=gcp_location,
+            research_model_default=DEFAULT_RESEARCH_MODEL,
+            analyst_model_default=DEFAULT_ANALYST_MODEL,
+            critic_model_default=DEFAULT_CRITIC_MODEL,
+            research_location_default=DEFAULT_RESEARCH_LOCATION,
+            analyst_location_default=DEFAULT_ANALYST_LOCATION,
+            critic_location_default=DEFAULT_CRITIC_LOCATION,
+        )
+        logger.info(
+            "Using models: "
+            f"research={llm_config.research.model} ({llm_config.research.location}), "
+            f"analyst={llm_config.analyst.model} ({llm_config.analyst.location}), "
+            f"critic={llm_config.critic.model} ({llm_config.critic.location})"
+        )
 
         from sast_triage.session_log import LogMode
 
         agent = SASTTriageAgent(
             project=gcp_project,
-            location=gcp_location,
-            model_name=model_name,
+            llm_config=llm_config,
             project_name=project_name,
             project_id=project_id,
             scan_id=scan_id,
@@ -172,7 +192,7 @@ def filter_findings_by_hashes(
 
 def execute_triage(
     project_name: str,
-    model_name: str,
+    model_selection: ModelSelection,
     severity_list: list[str],
     state_list: list[str],
     branch: str,
@@ -189,7 +209,7 @@ def execute_triage(
 
     Args:
         project_name: Checkmarx project name
-        model_name: AI model for analysis
+        model_selection: Global and per-node model/location CLI overrides
         severity_list: Severities to filter by
         state_list: Checkmarx states to filter by
         branch: Git branch to analyze
@@ -346,7 +366,7 @@ def execute_triage(
 
         exit_code = asyncio.run(
             _run_triage_analysis(
-                model_name,
+                model_selection,
                 output_dir,
                 project_name,
                 project_id,
@@ -398,8 +418,39 @@ def cli():
 @click.option(
     "--model",
     "model_name",
-    default=DEFAULT_TRIAGE_MODEL,
-    help="AI Model used for analysis",
+    default=None,
+    help="Model for all LLM nodes. Overrides config.py defaults; "
+    "a per-node flag overrides this for that node.",
+)
+@click.option(
+    "--research-model",
+    default=None,
+    help="Model for the research node (overrides --model).",
+)
+@click.option(
+    "--analyst-model",
+    default=None,
+    help="Model for the analyst node (overrides --model).",
+)
+@click.option(
+    "--critic-model",
+    default=None,
+    help="Model for the critic node (overrides --model).",
+)
+@click.option(
+    "--research-location",
+    default=None,
+    help="Vertex region for the research node (overrides GOOGLE_CLOUD_LOCATION).",
+)
+@click.option(
+    "--analyst-location",
+    default=None,
+    help="Vertex region for the analyst node (overrides GOOGLE_CLOUD_LOCATION).",
+)
+@click.option(
+    "--critic-location",
+    default=None,
+    help="Vertex region for the critic node (overrides GOOGLE_CLOUD_LOCATION).",
 )
 @click.option(
     "--findings",
@@ -467,7 +518,13 @@ def cli():
 )
 def run(
     project_name: str,
-    model_name: str,
+    model_name: Optional[str],
+    research_model: Optional[str],
+    analyst_model: Optional[str],
+    critic_model: Optional[str],
+    research_location: Optional[str],
+    analyst_location: Optional[str],
+    critic_location: Optional[str],
     severities: str,
     states: str,
     branch: str,
@@ -490,9 +547,19 @@ def run(
     severity_list = [s.strip().upper() for s in severities.split(",")]
     state_list = [s.strip().upper() for s in states.split(",")]
 
+    model_selection = ModelSelection(
+        model=model_name,
+        research_model=research_model,
+        analyst_model=analyst_model,
+        critic_model=critic_model,
+        research_location=research_location,
+        analyst_location=analyst_location,
+        critic_location=critic_location,
+    )
+
     execute_triage(
         project_name=project_name,
-        model_name=model_name,
+        model_selection=model_selection,
         severity_list=severity_list,
         state_list=state_list,
         branch=branch,
@@ -543,7 +610,7 @@ def interactive(verbose: bool, log_mode: str) -> None:
 
     execute_triage(
         project_name=config["project_name"],
-        model_name=config["model_name"],
+        model_selection=ModelSelection(model=config["model_name"]),
         severity_list=severity_list,
         state_list=state_list,
         branch=config["branch"],
