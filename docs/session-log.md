@@ -59,7 +59,7 @@ Pydantic model.
 | `finding_start` | Before graph invoke | `finding_id`, `finding` (full `CheckmarxFinding` dump), `checklist_id`, `checklist_selection_method` (one of `"query_name"`, `"cwe"`, `"default"`) |
 | `graph_invoke_start` | Just before `per_finding_graph.ainvoke` | `finding_id`, `recursion_limit` |
 | `graph_invoke_end` | After `ainvoke` returns | `finding_id`, `duration_ms` |
-| `finding_complete` | After the graph completes | `finding_id`, `stop_reason`, `final_decision` (full `TriageDecision` dump), `total_duration_ms`, `per_node_visit_counts`, `per_node_durations_ms`, `per_node_token_totals`, `llm_calls_count`, `tool_calls_count`, `total_tokens` |
+| `finding_complete` (v2) | After the graph completes | `finding_id`, `stop_reason`, `final_decision` (full `TriageDecision` dump), `total_duration_ms`, `per_node_visit_counts`, `per_node_durations_ms`, `per_node_token_totals`, `llm_calls_count`, `tool_calls_count`, `total_tokens`, `confidence_breakdown` (optional), `process_summary` (optional) |
 
 ### Graph events
 
@@ -94,6 +94,46 @@ Stable `predicate` strings on `route_decision`:
 `usage_metadata` is taken from `AIMessage.usage_metadata`. It may be
 `null` on cached or stubbed responses; aggregated counts in
 `finding_complete` and `session_end` exclude unreported usage.
+
+## `finding_complete` v2 fields
+
+`finding_complete` (v2) carries two optional fields that are absent on v1 logs
+and on the agent's error path.
+
+**`confidence_breakdown`**: the inputs that produced the calibrated confidence:
+
+| Field | Meaning |
+|-------|---------|
+| `agreement_rate` | Fraction of surviving samples that agree on `is_vulnerable`; `null` below the corroboration floor (fewer than two samples) |
+| `evidence_strength` | Scaled evidence-quality term |
+| `agreement_weight` | Configured weight applied to the agreement term |
+| `raw_confidence` | Combined confidence before any cap |
+| `cap_applied` | Whether the cap was triggered |
+| `cap_value` | Cap ceiling in effect |
+| `final_confidence` | Equals `final_decision.confidence` |
+| `threshold` | Configured decision threshold |
+| `sample_votes` | One entry per surviving voting sample (see below) |
+
+Each `sample_votes` entry:
+
+| Field | Meaning |
+|-------|---------|
+| `is_vulnerable` | This sample's verdict |
+| `self_confidence` | Confidence the sample reported for itself |
+| `temperature` | Sampling temperature that produced this sample |
+| `n_citations` | Number of citation lines in the sample |
+| `n_evidence_refs` | Number of evidence references |
+
+`confidence_breakdown` is structural (identical in rich and observability modes).
+
+**`process_summary`**: final per-finding counters:
+
+| Field | Meaning |
+|-------|---------|
+| `evidence_items_count` | Total evidence items collected |
+| `failed_tool_calls_count` | Number of tool calls that errored |
+| `reanalysis_count` | Number of reanalysis loops completed |
+| `research_stall_streak` | Consecutive research iterations that added no new evidence |
 
 ## Correlation model
 
@@ -199,13 +239,14 @@ One short SQL-injection finding, six representative events
 {"type":"llm_call","v":1,"ts":"...","seq":6,"session_id":"abc-123","finding_id":"8ac6484c12c49772","node":"research","run_id":"l-1","parent_run_id":"r-1","model":"gemini-2.5-pro","temperature":0.1,"mode":"with_tools","messages_in":[{"type":"system","content":"..."}],"response":{"generations":[[{"text":"...","message":{"type":"ai","tool_calls":[{"name":"read_file","args":{"file_path":"a.py"}}]}}]]},"usage_metadata":{"input_tokens":820,"output_tokens":35,"total_tokens":855},"duration_ms":1240.5}
 {"type":"tool_call","v":1,"ts":"...","seq":7,"session_id":"abc-123","finding_id":"8ac6484c12c49772","node":"research","run_id":"t-1","parent_run_id":"l-1","tool_name":"read_file","args":{"file_path":"a.py"},"result":{"content":"public User findById(String id) { ... }"},"duration_ms":3.1}
 {"type":"route_decision","v":1,"ts":"...","seq":42,"session_id":"abc-123","finding_id":"8ac6484c12c49772","from_node":"analyst","to_node":"critic","predicate":"samples_non_empty","state_inputs":{"samples_count":1}}
-{"type":"finding_complete","v":1,"ts":"...","seq":98,"session_id":"abc-123","finding_id":"8ac6484c12c49772","stop_reason":"approved","final_decision":{"resultHash":"8ac6484c12c49772","is_vulnerable":true,"confidence":0.82,"suggested_state":"CONFIRMED","justification":"Self-consistency over 2 samples: 100% agreed is_vulnerable=True. ...","agreement_rate":1.0,"sample_count":2},"total_duration_ms":12500.0,"per_node_visit_counts":{"research":1,"analyst":2,"critic":2,"aggregate":1},"per_node_token_totals":{"research":{"input":820,"output":35,"total":855},"analyst":{"input":3200,"output":480,"total":3680}},"llm_calls_count":5,"tool_calls_count":2,"total_tokens":{"input":4020,"output":515,"total":4535}}
+{"type":"finding_complete","v":2,"ts":"...","seq":98,"session_id":"abc-123","finding_id":"8ac6484c12c49772","stop_reason":"approved","final_decision":{"resultHash":"8ac6484c12c49772","is_vulnerable":true,"confidence":0.85,"suggested_state":"CONFIRMED","justification":"Self-consistency over 2 samples: 100% agreed is_vulnerable=True. ...","agreement_rate":1.0,"sample_count":2},"total_duration_ms":12500.0,"per_node_visit_counts":{"research":1,"analyst":2,"critic":2,"aggregate":1},"per_node_token_totals":{"research":{"input":820,"output":35,"total":855},"analyst":{"input":3200,"output":480,"total":3680}},"llm_calls_count":5,"tool_calls_count":2,"total_tokens":{"input":4020,"output":515,"total":4535},"confidence_breakdown":{"agreement_rate":1.0,"evidence_strength":0.5,"agreement_weight":0.7,"raw_confidence":0.85,"cap_applied":false,"cap_value":0.8,"final_confidence":0.85,"threshold":0.85,"sample_votes":[{"is_vulnerable":true,"self_confidence":0.85,"temperature":0.1,"n_citations":3,"n_evidence_refs":2},{"is_vulnerable":true,"self_confidence":0.79,"temperature":0.3,"n_citations":2,"n_evidence_refs":3}]},"process_summary":{"evidence_items_count":8,"failed_tool_calls_count":0,"reanalysis_count":0,"research_stall_streak":0}}
 ```
 
 ## Versioning
 
-Each event type carries its own `v`. The current version is 1 for all
-types. When a type's shape changes, bump only that type's `v`.
+Each event type carries its own `v`. `finding_complete` is at version 2; all
+other types remain at version 1. When a type's shape changes, bump only that
+type's `v`.
 Consumers should default to "I do not understand this event" rather
 than crash when they see a version they have not seen before. The
 discriminated union enforces the type field but not the per-type

@@ -231,10 +231,12 @@ class GraphInvokeEndEvent(_EventBase):
 
 class FindingCompleteEvent(_EventBase):
     type: Literal["finding_complete"] = "finding_complete"
-    v: int = 1
+    v: int = 2
     finding_id: str
     stop_reason: Optional[str] = None
     final_decision: Dict[str, Any]
+    confidence_breakdown: Optional[Dict[str, Any]] = None
+    process_summary: Optional[Dict[str, Any]] = None
     total_duration_ms: float
     per_node_visit_counts: Dict[str, int] = Field(default_factory=dict)
     per_node_durations_ms: Dict[str, float] = Field(default_factory=dict)

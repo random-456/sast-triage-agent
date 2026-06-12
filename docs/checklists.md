@@ -43,7 +43,7 @@ Two helper models are part of the validation:
 
 ## Shipped checklists
 
-The active set on `dev`:
+The active set:
 
 | `checklist_id` | `display_name` | Maps from CWE | Maps from `queryName` |
 |----------------|----------------|---------------|------------------------|

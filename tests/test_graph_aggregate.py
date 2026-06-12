@@ -9,6 +9,7 @@ from config import INITIAL_SAMPLES
 from sast_triage.agent_models import (
     AnalystVerdict,
     CheckmarxFinding,
+    ConfidenceBreakdown,
     CritiqueDecision,
     CritiqueResult,
     SuggestedState,
@@ -64,3 +65,22 @@ async def test_real_aggregate_node_produces_decision_in_graph():
     assert verdict.agreement_rate == 1.0
     assert verdict.sample_count == INITIAL_SAMPLES
     assert result["stop_reason"] == "approved"
+
+
+async def test_real_aggregate_node_emits_confidence_breakdown():
+    graph = build_per_finding_graph(
+        research_node=_research,
+        analyst_node=_analyst,
+        critic_node=_critic,
+        aggregate_node=aggregate_node,
+    )
+    result = await graph.ainvoke(
+        {
+            "finding": CheckmarxFinding(resultHash="h", cweID="89"),
+            "checklist": load_checklist("sqli"),
+        }
+    )
+    breakdown = result["confidence_breakdown"]
+    assert isinstance(breakdown, ConfidenceBreakdown)
+    assert breakdown.final_confidence == result["verdict"].confidence
+    assert len(breakdown.sample_votes) == INITIAL_SAMPLES

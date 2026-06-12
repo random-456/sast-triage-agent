@@ -176,6 +176,8 @@ class SessionLogger:
         finding_id: str,
         stop_reason: Optional[str],
         final_decision: Dict[str, Any],
+        confidence_breakdown: Optional[Dict[str, Any]] = None,
+        process_summary: Optional[Dict[str, Any]] = None,
     ) -> None:
         started = self._finding_perf_start.pop(finding_id, time.perf_counter())
         total_duration_ms = (time.perf_counter() - started) * 1000.0
@@ -185,6 +187,8 @@ class SessionLogger:
             finding_id=finding_id,
             stop_reason=stop_reason,
             final_decision=final_decision,
+            confidence_breakdown=confidence_breakdown,
+            process_summary=process_summary,
             total_duration_ms=total_duration_ms,
             per_node_visit_counts=dict(agg["per_node_visit_counts"]),
             per_node_durations_ms=dict(agg["per_node_durations"]),

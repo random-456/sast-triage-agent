@@ -36,6 +36,8 @@ following layout.
 ├─────────────────────────────────────────────────────┤
 │  Findings table (sortable)                          │
 ├─────────────────────────────────────────────────────┤
+│  Finding header (full-width, when a row is selected)│
+├─────────────────────────────────────────────────────┤
 │  Topology  +  Traversal flow                        │
 ├──────────────────────────────┬──────────────────────┤
 │                              │                      │
@@ -47,8 +49,30 @@ following layout.
 
 **Findings table.** One row per finding. Sortable by any column: result
 hash, suggested state, confidence, sample count, research iterations,
-reanalysis loops, total tokens, duration, stop reason. Click a row to
-load its topology, traversal and timeline.
+reanalysis loops, total tokens, duration, stop reason. The `samples`
+column shows the voted sample count (`final_decision.sample_count`) and the
+`reanalysis` column shows the reanalysis-loop count
+(`process_summary.reanalysis_count`). The analyst-call count is surfaced in
+the finding header as the "attempts" figure. Click a row to load its header,
+topology, traversal and timeline.
+
+**Finding header.** When a finding row is selected, a full-width header card
+appears below the findings table and above the topology. It shows a verdict
+line (suggested state, confidence, CWE, checklist and its selection method,
+stop reason, the voted sample count and reanalysis-loop count, duration,
+tokens) and three collapsible blocks:
+
+- Confidence breakdown: the agreement and evidence terms, the weight, the raw
+  and capped values, the threshold and the resulting disposition.
+- Per-sample vote table: one row per surviving sample with its verdict,
+  self-reported confidence, sampling temperature, citation count and evidence
+  reference count.
+- Process diagnostics: research counters, the critic decision trail and a cost
+  line.
+
+The header is populated from the `confidence_breakdown` and `process_summary`
+fields on `finding_complete` (v2). For v1 logs or findings that ended on the
+error path the collapsible blocks are absent.
 
 **Topology.** A static reference diagram of the per-finding graph
 (`research → analyst → critic → aggregate`) with a visit count and
@@ -72,7 +96,8 @@ timeline by free-text substring across the event content.
 - For `node_enter`: state snapshot and, when present, the code-bank
   summary (file paths and sizes, not contents).
 - For `finding_complete`: verdict, justification, per-node visit counts,
-  durations and token totals.
+  durations and token totals. On v2 events, also renders the confidence
+  breakdown and per-sample votes.
 - Long content (over ~4 KB) is truncated inline with a "Show all"
   button that opens it in a modal.
 
@@ -122,6 +147,10 @@ updates:
   the viewer renders whatever predicate string the event carries.
 - **Renamed CLI flag** for log mode: no viewer change needed; the
   viewer renders the `log_mode` value from `session_start` verbatim.
+- **`finding_complete` schema changes**: the finding header and inspector
+  read `confidence_breakdown` and `process_summary` (both added in v2).
+  Schema changes to those shapes require corresponding updates in
+  `viewer.js` (`renderFindingHeader`, `inspectorBody`).
 
 If the agent architecture changes substantially (for example, a new
 node type or a new aggregation step), update `viewer/viewer.js` in the

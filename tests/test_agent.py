@@ -334,5 +334,30 @@ class TestOutputPathSafety:
         assert os.path.exists(agent.assessments_file)
 
 
+def test_process_summary_from_state_counts_evidence_and_loops():
+    from sast_triage.agent import _process_summary_from_state
+    from sast_triage.graph.state import (
+        CodeEvidence,
+        EvidenceBundle,
+        ToolCallRecord,
+    )
+
+    final_state = {
+        "evidence": EvidenceBundle(
+            items=[CodeEvidence(file_path="a.py", content="x")]
+        ),
+        "failed_tool_calls": [ToolCallRecord(tool_name="t", error="boom")],
+        "reanalysis_count": 2,
+        "research_stall_streak": 1,
+    }
+    summary = _process_summary_from_state(final_state)
+    assert summary == {
+        "evidence_items_count": 1,
+        "failed_tool_calls_count": 1,
+        "reanalysis_count": 2,
+        "research_stall_streak": 1,
+    }
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

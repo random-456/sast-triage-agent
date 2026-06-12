@@ -421,3 +421,29 @@ def test_finalize_closes_writer(logger_rich):
     # Subsequent writes through the underlying writer raise.
     with pytest.raises(RuntimeError):
         logger_rich.emit_session_end()
+
+
+def test_finding_complete_carries_breakdown_and_process_summary(logger_rich):
+    logger_rich.emit_session_start(model="m", agent_config=_agent_config())
+    logger_rich.emit_finding_start(
+        finding_id="abc",
+        finding={"resultHash": "abc"},
+        checklist_id="generic",
+        checklist_selection_method="default",
+    )
+    logger_rich.emit_finding_complete(
+        finding_id="abc",
+        stop_reason="max_reanalysis",
+        final_decision={"resultHash": "abc", "sample_count": 1},
+        confidence_breakdown={"final_confidence": 0.24, "sample_votes": []},
+        process_summary={
+            "evidence_items_count": 3,
+            "failed_tool_calls_count": 0,
+            "reanalysis_count": 2,
+            "research_stall_streak": 0,
+        },
+    )
+    events = _read_events(logger_rich.log_path)
+    fc = events[-1]
+    assert fc.confidence_breakdown["final_confidence"] == 0.24
+    assert fc.process_summary["reanalysis_count"] == 2
